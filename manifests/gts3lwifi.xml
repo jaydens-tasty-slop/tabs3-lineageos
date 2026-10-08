@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <extend-project name="LineageOS/android_hardware_qcom-caf_common" path="hardware/qcom-caf/common">
+    <linkfile src="os_pickup.bp" dest="hardware/qcom-caf/msm8996/Android.bp" />
+    <linkfile src="os_pickup.mk" dest="hardware/qcom-caf/msm8996/Android.mk" />
+  </extend-project>
+  <!-- Complete clones with all upstream branches also live in upstream/. -->
+  <project name="awesometic/android_device_samsung_gts3l-common"
+           path="device/samsung/gts3l-common" remote="github"
+           revision="92f1916339caec063b885beddd3742e63ddfe55f" />
+  <project name="awesometic/android_device_samsung_gts3lwifi"
+           path="device/samsung/gts3lwifi" remote="github"
+           revision="7e56fa7ef736dc3e30d667881c7f0c2de351961e" />
+  <project name="awesometic/proprietary_vendor_samsung"
+           path="vendor/samsung" remote="github"
+           revision="526da53500135cd9727cef923903fb6f4ce87dbb" />
+  <project name="awesometic/android_kernel_samsung_msm8996"
+           path="kernel/samsung/msm8996" remote="github"
+           revision="42e410d4389e09a12ddb4c1d0e5e88abcbf03396" />
+  <project name="LineageOS/android_hardware_samsung"
+           path="hardware/samsung" remote="github"
+           revision="5d20e3541d147494e074bf710d35b1960a6ed0a2" />
+  <!-- The latest maintained MSM8996 HAL branches are older than 23.2. -->
+  <project name="LineageOS/android_hardware_qcom_audio"
+           path="hardware/qcom-caf/msm8996/audio" remote="github"
+           revision="560c079979144611f90e32f5a7485e631ef022c9" />
+  <project name="LineageOS/android_hardware_qcom_display"
+           path="hardware/qcom-caf/msm8996/display" remote="github"
+           revision="92dc6b713dc4b4d37959b6af1078b98dd73ba740" />
+  <project name="LineageOS/android_hardware_qcom_media"
+           path="hardware/qcom-caf/msm8996/media" remote="github"
+           revision="6cd9f642fa82d3da39ec5eef7aad6c158c2fce0f" />
+  <project name="platform/prebuilts/vndk/v29"
+           path="prebuilts/vndk/v29" remote="aosp"
+           revision="2e659f04a7cde964415c82dd7507610769165408" clone-depth="1" />
+  <project name="LineageOS/android_external_ant-wireless_ant_client"
+           path="external/ant-wireless/ant_client" remote="github"
+           revision="846dbb2d61e119b9fd8faa0dfafe5a4f33bbd785" />
+  <extend-project name="LineageOS/android_external_ant-wireless_hidl"
+                  path="external/ant-wireless/hidl"
+                  revision="ce589dc08e4215b063bfac73eb7b9b52cf46d944" />
+</manifest>

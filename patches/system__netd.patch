@@ -1,0 +1,592 @@
+diff --git a/server/Android.bp b/server/Android.bp
+index 78d1f1d91d37bd69aa62e7b79976505e93fb2e0d..f17a6080127fa155508dd7be203fbe20a7deef1e 100644
+--- a/server/Android.bp
++++ b/server/Android.bp
+@@ -71,6 +71,7 @@ cc_library_static {
+         "libbinder",
+         "libnetutils",
+         "libnetdutils",
++        "libnetd_updatable",
+         "libpcap",
+         "libssl",
+         "libsysutils",
+diff --git a/server/BandwidthController.cpp b/server/BandwidthController.cpp
+index 8a9673874aadc0b069ead63c49f54e5026f28f04..37d8e66abf00ed644a0360e625d7cb92b10fa2ce 100644
+--- a/server/BandwidthController.cpp
++++ b/server/BandwidthController.cpp
+@@ -42,6 +42,7 @@
+ #include <linux/pkt_sched.h>
+ 
+ #include "android-base/stringprintf.h"
++#include "android-base/properties.h"
+ #include "android-base/strings.h"
+ #define LOG_TAG "BandwidthController"
+ #include <cutils/properties.h>
+@@ -201,6 +202,38 @@ static const uint32_t uidBillingMask = Fwmark::getUidBillingMask();
+  */
+ 
+ std::vector<std::string> getBasicAccountingCommands() {
++    if (!android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) {
++        // Restore the xt_qtaguid accounting and owner rules used before
++        // eBPF. Do not install rules referring to missing pinned BPF programs.
++        return {
++            "*filter",
++            "-A bw_INPUT -j bw_global_alert",
++            "-A bw_INPUT -p esp -j RETURN",
++            StringPrintf("-A bw_INPUT -m mark --mark 0x%x/0x%x -j RETURN", uidBillingMask, uidBillingMask),
++            "-A bw_INPUT -m owner --socket-exists",
++            StringPrintf("-A bw_INPUT -j MARK --or-mark 0x%x", uidBillingMask),
++            "-A bw_OUTPUT -j bw_global_alert",
++            "-A bw_OUTPUT -o " IPSEC_IFACE_PREFIX "+ -j RETURN",
++            "-A bw_OUTPUT -m policy --pol ipsec --dir out -j RETURN",
++            "-A bw_OUTPUT -m owner --uid-owner clat -j RETURN",
++            "-A bw_OUTPUT -m owner --socket-exists",
++            "-A bw_costly_shared -j bw_penalty_box",
++            "-A bw_penalty_box -j bw_happy_box",
++            "-A bw_happy_box -m owner --uid-owner 0-9999 -j RETURN",
++            "-A bw_happy_box -j bw_data_saver",
++            "-A bw_data_saver -j RETURN",
++            "COMMIT",
++            "*raw",
++            "-A bw_raw_PREROUTING -i " IPSEC_IFACE_PREFIX "+ -j RETURN",
++            "-A bw_raw_PREROUTING -m policy --pol ipsec --dir in -j RETURN",
++            "-A bw_raw_PREROUTING -m owner --socket-exists",
++            "COMMIT",
++            "*mangle",
++            "-A bw_mangle_POSTROUTING -m policy --pol ipsec --dir out -j RETURN",
++            "-A bw_mangle_POSTROUTING -m owner --socket-exists",
++            "COMMIT\n"
++        };
++    }
+     // clang-format off
+     std::vector<std::string> ipt_basic_accounting_commands = {
+             "*filter",
+diff --git a/server/Controllers.cpp b/server/Controllers.cpp
+index 48d0c509a5cecc0f0869847734074d25251554ad..3c741b19001432d2bc95acaa1785d38b5ca7d659 100644
+--- a/server/Controllers.cpp
++++ b/server/Controllers.cpp
+@@ -20,6 +20,8 @@
+ #include <string>
+ 
+ #include <android-base/stringprintf.h>
++#include <android-base/properties.h>
++#include "NetdUpdatablePublic.h"
+ #include <android-base/strings.h>
+ #include <netdutils/Stopwatch.h>
+ 
+@@ -281,7 +283,11 @@ void Controllers::initIptablesRules() {
+     gLog.info("Setting up OEM hooks: %" PRId64 "us", s.getTimeAndResetUs());
+ 
+     /* When enabled, DROPs all packets except those matching rules. */
+-    firewallCtrl.setupIptablesHooks();
++    if (int error = firewallCtrl.setupIptablesHooks();
++        error && !android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) {
++        gLog.error("Failed to initialize legacy firewall (%s)", strerror(-error));
++        exit(1);
++    }
+     gLog.info("Setting up FirewallController hooks: %" PRId64 "us", s.getTimeAndResetUs());
+ 
+     /* Does DROPs in FORWARD by default */
+@@ -342,6 +348,9 @@ void Controllers::init() {
+         exit(3);
+     };
+     gLog.info("Initializing XfrmController: %" PRId64 "us", s.getTimeAndResetUs());
++    if (!android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) {
++        libnetd_updatable_legacy_setReady(true);
++    }
+ }
+ 
+ Controllers* gCtls = nullptr;
+diff --git a/server/FirewallController.cpp b/server/FirewallController.cpp
+index c5b025a7541e6e005ef2233d7ba538177f7b0932..d8b0212802c6f920a07441ac42fc675e30ef6ba3 100644
+--- a/server/FirewallController.cpp
++++ b/server/FirewallController.cpp
+@@ -27,6 +27,8 @@
+ #define LOG_NDEBUG 0
+ 
+ #include <android-base/file.h>
++#include <android-base/logging.h>
++#include <android-base/properties.h>
+ #include <android-base/stringprintf.h>
+ #include <android-base/strings.h>
+ #include <log/log.h>
+@@ -34,6 +36,7 @@
+ #include "Controllers.h"
+ #include "FirewallController.h"
+ #include "NetdConstants.h"
++#include "NetdUpdatablePublic.h"
+ 
+ using android::base::Join;
+ using android::base::StringAppendF;
+@@ -69,23 +72,27 @@ FirewallController::FirewallController(void) {
+ }
+ 
+ int FirewallController::setupIptablesHooks(void) {
+-    return flushRules();
++    int result = flushRules();
++    if (result == 0 && !android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) {
++        result = setupLegacyHooks();
++    }
++    return result;
+ }
+ 
+ int FirewallController::setFirewallType(FirewallType ftype) {
+     int res = 0;
+     if (mFirewallType != ftype) {
+         // flush any existing rules
+-        resetFirewall();
++        if (int error = resetFirewall()) return error;
+ 
+         if (ftype == ALLOWLIST) {
+             // create default rule to drop all traffic
+-            std::string command =
+-                "*filter\n"
+-                "-A fw_INPUT -j DROP\n"
+-                "-A fw_OUTPUT -j REJECT\n"
+-                "-A fw_FORWARD -j REJECT\n"
+-                "COMMIT\n";
++            const bool legacy = !android::base::GetBoolProperty("ro.kernel.ebpf.supported", true);
++            std::string command = StringPrintf(
++                "*filter\n-A %s -j DROP\n-A %s -j REJECT\n"
++                "-A fw_FORWARD -j REJECT\nCOMMIT\n",
++                legacy ? "fw_global_INPUT" : "fw_INPUT",
++                legacy ? "fw_global_OUTPUT" : "fw_OUTPUT");
+             res = execIptablesRestore(V4V6, command.c_str());
+         }
+ 
+@@ -104,13 +111,21 @@ int FirewallController::flushRules() {
+             "-6 -A fw_OUTPUT ! -o lo -s ::1 -j DROP\n"
+             "COMMIT\n";
+ 
++    if (!android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) {
++        // Interface exemptions for the global firewall must not bypass UID policy.
++        command = "*filter\n:fw_global_INPUT -\n:fw_global_OUTPUT -\nCOMMIT\n" + command;
++    }
+     return (execIptablesRestore(V4V6, command.c_str()) == 0) ? 0 : -EREMOTEIO;
+ }
+ 
+ int FirewallController::resetFirewall(void) {
+     mFirewallType = ALLOWLIST;
+     mIfaceRules.clear();
+-    return flushRules();
++    int result = flushRules();
++    if (result == 0 && !android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) {
++        result = attachLegacyHooks();
++    }
++    return result;
+ }
+ 
+ int FirewallController::setInterfaceRule(const char* iface, FirewallRule rule) {
+@@ -138,10 +153,13 @@ int FirewallController::setInterfaceRule(const char* iface, FirewallRule rule) {
+         return 0;
+     }
+ 
++    const bool legacy = !android::base::GetBoolProperty("ro.kernel.ebpf.supported", true);
+     std::string command = Join(std::vector<std::string> {
+         "*filter",
+-        StringPrintf("%s fw_INPUT -i %s -j RETURN", op, iface),
+-        StringPrintf("%s fw_OUTPUT -o %s -j RETURN", op, iface),
++        StringPrintf("%s %s -i %s -j RETURN", op,
++                     legacy ? "fw_global_INPUT" : "fw_INPUT", iface),
++        StringPrintf("%s %s -o %s -j RETURN", op,
++                     legacy ? "fw_global_OUTPUT" : "fw_OUTPUT", iface),
+         "COMMIT\n"
+     }, "\n");
+     return (execIptablesRestore(V4V6, command) == 0) ? 0 : -EREMOTEIO;
+@@ -160,5 +178,185 @@ std::string FirewallController::makeCriticalCommands(IptablesTarget target, cons
+     return commands;
+ }
+ 
++namespace {
++// Android's public ConnectivityManager chain values. Metered chains 10-12
++// are implemented through BandwidthController's happy/penalty boxes.
++const char* legacyChainName(int chain) {
++    static const char* names[] = {nullptr, "fw_dozable", "fw_standby", "fw_powersave",
++        "fw_restricted", "fw_low_power_standby", "fw_background", "fw_oem_deny_1",
++        "fw_oem_deny_2", "fw_oem_deny_3"};
++    return chain > 0 && chain < 10 ? names[chain] : nullptr;
++}
++
++bool legacyAllowlist(int chain) {
++    return chain == 1 || chain == 3 || chain == 4 || chain == 5 || chain == 6 || chain == 10;
++}
++}
++
++int FirewallController::setupLegacyHooks() {
++    mLegacyEnabled.clear();
++    mLegacyUids.clear();
++    mLegacyInterfaces.clear();
++    std::string cmd = "*filter\n:fw_legacy -\n:fw_legacy_iif -\n";
++    for (int chain = 1; chain <= 9; chain++) {
++        StringAppendF(&cmd, ":%s -\n", legacyChainName(chain));
++    }
++    cmd += "COMMIT\n";
++    if (execIptablesRestore(V4V6, cmd) != 0) return -EREMOTEIO;
++    for (int chain = 1; chain <= 9; chain++) {
++        int result = writeLegacyChain(chain);
++        if (result) return result;
++    }
++    if (int error = writeLegacyInterfaces()) return error;
++    if (int error = writeLegacyEnabled()) return error;
++    return attachLegacyHooks();
++}
++
++int FirewallController::attachLegacyHooks() {
++    const std::string cmd = "*filter\n-A fw_INPUT -j fw_legacy_iif\n"
++                            "-A fw_INPUT -j fw_legacy\n-A fw_INPUT -j fw_global_INPUT\n"
++                            "-A fw_OUTPUT -j fw_legacy\n-A fw_OUTPUT -j fw_global_OUTPUT\nCOMMIT\n";
++    return execIptablesRestore(V4V6, cmd) == 0 ? 0 : -EREMOTEIO;
++}
++
++int FirewallController::writeLegacyChain(int chain) {
++    std::string cmd = "*filter\n";
++    if (chain >= 10 && chain <= 12) {
++        cmd += ":bw_penalty_box -\n:bw_happy_box -\n"
++               "-A bw_penalty_box -m owner --uid-owner 0-9999 -j RETURN\n";
++        std::set<int> denied = mLegacyUids[11];
++        denied.insert(mLegacyUids[12].begin(), mLegacyUids[12].end());
++        for (int uid : denied) {
++            StringAppendF(&cmd, "-A bw_penalty_box -m owner --uid-owner %d -j REJECT\n", uid);
++        }
++        cmd += "-A bw_penalty_box -j bw_happy_box\n"
++               "-A bw_happy_box -m owner --uid-owner 0-9999 -j RETURN\n";
++        for (int uid : mLegacyUids[10]) {
++            StringAppendF(&cmd, "-A bw_happy_box -m owner --uid-owner %d -j RETURN\n", uid);
++        }
++        cmd += "-A bw_happy_box -j bw_data_saver\n";
++    } else {
++        const char* name = legacyChainName(chain);
++        if (name == nullptr) return -EINVAL;
++        StringAppendF(&cmd, ":%s -\n", name);
++        if (legacyAllowlist(chain)) {
++            // iptables-restore's -6 prefix limits these exceptions to IPv6.
++            for (const char* type : ICMPV6_TYPES) {
++                StringAppendF(&cmd, "-6 -A %s -p icmpv6 --icmpv6-type %s -j RETURN\n", name, type);
++            }
++            StringAppendF(&cmd, "-A %s -m owner --uid-owner 0-9999 -j RETURN\n", name);
++        }
++        for (int uid : mLegacyUids[chain]) {
++            StringAppendF(&cmd, "-A %s -m owner --uid-owner %d -j %s\n", name, uid,
++                          legacyAllowlist(chain) ? "RETURN" : "REJECT");
++        }
++        if (legacyAllowlist(chain)) StringAppendF(&cmd, "-A %s -j REJECT\n", name);
++    }
++    cmd += "COMMIT\n";
++    if (execIptablesRestore(V4V6, cmd) != 0) return -EREMOTEIO;
++    for (int index = (chain >= 10 ? 10 : chain); index <= (chain >= 10 ? 12 : chain); index++) {
++        std::vector<int32_t> uids(mLegacyUids[index].begin(), mLegacyUids[index].end());
++        if (int error = libnetd_updatable_legacy_setUidChain(index, uids.data(), uids.size())) {
++            return error;
++        }
++    }
++    return 0;
++}
++
++int FirewallController::writeLegacyEnabled() {
++    std::string cmd = "*filter\n:fw_legacy -\n"
++                      "-A fw_legacy -m owner --uid-owner 0-9999 -j RETURN\n";
++    for (int chain : mLegacyEnabled) {
++        StringAppendF(&cmd, "-A fw_legacy -j %s\n", legacyChainName(chain));
++    }
++    cmd += "COMMIT\n";
++    if (execIptablesRestore(V4V6, cmd) != 0) return -EREMOTEIO;
++    uint32_t enabled = 0;
++    for (int chain : mLegacyEnabled) enabled |= 1U << chain;
++    return libnetd_updatable_legacy_setEnabledChains(enabled);
++}
++
++int FirewallController::setLegacyUidRule(int chain, int uid, FirewallRule rule) {
++    if (chain < 1 || chain > 12 || uid < 0 || (rule != ALLOW && rule != DENY)) return -EINVAL;
++    const auto old = mLegacyUids[chain];
++    const bool add = (rule == ALLOW) == legacyAllowlist(chain);
++    if (add) mLegacyUids[chain].insert(uid);
++    else mLegacyUids[chain].erase(uid);
++    const int result = writeLegacyChain(chain);
++    if (result) {
++        mLegacyUids[chain] = old;
++        if (writeLegacyChain(chain)) LOG(ERROR) << "Failed to restore legacy UID chain";
++    }
++    return result;
++}
++
++int FirewallController::enableLegacyChain(int chain, bool enable) {
++    if (legacyChainName(chain) == nullptr) return -EINVAL;
++    const auto old = mLegacyEnabled;
++    if (enable) mLegacyEnabled.insert(chain);
++    else mLegacyEnabled.erase(chain);
++    const int result = writeLegacyEnabled();
++    if (result) {
++        mLegacyEnabled = old;
++        if (writeLegacyEnabled()) LOG(ERROR) << "Failed to restore legacy chain activation";
++    }
++    return result;
++}
++
++int FirewallController::replaceLegacyUidChain(const std::string& name, bool allowlist,
++                                             const std::vector<int32_t>& uids) {
++    for (int chain = 1; chain <= 9; chain++) {
++        if (name != legacyChainName(chain)) continue;
++        if (allowlist != legacyAllowlist(chain)) return -EINVAL;
++        for (int uid : uids) if (uid < 0) return -EINVAL;
++        const auto old = mLegacyUids[chain];
++        mLegacyUids[chain] = std::set<int>(uids.begin(), uids.end());
++        int result = writeLegacyChain(chain);
++        if (result) {
++            mLegacyUids[chain] = old;
++            if (writeLegacyChain(chain)) LOG(ERROR) << "Failed to restore legacy UID chain";
++        }
++        return result;
++    }
++    return -EINVAL;
++}
++
++int FirewallController::writeLegacyInterfaces() {
++    std::string cmd = "*filter\n:fw_legacy_iif -\n-A fw_legacy_iif -i lo -j RETURN\n";
++    for (const auto& [uid, iface] : mLegacyInterfaces) {
++        if (!iface.empty()) {
++            StringAppendF(&cmd, "-A fw_legacy_iif ! -i %s -m owner --uid-owner %d -j DROP\n",
++                          iface.c_str(), uid);
++        }
++    }
++    cmd += "COMMIT\n";
++    return execIptablesRestore(V4V6, cmd) == 0 ? 0 : -EREMOTEIO;
++}
++
++int FirewallController::setLegacyUidInterfaces(const std::string& iface,
++                                              const std::vector<int32_t>& uids) {
++    if (!iface.empty() && !isIfaceName(iface.c_str())) return -EINVAL;
++    for (int uid : uids) if (uid < 0) return -EINVAL;
++    const auto old = mLegacyInterfaces;
++    for (int uid : uids) mLegacyInterfaces[uid] = iface;
++    const int result = writeLegacyInterfaces();
++    if (result) {
++        mLegacyInterfaces = old;
++        if (writeLegacyInterfaces()) LOG(ERROR) << "Failed to restore legacy interface rules";
++    }
++    return result;
++}
++
++int FirewallController::removeLegacyUidInterfaces(const std::vector<int32_t>& uids) {
++    const auto old = mLegacyInterfaces;
++    for (int uid : uids) mLegacyInterfaces.erase(uid);
++    const int result = writeLegacyInterfaces();
++    if (result) {
++        mLegacyInterfaces = old;
++        if (writeLegacyInterfaces()) LOG(ERROR) << "Failed to restore legacy interface rules";
++    }
++    return result;
++}
++
+ }  // namespace net
+ }  // namespace android
+diff --git a/server/FirewallController.h b/server/FirewallController.h
+index cfdd08ce60533f624602e273f88abfe849dba77b..dea47d1a5ce15f0e9a92b13cea1de0d14cfd2fe2 100644
+--- a/server/FirewallController.h
++++ b/server/FirewallController.h
+@@ -19,6 +19,7 @@
+ 
+ #include <sys/types.h>
+ #include <mutex>
++#include <map>
+ #include <set>
+ #include <string>
+ #include <vector>
+@@ -50,6 +51,15 @@ public:
+   /* Match traffic owned by given UID. This is specific to a particular chain. */
+   int setUidRule(ChildChain, int, FirewallRule);
+ 
++  // The pre-eBPF Samsung kernel enforces these rules with xt_qtaguid's
++  // owner match. Callers must hold lock, as for the other firewall methods.
++  int setLegacyUidRule(int chain, int uid, FirewallRule rule);
++  int enableLegacyChain(int chain, bool enable);
++  int replaceLegacyUidChain(const std::string& name, bool allowlist,
++                           const std::vector<int32_t>& uids);
++  int setLegacyUidInterfaces(const std::string& iface, const std::vector<int32_t>& uids);
++  int removeLegacyUidInterfaces(const std::vector<int32_t>& uids);
++
+   static std::string makeCriticalCommands(IptablesTarget target, const char* chainName);
+ 
+   static const char TABLE[];
+@@ -70,6 +80,14 @@ private:
+   FirewallType mFirewallType;
+   std::set<std::string> mIfaceRules;
+   int flushRules(void);
++  std::map<int, std::set<int>> mLegacyUids;
++  std::set<int> mLegacyEnabled;
++  std::map<int, std::string> mLegacyInterfaces;
++  int setupLegacyHooks();
++  int attachLegacyHooks();
++  int writeLegacyChain(int chain);
++  int writeLegacyEnabled();
++  int writeLegacyInterfaces();
+ };
+ 
+ }  // namespace net
+diff --git a/server/NetdNativeService.cpp b/server/NetdNativeService.cpp
+index 957261a48389d7b912c1ef6103487e7d5767a7de..67b015c7f64b1a21ba9fa650c30873ad0eaa865e 100644
+--- a/server/NetdNativeService.cpp
++++ b/server/NetdNativeService.cpp
+@@ -24,6 +24,7 @@
+ #include <vector>
+ 
+ #include <android-base/file.h>
++#include <android-base/properties.h>
+ #include <android-base/stringprintf.h>
+ #include <android-base/strings.h>
+ #include <binder/IPCThreadState.h>
+@@ -40,6 +41,7 @@
+ #include "Fwmark.h"
+ #include "InterfaceController.h"
+ #include "NetdNativeService.h"
++#include "NetdUpdatablePublic.h"
+ #include "OemNetdListener.h"
+ #include "Permission.h"
+ #include "Process.h"
+@@ -208,15 +210,22 @@ binder::Status NetdNativeService::isAlive(bool *alive) {
+     return binder::Status::ok();
+ }
+ 
+-binder::Status NetdNativeService::firewallReplaceUidChain(const std::string&, bool,
+-                                                          const std::vector<int32_t>&, bool*) {
+-    DEPRECATED;
++binder::Status NetdNativeService::firewallReplaceUidChain(const std::string& name, bool allowlist,
++                                                          const std::vector<int32_t>& uids, bool* ret) {
++    if (android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) { DEPRECATED; }
++    NETD_LOCKING_RPC(gCtls->firewallCtrl.lock, PERM_NETWORK_STACK, PERM_MAINLINE_NETWORK_STACK);
++    const int result = gCtls->firewallCtrl.replaceLegacyUidChain(name, allowlist, uids);
++    *ret = result == 0;
++    return statusFromErrcode(result);
+ }
+ 
+ binder::Status NetdNativeService::bandwidthEnableDataSaver(bool enable, bool *ret) {
+     NETD_LOCKING_RPC(gCtls->bandwidthCtrl.lock, PERM_NETWORK_STACK, PERM_MAINLINE_NETWORK_STACK);
+     int err = gCtls->bandwidthCtrl.enableDataSaver(enable);
+     *ret = (err == 0);
++    if (err == 0 && !android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) {
++        libnetd_updatable_legacy_setDataSaver(enable);
++    }
+     return binder::Status::ok();
+ }
+ 
+@@ -252,20 +261,28 @@ binder::Status NetdNativeService::bandwidthSetGlobalAlert(int64_t bytes) {
+     return statusFromErrcode(res);
+ }
+ 
+-binder::Status NetdNativeService::bandwidthAddNaughtyApp(int32_t) {
+-    DEPRECATED;
++binder::Status NetdNativeService::bandwidthAddNaughtyApp(int32_t uid) {
++    if (android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) { DEPRECATED; }
++    NETD_LOCKING_RPC(gCtls->firewallCtrl.lock, PERM_NETWORK_STACK, PERM_MAINLINE_NETWORK_STACK);
++    return statusFromErrcode(gCtls->firewallCtrl.setLegacyUidRule(11, uid, DENY));
+ }
+ 
+-binder::Status NetdNativeService::bandwidthRemoveNaughtyApp(int32_t) {
+-    DEPRECATED;
++binder::Status NetdNativeService::bandwidthRemoveNaughtyApp(int32_t uid) {
++    if (android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) { DEPRECATED; }
++    NETD_LOCKING_RPC(gCtls->firewallCtrl.lock, PERM_NETWORK_STACK, PERM_MAINLINE_NETWORK_STACK);
++    return statusFromErrcode(gCtls->firewallCtrl.setLegacyUidRule(11, uid, ALLOW));
+ }
+ 
+-binder::Status NetdNativeService::bandwidthAddNiceApp(int32_t) {
+-    DEPRECATED;
++binder::Status NetdNativeService::bandwidthAddNiceApp(int32_t uid) {
++    if (android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) { DEPRECATED; }
++    NETD_LOCKING_RPC(gCtls->firewallCtrl.lock, PERM_NETWORK_STACK, PERM_MAINLINE_NETWORK_STACK);
++    return statusFromErrcode(gCtls->firewallCtrl.setLegacyUidRule(10, uid, ALLOW));
+ }
+ 
+-binder::Status NetdNativeService::bandwidthRemoveNiceApp(int32_t) {
+-    DEPRECATED;
++binder::Status NetdNativeService::bandwidthRemoveNiceApp(int32_t uid) {
++    if (android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) { DEPRECATED; }
++    NETD_LOCKING_RPC(gCtls->firewallCtrl.lock, PERM_NETWORK_STACK, PERM_MAINLINE_NETWORK_STACK);
++    return statusFromErrcode(gCtls->firewallCtrl.setLegacyUidRule(10, uid, DENY));
+ }
+ 
+ // TODO: Remove this function when there are no users. Currently, it is still used by DNS resolver
+@@ -1087,8 +1104,20 @@ binder::Status NetdNativeService::networkAllowBypassVpnOnNetwork(bool allow, int
+     return statusFromErrcode(err);
+ }
+ 
+-binder::Status NetdNativeService::trafficSetNetPermForUids(int32_t, const std::vector<int32_t>&) {
+-    DEPRECATED;
++binder::Status NetdNativeService::trafficSetNetPermForUids(int32_t permission,
++                                                        const std::vector<int32_t>& uids) {
++    if (android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) { DEPRECATED; }
++    ENFORCE_NETWORK_STACK_PERMISSIONS();
++    for (int32_t uid : uids) if (uid < 0) return statusFromErrcode(-EINVAL);
++    // INTERNET access is enforced by CONFIG_ANDROID_PARANOID_NETWORK and
++    // the inet group assigned by platform.xml on this Samsung kernel.
++    // UPDATE_DEVICE_STATS is tracked for cross-UID socket accounting.
++    for (int32_t uid : uids) {
++        if (int error = libnetd_updatable_legacy_setUidPermission(uid, permission)) {
++            return statusFromErrcode(error);
++        }
++    }
++    return binder::Status::ok();
+ }
+ 
+ binder::Status NetdNativeService::firewallSetFirewallType(int32_t firewallType) {
+@@ -1108,21 +1137,30 @@ binder::Status NetdNativeService::firewallSetInterfaceRule(const std::string& if
+     return statusFromErrcode(res);
+ }
+ 
+-binder::Status NetdNativeService::firewallSetUidRule(int32_t, int32_t, int32_t) {
+-    DEPRECATED;
++binder::Status NetdNativeService::firewallSetUidRule(int32_t chain, int32_t uid, int32_t rule) {
++    if (android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) { DEPRECATED; }
++    NETD_LOCKING_RPC(gCtls->firewallCtrl.lock, PERM_NETWORK_STACK, PERM_MAINLINE_NETWORK_STACK);
++    return statusFromErrcode(gCtls->firewallCtrl.setLegacyUidRule(chain, uid,
++                                                               static_cast<FirewallRule>(rule)));
+ }
+ 
+-binder::Status NetdNativeService::firewallEnableChildChain(int32_t, bool) {
+-    DEPRECATED;
++binder::Status NetdNativeService::firewallEnableChildChain(int32_t chain, bool enable) {
++    if (android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) { DEPRECATED; }
++    NETD_LOCKING_RPC(gCtls->firewallCtrl.lock, PERM_NETWORK_STACK, PERM_MAINLINE_NETWORK_STACK);
++    return statusFromErrcode(gCtls->firewallCtrl.enableLegacyChain(chain, enable));
+ }
+ 
+-binder::Status NetdNativeService::firewallAddUidInterfaceRules(const std::string&,
+-                                                               const std::vector<int32_t>&) {
+-    DEPRECATED;
++binder::Status NetdNativeService::firewallAddUidInterfaceRules(const std::string& iface,
++                                                               const std::vector<int32_t>& uids) {
++    if (android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) { DEPRECATED; }
++    NETD_LOCKING_RPC(gCtls->firewallCtrl.lock, PERM_NETWORK_STACK, PERM_MAINLINE_NETWORK_STACK);
++    return statusFromErrcode(gCtls->firewallCtrl.setLegacyUidInterfaces(iface, uids));
+ }
+ 
+-binder::Status NetdNativeService::firewallRemoveUidInterfaceRules(const std::vector<int32_t>&) {
+-    DEPRECATED;
++binder::Status NetdNativeService::firewallRemoveUidInterfaceRules(const std::vector<int32_t>& uids) {
++    if (android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) { DEPRECATED; }
++    NETD_LOCKING_RPC(gCtls->firewallCtrl.lock, PERM_NETWORK_STACK, PERM_MAINLINE_NETWORK_STACK);
++    return statusFromErrcode(gCtls->firewallCtrl.removeLegacyUidInterfaces(uids));
+ }
+ 
+ binder::Status NetdNativeService::tetherAddForward(const std::string& intIface,
+diff --git a/server/main.cpp b/server/main.cpp
+index d27fd76a31634a815c4569c3e007db770b2baab7..0b34c8361a5a8fd670eb602f882accbb16ab7a81 100644
+--- a/server/main.cpp
++++ b/server/main.cpp
+@@ -33,6 +33,7 @@
+ #include "log/log.h"
+ 
+ #include <android/binder_manager.h>
++#include <android-base/properties.h>
+ #include <android/binder_process.h>
+ #include <binder/IPCThreadState.h>
+ #include <binder/IServiceManager.h>
+@@ -135,7 +136,8 @@ int main() {
+     }
+ 
+     std::string cg2_path;
+-    if (!CgroupGetControllerPath(CGROUPV2_HIERARCHY_NAME, &cg2_path)) {
++    if (android::base::GetBoolProperty("ro.kernel.ebpf.supported", true) &&
++        !CgroupGetControllerPath(CGROUPV2_HIERARCHY_NAME, &cg2_path)) {
+         ALOGE("Failed to find cgroup v2 root %s", strerror(errno));
+         exit(1);
+     }

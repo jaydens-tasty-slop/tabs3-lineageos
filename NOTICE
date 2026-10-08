@@ -1,0 +1,23 @@
+Samsung Galaxy Tab S3 SM-T820 LineageOS build orchestration
+Copyright 2026 Jayden Milne
+
+The build-root orchestration scripts and documentation are distributed under
+Apache License 2.0, provided in LICENSE. Patches do not relicense their upstream
+source. Retain the original copyright and license notices in each source file.
+The project-authored portable device-validation sources and smoke utilities in
+device-validation/ and scripts/ are also distributed under Apache License 2.0,
+except where a file or upstream source carries its own license notice.
+
+Upstream acknowledgments: awesometic, LineageOS, Android Open Source Project,
+Samsung, Qualcomm, The Linux Foundation, and the other upstream contributors.
+The device port is based on awesometic's Galaxy Tab S3 repositories.
+
+The Linux kernel is licensed under GPLv2 and the applicable source-file licenses.
+Added Qualcomm audio sources retain their BSD-3-Clause notices. Vendor binaries
+retain their upstream distribution terms and are not covered by this root's
+Apache license. The inherited audio binary's local transformation and hashes
+are described in docs/SOURCES.md.
+
+The source manifest, patch index and matching kernel fork together identify the
+corresponding source for the current experimental build. Preserve the matching
+source snapshot and notices with any ROM distribution.

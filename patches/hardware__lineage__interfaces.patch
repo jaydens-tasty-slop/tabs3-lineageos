@@ -1,0 +1,101 @@
+diff --git a/vibrator/aidl-legacy/Vibrator.cpp b/vibrator/aidl-legacy/Vibrator.cpp
+index aca2ecc601d4e4ba30db6668d6d3e8bf64ecd050..23d99f20ea3528a90cc1a644732bc062d83b1079 100644
+--- a/vibrator/aidl-legacy/Vibrator.cpp
++++ b/vibrator/aidl-legacy/Vibrator.cpp
+@@ -18,7 +18,7 @@ namespace hardware {
+ namespace vibrator {
+ 
+ Vibrator::Vibrator() {
+-    vibrator_device_t *vib_device;
++    vibrator_device_t *vib_device = nullptr;
+     const hw_module_t *hw_module = nullptr;
+ 
+     int ret = hw_get_module(VIBRATOR_HARDWARE_MODULE_ID, &hw_module);
+@@ -36,13 +36,23 @@ Vibrator::Vibrator() {
+     mDevice = vib_device;
+ }
+ 
++Vibrator::~Vibrator() {
++    if (mDevice != nullptr && mDevice->common.close != nullptr) {
++        mDevice->common.close(&mDevice->common);
++    }
++}
++
+ ndk::ScopedAStatus Vibrator::getCapabilities(int32_t* _aidl_return) {
+     ALOGV("Vibrator reporting capabilities");
+-    *_aidl_return = IVibrator::CAP_ON_CALLBACK;
++    // The legacy timed-output driver has no completion callback.
++    *_aidl_return = 0;
+     return ndk::ScopedAStatus::ok();
+ }
+ 
+ ndk::ScopedAStatus Vibrator::off() {
++    if (mDevice == nullptr) {
++        return ndk::ScopedAStatus::fromExceptionCode(EX_ILLEGAL_STATE);
++    }
+     int32_t ret = mDevice->vibrator_off(mDevice);
+     if (ret != 0) {
+         ALOGE("off command failed : %s", strerror(-ret));
+@@ -51,7 +61,16 @@ ndk::ScopedAStatus Vibrator::off() {
+     return ndk::ScopedAStatus::ok();
+ }
+ 
+-ndk::ScopedAStatus Vibrator::on(int32_t timeoutMs, const std::shared_ptr<IVibratorCallback>& /*callback*/) {
++ndk::ScopedAStatus Vibrator::on(int32_t timeoutMs, const std::shared_ptr<IVibratorCallback>& callback) {
++    if (timeoutMs <= 0) {
++        return ndk::ScopedAStatus::fromExceptionCode(EX_ILLEGAL_ARGUMENT);
++    }
++    if (callback != nullptr) {
++        return ndk::ScopedAStatus::fromExceptionCode(EX_UNSUPPORTED_OPERATION);
++    }
++    if (mDevice == nullptr) {
++        return ndk::ScopedAStatus::fromExceptionCode(EX_ILLEGAL_STATE);
++    }
+     int32_t ret = mDevice->vibrator_on(mDevice, timeoutMs);
+     if (ret != 0) {
+         ALOGE("on command failed : %s", strerror(-ret));
+@@ -64,8 +83,9 @@ ndk::ScopedAStatus Vibrator::perform(Effect /*effect*/, EffectStrength /*strengt
+     return ndk::ScopedAStatus::fromExceptionCode(EX_UNSUPPORTED_OPERATION);
+ }
+ 
+-ndk::ScopedAStatus Vibrator::getSupportedEffects(std::vector<Effect>* /*_aidl_return*/) {
+-    return ndk::ScopedAStatus::fromExceptionCode(EX_UNSUPPORTED_OPERATION);
++ndk::ScopedAStatus Vibrator::getSupportedEffects(std::vector<Effect>* _aidl_return) {
++    _aidl_return->clear();
++    return ndk::ScopedAStatus::ok();
+ }
+ 
+ ndk::ScopedAStatus Vibrator::setAmplitude(float /*amplitude*/) {
+diff --git a/vibrator/aidl-legacy/Vibrator.h b/vibrator/aidl-legacy/Vibrator.h
+index 0bba40352639267bc71caf2994608ffbf5c56906..13d449203fbaf11ccf831268f6b400bb5372a08f 100644
+--- a/vibrator/aidl-legacy/Vibrator.h
++++ b/vibrator/aidl-legacy/Vibrator.h
+@@ -27,6 +27,7 @@ namespace vibrator {
+ class Vibrator : public BnVibrator {
+ public:
+     Vibrator();
++    ~Vibrator() override;
+ 
+     ndk::ScopedAStatus getCapabilities(int32_t* _aidl_return) override;
+     ndk::ScopedAStatus off() override;
+@@ -54,7 +55,7 @@ public:
+     ndk::ScopedAStatus composePwle(const std::vector<PrimitivePwle> &composite, const std::shared_ptr<IVibratorCallback> &callback) override;
+ 
+ private:
+-    vibrator_device_t *mDevice;
++    vibrator_device_t *mDevice = nullptr;
+ };
+ 
+ } // namespace vibrator
+diff --git a/vibrator/aidl-legacy/android.hardware.vibrator-service.legacy.xml b/vibrator/aidl-legacy/android.hardware.vibrator-service.legacy.xml
+index 49b11ec8da56c647dcd018ba8213454f402149a0..4db8f8c511c77de290b1595f9fe7b9ce70314668 100644
+--- a/vibrator/aidl-legacy/android.hardware.vibrator-service.legacy.xml
++++ b/vibrator/aidl-legacy/android.hardware.vibrator-service.legacy.xml
+@@ -1,6 +1,7 @@
+ <manifest version="1.0" type="device">
+     <hal format="aidl">
+         <name>android.hardware.vibrator</name>
++        <version>2</version>
+         <fqname>IVibrator/default</fqname>
+     </hal>
+ </manifest>

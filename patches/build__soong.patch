@@ -1,0 +1,102 @@
+diff --git a/apex/builder.go b/apex/builder.go
+index 5fc5c2e97c87a27ccee6b8384267b1de9633f51a..4a36fd5b7b026edbd5444b0ec3b242d416e0afbc 100644
+--- a/apex/builder.go
++++ b/apex/builder.go
+@@ -860,6 +860,9 @@ func (a *apexBundle) buildApex(ctx android.ModuleContext) {
+ 	}
+ 
+ 	optFlags = append(optFlags, "--payload_fs_type "+a.payloadFsType.string())
++	if ctx.Config().VendorConfig("gts3l_legacy").Bool("apex_no_shared_blocks") {
++		optFlags = append(optFlags, "--no_share_dup_blocks")
++	}
+ 
+ 	if a.dynamic_common_lib_apex() {
+ 		ctx.Build(pctx, android.BuildParams{
+diff --git a/fsgen/prebuilt_etc_modules_gen.go b/fsgen/prebuilt_etc_modules_gen.go
+index 6fb2658560ba4eb149df97a0d2e5507e5cddbf20..b5a57db89187556264458d91bc155d2e8c88a868 100644
+--- a/fsgen/prebuilt_etc_modules_gen.go
++++ b/fsgen/prebuilt_etc_modules_gen.go
+@@ -346,7 +346,9 @@ func createPrebuiltEtcModulesInDirectory(ctx android.LoadHookContext, partition,
+ 		for _, etcInstallPath := range android.SortedKeys(etcInstallPathToFactoryList) {
+ 			// Do not break when found but iterate until the end to find a module with more
+ 			// specific install path
+-			if strings.HasPrefix(destDir, etcInstallPath) {
++			// Match directory boundaries: firmware-modem and firmware_mnt
++			// are siblings of firmware, not children of its install base.
++			if isSubdirectory(etcInstallPath, destDir) {
+ 				etcInstallPathKey = etcInstallPath
+ 			}
+ 		}
+diff --git a/java/dex.go b/java/dex.go
+index 8521660e3f2bb6540af9c2ec48ab90065805eb92..a015c8fe73a231043817930d224dfc2b9ed59f62 100644
+--- a/java/dex.go
++++ b/java/dex.go
+@@ -31,6 +31,10 @@ func init() {
+ 	pctx.HostBinToolVariable("symbols_map", "symbols_map")
+ }
+ 
++// D8/R8 heaps are measured in GiB. Respect the configured high-memory job
++// limit instead of starting one JVM for every ordinary Ninja worker.
++var dexHighmemPool = blueprint.NewBuiltinPool("highmem_pool")
++
+ type DexProperties struct {
+ 	// If set to true, compile dex regardless of installable.  Defaults to false.
+ 	Compile_dex *bool
+@@ -218,6 +222,7 @@ var d8IncClean = pctx.AndroidStaticRule("d8Inc-partialcompileclean",
+ 
+ var d8Inc, d8IncRE = pctx.MultiCommandRemoteStaticRules("d8Inc",
+ 	blueprint.RuleParams{
++		Pool: dexHighmemPool,
+ 		Command: `mkdir -p "$outDir" "$outDir/packages" && ` +
+ 			`${config.IncrementalDexInputCmd} ` +
+ 			`--classesJar $in --dexTarget $out --deps $d8Deps --outputDir $outDir --packageOutputDir $outDir/packages && ` +
+@@ -263,6 +268,7 @@ var d8IncR8Clean = pctx.AndroidStaticRule("d8Incr8-partialcompileclean",
+ 
+ var d8IncR8, d8IncR8RE = pctx.MultiCommandRemoteStaticRules("d8Incr8",
+ 	blueprint.RuleParams{
++		Pool: dexHighmemPool,
+ 		Command: `mkdir -p "$outDir" "$outDir/packages" && ` +
+ 			`rm -f "$outDict" && rm -f "$outConfig" && rm -rf "${outUsageDir}" && ` +
+ 			`mkdir -p $$(dirname ${outUsage}) && ` +
+@@ -326,6 +332,7 @@ var d8IncR8, d8IncR8RE = pctx.MultiCommandRemoteStaticRules("d8Incr8",
+ 
+ var d8, d8RE = pctx.MultiCommandRemoteStaticRules("d8",
+ 	blueprint.RuleParams{
++		Pool: dexHighmemPool,
+ 		Command: `rm -rf "$outDir" && mkdir -p "$outDir" && ` +
+ 			`$d8Template${config.D8Cmd} ${config.D8Flags} $d8Flags --output $outDir --no-dex-input-jar $in && ` +
+ 			`$zipTemplate${config.SoongZipCmd} $zipFlags -o $outDir/classes.dex.jar -C $outDir -f "$outDir/classes*.dex" && ` +
+@@ -365,6 +372,7 @@ var d8r8Clean = pctx.AndroidStaticRule("d8r8-partialcompileclean",
+ 
+ var d8r8, d8r8RE = pctx.MultiCommandRemoteStaticRules("d8r8",
+ 	blueprint.RuleParams{
++		Pool: dexHighmemPool,
+ 		Command: `rm -rf "$outDir" && mkdir -p "$outDir" && ` +
+ 			`rm -f "$outDict" && rm -f "$outConfig" && rm -rf "${outUsageDir}" && ` +
+ 			`mkdir -p $$(dirname ${outUsage}) && ` +
+@@ -423,6 +431,7 @@ var d8r8, d8r8RE = pctx.MultiCommandRemoteStaticRules("d8r8",
+ 
+ var r8, r8RE = pctx.MultiCommandRemoteStaticRules("r8",
+ 	blueprint.RuleParams{
++		Pool: dexHighmemPool,
+ 		Command: `rm -rf "$outDir" && mkdir -p "$outDir" && ` +
+ 			`rm -f "$outDict" && rm -f "$outConfig" && rm -rf "${outUsageDir}" && ` +
+ 			`mkdir -p $$(dirname ${outUsage}) && ` +
+diff --git a/ui/build/soong.go b/ui/build/soong.go
+index c9b303c5bf7c217ebe362c788810a4e031e26333..f48f1f6544228ef01b3bde3fd20e128abc12fa7f 100644
+--- a/ui/build/soong.go
++++ b/ui/build/soong.go
+@@ -226,6 +226,13 @@ func (pb PrimaryBuilderFactory) primaryBuilderInvocation(config Config) bootstra
+ 
+ 	commonArgs = append(commonArgs, "-l", filepath.Join(pb.config.FileListDir(), "Android.bp.list"))
+ 	invocationEnv := make(map[string]string)
++	// Pass explicit Go resource limits through the sanitized builder environment.
++	// This allows the container build to fit machines with limited RAM.
++	for _, key := range []string{"GOGC", "GOMEMLIMIT", "GOMAXPROCS"} {
++		if value := os.Getenv(key); value != "" {
++			invocationEnv[key] = value
++		}
++	}
+ 	if pb.debugPort != "" {
+ 		//debug mode
+ 		commonArgs = append(commonArgs, "--delve_listen", pb.debugPort,

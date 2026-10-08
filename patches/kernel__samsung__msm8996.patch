@@ -1,0 +1,140 @@
+diff --git a/block/blk-sysfs.c b/block/blk-sysfs.c
+index 545b9c30c71a5c8bc7e11cecefa652d5b69b029a..935ea2aa0730289a6de653aa28a53a4132ef5368 100644
+--- a/block/blk-sysfs.c
++++ b/block/blk-sysfs.c
+@@ -292,7 +292,7 @@ static struct queue_sysfs_entry queue_requests_entry = {
+ };
+ 
+ static struct queue_sysfs_entry queue_ra_entry = {
+-	.attr = {.name = "read_ahead_kb", .mode = S_IRUGO },
++	.attr = {.name = "read_ahead_kb", .mode = S_IRUGO | S_IWUSR },
+ 	.show = queue_ra_show,
+ 	.store = queue_ra_store,
+ };
+diff --git a/link-vmlinux-preparation.sh b/link-vmlinux-preparation.sh
+index bfbdc67d7e322f85b34c1b51dcb37cc72dcda597..a7df2c143de0cf6d9a55d2f84703433f50653345 100755
+--- a/link-vmlinux-preparation.sh
++++ b/link-vmlinux-preparation.sh
+@@ -2,9 +2,13 @@
+ # Created by Deokgyu Yang <secugyu@gmail.com>
+ 
+ # Create a soft link file named ld for use lld to fix the build error on modern clang
+-# Remove "/clang" from $HOSTCC string
+-CLANG_BIN="${HOSTCC:0:(-6)}"
+-if [ ! -f "${CLANG_BIN}/ld" ]; then
+-    ln -s "${CLANG_BIN}/lld" "${CLANG_BIN}/ld"
+-fi
+-
++# GCC uses the system linker and needs no Clang-specific alias.
++case "${HOSTCC##*/}" in
++    clang|clang-[0-9]*)
++        CLANG_PATH="$(command -v "$HOSTCC")"
++        CLANG_BIN="${CLANG_PATH%/*}"
++        if [ ! -e "${CLANG_BIN}/ld" ]; then
++            ln -s "${CLANG_BIN}/lld" "${CLANG_BIN}/ld"
++        fi
++        ;;
++esac
+diff --git a/scripts/gcc-wrapper.py b/scripts/gcc-wrapper.py
+index 93a6cf4e287e1aac85ad96acc08b04f64f02796a..fc918451819ca5ad710066ff844e7fccdf229e27 100755
+--- a/scripts/gcc-wrapper.py
++++ b/scripts/gcc-wrapper.py
+@@ -1,4 +1,4 @@
+-#! /usr/bin/env python2
++#! /usr/bin/env python3
+ # -*- coding: utf-8 -*-
+ 
+ # Copyright (c) 2011-2015, The Linux Foundation. All rights reserved.
+@@ -58,7 +58,7 @@ def interpret_warning(line):
+     line = line.rstrip('\n')
+     m = warning_re.match(line)
+     if m and m.group(2) not in allowed_warnings:
+-        print >> sys.stderr, "error, forbidden warning:", m.group(2)
++        print("error, forbidden warning:", m.group(2), file=sys.stderr)
+ 
+         # If there is a warning, remove any object if it exists.
+         if ofile:
+@@ -81,19 +81,19 @@ def run_gcc():
+     compiler = sys.argv[0]
+ 
+     try:
+-        proc = subprocess.Popen(args, stderr=subprocess.PIPE)
++        proc = subprocess.Popen(args, stderr=subprocess.PIPE, text=True)
+         for line in proc.stderr:
+-            print >> sys.stderr, line,
++            sys.stderr.write(line)
+             interpret_warning(line)
+ 
+         result = proc.wait()
+     except OSError as e:
+         result = e.errno
+         if result == errno.ENOENT:
+-            print >> sys.stderr, args[0] + ':',e.strerror
+-            print >> sys.stderr, 'Is your PATH set correctly?'
++            print(args[0] + ':', e.strerror, file=sys.stderr)
++            print('Is your PATH set correctly?', file=sys.stderr)
+         else:
+-            print >> sys.stderr, ' '.join(args), str(e)
++            print(' '.join(args), str(e), file=sys.stderr)
+ 
+     return result
+ 
+diff --git a/security/selinux/ss/avtab.c b/security/selinux/ss/avtab.c
+index 640c16b9d3fb75eec1ca63ca6c358ea50a773e8d..0af6ef980a31bfca0c0dc9d047d5d2fa7f5a2de4 100644
+--- a/security/selinux/ss/avtab.c
++++ b/security/selinux/ss/avtab.c
+@@ -513,9 +513,11 @@ int avtab_read_item(struct avtab *a, void *fp, struct policydb *pol,
+ 			printk(KERN_ERR "SELinux: avtab: truncated entry\n");
+ 			return rc;
+ 		}
++		/* NLMSG uses the modern two-byte subtype/driver encoding too. */
+ 		if (avtab_android_m_compat ||
+ 			    ((xperms.specified != AVTAB_XPERMS_IOCTLFUNCTION) &&
+ 			    (xperms.specified != AVTAB_XPERMS_IOCTLDRIVER) &&
++			    (xperms.specified != AVTAB_XPERMS_NLMSG) &&
+ 			    (vers == POLICYDB_VERSION_XPERMS_IOCTL))) {
+ 			xperms.driver = xperms.specified;
+ 			if (android_m_compat_optype)
+diff --git a/security/selinux/ss/avtab.h b/security/selinux/ss/avtab.h
+index 8133523ca679b04fc538a8244f1e597f363bf5e7..42a0e38346b4fcc92b574be3446b83134abee54d 100644
+--- a/security/selinux/ss/avtab.h
++++ b/security/selinux/ss/avtab.h
+@@ -57,6 +57,7 @@ struct avtab_extended_perms {
+ /* These are not flags. All 256 values may be used */
+ #define AVTAB_XPERMS_IOCTLFUNCTION	0x01
+ #define AVTAB_XPERMS_IOCTLDRIVER	0x02
++#define AVTAB_XPERMS_NLMSG	0x03
+ 	/* extension of the avtab_key specified */
+ 	u8 specified; /* ioctl, netfilter, ... */
+ 	/*
+diff --git a/security/selinux/ss/services.c b/security/selinux/ss/services.c
+index dee3615847cef6602774ce90e43f0caab0c9c6d4..e2f7dfc7491fcd76b847abc2d843136bca8709c1 100644
+--- a/security/selinux/ss/services.c
++++ b/security/selinux/ss/services.c
+@@ -635,6 +635,14 @@ void services_compute_xperms_drivers(
+ 		/* if allowing permissions within a driver */
+ 		security_xperm_set(xperms->drivers.p,
+ 					node->datum.u.xperms->driver);
++	} else {
++		/* New policy extensions must not change the ioctl AVC cache.
++		 * Like Android's 6.12 compatibility kernel, retain legacy
++		 * netlink permissions until NLMSG enforcement is backported.
++		 */
++		pr_warn_once("SELinux: extended permission %u is unsupported; legacy netlink permissions remain in use\n",
++			     node->datum.u.xperms->specified);
++		return;
+ 	}
+ 
+ 	/* If no ioctl commands are allowed, ignore auditallow and auditdeny */
+@@ -960,7 +968,10 @@ void services_compute_xperms_decision(struct extended_perms_decision *xpermd,
+ 					xpermd->driver))
+ 			return;
+ 	} else {
+-		BUG();
++		/* Modern policies can contain extensions this kernel lacks. */
++		pr_warn_once("SELinux: unknown extended permission (%u) will be ignored\n",
++			     node->datum.u.xperms->specified);
++		return;
+ 	}
+ 
+ 	if (node->key.specified == AVTAB_XPERMS_ALLOWED) {

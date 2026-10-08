@@ -1,0 +1,1595 @@
+diff --git a/audio/core/all-versions/default/Android.bp b/audio/core/all-versions/default/Android.bp
+index c2fd3c2ef276d3134f83e248ed1c0fa760344e4f..a4c0cb6e7de7b6a7d3d80bceb462af5bd549005d 100644
+--- a/audio/core/all-versions/default/Android.bp
++++ b/audio/core/all-versions/default/Android.bp
+@@ -72,6 +72,12 @@ cc_defaults {
+     cflags: select(soong_config_variable("android_hardware_audio", "skip_speaker_layout_channel_mask_field"), {
+         true: ["-include common/all-versions/SkipSpeakerLayoutChannelMaskField.h"],
+         default: [],
++    }) + select(soong_config_variable("android_hardware_audio", "legacy_offload_info_v1"), {
++        true: ["-DLEGACY_AUDIO_OFFLOAD_INFO_V1"],
++        default: [],
++    }) + select(soong_config_variable("android_hardware_audio", "legacy_input_stream_v9"), {
++        true: ["-DLEGACY_AUDIO_INPUT_STREAM_V9"],
++        default: [],
+     }),
+ }
+ 
+diff --git a/audio/core/all-versions/default/Device.cpp b/audio/core/all-versions/default/Device.cpp
+index ae015a3b16104ecebcaf6ff232bf1f31e74d3428..d424ba5f737eca5f7fb41baca05549aa14f2583a 100644
+--- a/audio/core/all-versions/default/Device.cpp
++++ b/audio/core/all-versions/default/Device.cpp
+@@ -28,6 +28,7 @@
+ #include <memory.h>
+ #include <string.h>
+ #include <algorithm>
++#include <cstddef>
+ 
+ #include <android/log.h>
+ #include <hidl/HidlTransportSupport.h>
+@@ -173,6 +174,23 @@ std::tuple<Result, sp<IStreamOut>> Device::openOutputStreamCore(int32_t ioHandle
+     if (CoreUtils::audioOutputFlagsToHal(flags, &halFlags) != NO_ERROR) {
+         return {Result::INVALID_ARGUMENTS, nullptr};
+     }
++#ifdef LEGACY_AUDIO_OFFLOAD_INFO_V1
++    if ((halFlags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) != 0) {
++        auto& offload = halConfig.offload_info;
++        // SM-T820's primary HAL checks version 0.1 and size 48 before opening
++        // compressed streams. Keep the common prefix and every codec field;
++        // the appended 0.2 tuner fields are unavailable on this legacy HAL.
++        static_assert(offsetof(audio_offload_info_t, encapsulation_mode) == 48);
++        if (offload.encapsulation_mode != AUDIO_ENCAPSULATION_MODE_NONE ||
++            offload.content_id != 0 || offload.sync_id != 0) {
++            return {Result::INVALID_ARGUMENTS, nullptr};
++        }
++        offload.version = AUDIO_MAKE_OFFLOAD_INFO_VERSION(0, 1);
++        offload.size = offsetof(audio_offload_info_t, encapsulation_mode);
++        ALOGI("Legacy compressed audio offload info: version=%u size=%u",
++              offload.version, offload.size);
++    }
++#endif
+     ALOGV("open_output_stream handle: %d devices: %x flags: %#x "
+           "srate: %d format %#x channels %x address %s",
+           ioHandle, halDevice, halFlags, halConfig.sample_rate, halConfig.format,
+diff --git a/audio/core/all-versions/default/StreamIn.cpp b/audio/core/all-versions/default/StreamIn.cpp
+index 2bea425f26cccae5b7f6286e4a06ffd4a2783420..a36dc505fd4816dff7c690b55ece857d66e70da4 100644
+--- a/audio/core/all-versions/default/StreamIn.cpp
++++ b/audio/core/all-versions/default/StreamIn.cpp
+@@ -29,6 +29,8 @@
+ #include <util/CoreUtils.h>
+ #include <utils/Trace.h>
+ #include <cmath>
++#include <cstddef>
++#include <cstring>
+ #include <memory>
+ 
+ namespace android {
+@@ -45,6 +47,26 @@ using namespace ::android::hardware::audio::CORE_TYPES_CPP_VERSION::implementati
+ 
+ namespace {
+ 
++#if MAJOR_VERSION >= 4
++// Android 9 placed update_sink_metadata immediately after get_active_microphones.
++// Later headers inserted two steering callbacks. Old vendor stream objects have
++// private mutable data in those newer slots, so even null checks are unsafe.
++auto sinkMetadataUpdater(audio_stream_in_t* stream)
++        -> decltype(stream->update_sink_metadata) {
++#ifdef LEGACY_AUDIO_INPUT_STREAM_V9
++    static_assert(offsetof(audio_stream_in_t, set_microphone_direction)
++            == offsetof(audio_stream_in_t, get_active_microphones)
++                    + sizeof(stream->get_active_microphones));
++    decltype(stream->update_sink_metadata) callback = nullptr;
++    std::memcpy(&callback, reinterpret_cast<const uint8_t*>(stream)
++            + offsetof(audio_stream_in_t, set_microphone_direction), sizeof(callback));
++    return callback;
++#else
++    return stream->update_sink_metadata;
++#endif
++}
++#endif
++
+ class ReadThread : public Thread {
+    public:
+     // ReadThread's lifespan never exceeds StreamIn's lifespan.
+@@ -506,7 +528,7 @@ Result StreamIn::doUpdateSinkMetadata(const SinkMetadata& sinkMetadata) {
+         .track_count = halTracks.size(),
+         .tracks = halTracks.data(),
+     };
+-    mStream->update_sink_metadata(mStream, &halMetadata);
++    sinkMetadataUpdater(mStream)(mStream, &halMetadata);
+     return Result::OK;
+ }
+ 
+@@ -529,7 +551,7 @@ Result StreamIn::doUpdateSinkMetadataV7(const SinkMetadata& sinkMetadata) {
+ 
+ #if MAJOR_VERSION <= 6
+ Return<void> StreamIn::updateSinkMetadata(const SinkMetadata& sinkMetadata) {
+-    if (mStream->update_sink_metadata == nullptr) {
++    if (sinkMetadataUpdater(mStream) == nullptr) {
+         return Void();  // not supported by the HAL
+     }
+     (void)doUpdateSinkMetadata(sinkMetadata);
+@@ -537,8 +559,14 @@ Return<void> StreamIn::updateSinkMetadata(const SinkMetadata& sinkMetadata) {
+ }
+ #elif MAJOR_VERSION >= 7
+ Return<Result> StreamIn::updateSinkMetadata(const SinkMetadata& sinkMetadata) {
++#ifdef LEGACY_AUDIO_INPUT_STREAM_V9
++    if (sinkMetadataUpdater(mStream) == nullptr) {
++        return Result::NOT_SUPPORTED;
++    }
++    return doUpdateSinkMetadata(sinkMetadata);
++#else
+     if (mDevice->version() < AUDIO_DEVICE_API_VERSION_3_2) {
+-        if (mStream->update_sink_metadata == nullptr) {
++        if (sinkMetadataUpdater(mStream) == nullptr) {
+             return Result::NOT_SUPPORTED;
+         }
+         return doUpdateSinkMetadata(sinkMetadata);
+@@ -548,6 +576,7 @@ Return<Result> StreamIn::updateSinkMetadata(const SinkMetadata& sinkMetadata) {
+         }
+         return doUpdateSinkMetadataV7(sinkMetadata);
+     }
++#endif
+ }
+ #endif
+ 
+@@ -573,6 +602,10 @@ Return<void> StreamIn::getActiveMicrophones(getActiveMicrophones_cb _hidl_cb) {
+ 
+ #if MAJOR_VERSION >= 5
+ Return<Result> StreamIn::setMicrophoneDirection(MicrophoneDirection direction) {
++#ifdef LEGACY_AUDIO_INPUT_STREAM_V9
++    (void)direction;
++    return Result::NOT_SUPPORTED;
++#else
+     if (mStream->set_microphone_direction == nullptr) {
+         return Result::NOT_SUPPORTED;
+     }
+@@ -584,9 +617,14 @@ Return<Result> StreamIn::setMicrophoneDirection(MicrophoneDirection direction) {
+             "set_microphone_direction",
+             mStream->set_microphone_direction(
+                     mStream, static_cast<audio_microphone_direction_t>(direction)));
++#endif
+ }
+ 
+ Return<Result> StreamIn::setMicrophoneFieldDimension(float zoom) {
++#ifdef LEGACY_AUDIO_INPUT_STREAM_V9
++    (void)zoom;
++    return Result::NOT_SUPPORTED;
++#else
+     if (mStream->set_microphone_field_dimension == nullptr) {
+         return Result::NOT_SUPPORTED;
+     }
+@@ -596,6 +634,7 @@ Return<Result> StreamIn::setMicrophoneFieldDimension(float zoom) {
+     }
+     return Stream::analyzeStatus("set_microphone_field_dimension",
+                                  mStream->set_microphone_field_dimension(mStream, zoom));
++#endif
+ }
+ 
+ #endif
+diff --git a/automotive/audiocontrol/1.0/Android.bp b/automotive/audiocontrol/1.0/Android.bp
+new file mode 100644
+index 0000000000000000000000000000000000000000..53ed78b9501da1330eaaa9f24edc484404fab307
+--- /dev/null
++++ b/automotive/audiocontrol/1.0/Android.bp
+@@ -0,0 +1,27 @@
++// This file is autogenerated by hidl-gen -Landroidbp.
++
++package {
++    // See: http://go/android-license-faq
++    // A large-scale-change added 'default_applicable_licenses' to import
++    // all of the 'license_kinds' from "hardware_interfaces_license"
++    // to get the below license kinds:
++    //   SPDX-license-identifier-Apache-2.0
++    default_applicable_licenses: ["hardware_interfaces_license"],
++}
++
++hidl_interface {
++    name: "android.hardware.automotive.audiocontrol@1.0",
++    root: "android.hardware",
++    srcs: [
++        "types.hal",
++        "IAudioControl.hal",
++    ],
++    interfaces: [
++        "android.hidl.base@1.0",
++    ],
++    gen_java: true,
++    apex_available: [
++        "//apex_available:platform",
++        "com.android.car.framework",
++    ],
++}
+diff --git a/automotive/audiocontrol/1.0/IAudioControl.hal b/automotive/audiocontrol/1.0/IAudioControl.hal
+new file mode 100644
+index 0000000000000000000000000000000000000000..2e7ef753801459845a57696397d0bc40600431de
+--- /dev/null
++++ b/automotive/audiocontrol/1.0/IAudioControl.hal
+@@ -0,0 +1,65 @@
++/*
++ * Copyright (C) 2017 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package android.hardware.automotive.audiocontrol@1.0;
++
++
++/**
++ * Interacts with the car's audio subsystem to manage audio sources and volumes
++ */
++interface IAudioControl {
++
++    /**
++     * Called at startup once per context to get the mapping from ContextNumber to
++     * busAddress. This lets the car tell the framework to which physical output stream
++     * each context should be routed.
++     *
++     * For every context, a valid bus number (0 - num busses-1) must be returned. If an
++     * unrecognized contextNumber is encountered, then -1 shall be returned.
++     *
++     * Deprecated: usage of this API and car_volume_groups.xml has been replaced with
++     * car_audio_configuration.xml. If using car_audio_configuration.xml, then the framework
++     * will not call this method. If it doesn't, then it will load car_volume_groups.xml and
++     * call this method.
++     */
++    getBusForContext(ContextNumber contextNumber)
++        generates (int32_t busNumber);
++
++
++    /**
++     * Control the right/left balance setting of the car speakers.
++     *
++     * This is intended to shift the speaker volume toward the right (+) or left (-) side of
++     * the car. 0.0 means "centered". +1.0 means fully right. -1.0 means fully left.
++     *
++     * A value outside the range -1 to 1 must be clamped by the implementation to the -1 to 1
++     * range.
++     */
++    oneway setBalanceTowardRight(float value);
++
++
++    /**
++     * Control the fore/aft fade setting of the car speakers.
++     *
++     * This is intended to shift the speaker volume toward the front (+) or back (-) of the car.
++     * 0.0 means "centered". +1.0 means fully forward. -1.0 means fully rearward.
++     *
++     * A value outside the range -1 to 1 must be clamped by the implementation to the -1 to 1
++     * range.
++     */
++    oneway setFadeTowardFront(float value);
++};
++
+diff --git a/automotive/audiocontrol/1.0/types.hal b/automotive/audiocontrol/1.0/types.hal
+new file mode 100644
+index 0000000000000000000000000000000000000000..04d8d358c40132e0e77266ebcd2bfaf9b9b02854
+--- /dev/null
++++ b/automotive/audiocontrol/1.0/types.hal
+@@ -0,0 +1,35 @@
++/*
++ * Copyright (C) 2017 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package android.hardware.automotive.audiocontrol@1.0;
++
++
++/**
++ * Predefined flags to identifying audio contexts
++ */
++enum ContextNumber : uint32_t {
++    INVALID = 0,    /* Shouldn't be used */
++
++    // Sounds from Android (counting from 1 coincidentally lets us match AudioAttributes usages)
++    MUSIC,          /* Music playback */
++    NAVIGATION,     /* Navigation directions */
++    VOICE_COMMAND,  /* Voice command session */
++    CALL_RING,      /* Voice call ringing */
++    CALL,           /* Voice call */
++    ALARM,          /* Alarm sound from Android */
++    NOTIFICATION,   /* Notifications */
++    SYSTEM_SOUND,   /* User interaction sounds (button clicks, etc) */
++};
+diff --git a/camera/provider/2.4/default/Android.bp b/camera/provider/2.4/default/Android.bp
+index c56b54d30ecb6ecc7c6d1b5d8328eb1b749ac11f..8923dc56f3d479e8c7251df535e06125d57a7940 100644
+--- a/camera/provider/2.4/default/Android.bp
++++ b/camera/provider/2.4/default/Android.bp
+@@ -183,6 +183,8 @@ cc_binary {
+     defaults: ["camera_service_defaults"],
+     compile_multilib: "32",
+     init_rc: ["android.hardware.camera.provider@2.4-service.rc"],
++    cflags: ["-DTAB_S3_CAMERA_CRYPTO_KEEPALIVE"],
++    shared_libs: ["libdl"],
+ }
+ 
+ cc_binary {
+diff --git a/camera/provider/2.4/default/service.cpp b/camera/provider/2.4/default/service.cpp
+index 0a4f7874a674d4c2a2e599f29622dda6a6ad10c3..b6d8df57b556ae31209101b2560a45446b0fc913 100644
+--- a/camera/provider/2.4/default/service.cpp
++++ b/camera/provider/2.4/default/service.cpp
+@@ -26,6 +26,11 @@
+ #include <hidl/LegacySupport.h>
+ #include <malloc.h>
+ 
++#ifdef TAB_S3_CAMERA_CRYPTO_KEEPALIVE
++#include <dlfcn.h>
++#include <cstring>
++#endif
++
+ using android::status_t;
+ using android::hardware::defaultLazyPassthroughServiceImplementation;
+ using android::hardware::defaultPassthroughServiceImplementation;
+@@ -37,6 +42,30 @@ const bool kLazyService = true;
+ const bool kLazyService = false;
+ #endif
+ 
++#ifdef TAB_S3_CAMERA_CRYPTO_KEEPALIVE
++namespace {
++void retainTabS3LegacyCameraCrypto() {
++    char device[PROPERTY_VALUE_MAX] = {};
++    property_get("ro.product.vendor.device", device, "");
++    if (std::strcmp(device, "gts3lwifi") != 0) {
++        return;
++    }
++
++    // Compatibility experiment for the Tab S3 JPEG session-close failure.
++    // Retain one reference to its existing vendor dependency for this provider
++    // lifetime. This is intentionally never dlclosed; it changes neither the
++    // vendor library bytes nor symbol visibility and is not a global preload.
++    // Use target headers: Bionic's RTLD_NOW differs between LP32 and LP64.
++    static void* const crypto = dlopen("/vendor/lib/libcrypto.so", RTLD_NOW | RTLD_LOCAL);
++    if (crypto == nullptr) {
++        ALOGE("Tab S3 camera vendor crypto retention failed: %s", dlerror());
++    } else {
++        ALOGI("Tab S3 camera vendor crypto reference retained for provider lifetime.");
++    }
++}
++}  // namespace
++#endif
++
+ int main()
+ {
+     ALOGI("CameraProvider@2.4 legacy service is starting.");
+@@ -44,6 +73,10 @@ int main()
+     // /dev/vndbinder
+     android::ProcessState::initWithDriver("/dev/vndbinder");
+ 
++#ifdef TAB_S3_CAMERA_CRYPTO_KEEPALIVE
++    retainTabS3LegacyCameraCrypto();
++#endif
++
+     // b/166675194
+     if (property_get_bool("ro.vendor.camera.provider24.disable_mem_init", false)) {
+         if (mallopt(M_BIONIC_ZERO_INIT, 0) == 0) {
+diff --git a/compatibility_matrices/Android.bp b/compatibility_matrices/Android.bp
+index 44901277185e181c8e38d1470fedf211e98d030b..2c476705ce30d1089ec33e76670d980037eafe69 100644
+--- a/compatibility_matrices/Android.bp
++++ b/compatibility_matrices/Android.bp
+@@ -81,6 +81,16 @@ phony {
+     }),
+ }
+ 
++// SM-T820 retains the Android 10 HAL contract in the supplied vendor tree.
++// Restore its real matrix for HAL validation rather than changing the vendor
++// target level or disabling VINTF checks. This is a custom legacy-device port;
++// it does not claim the Android 10 launch kernel requirements for Linux 3.18.
++vintf_compatibility_matrix {
++    name: "framework_compatibility_matrix.4.xml",
++    stem: "compatibility_matrix.4.xml",
++    srcs: ["compatibility_matrix.4.xml"],
++}
++
+ ////////////////////////////////////////////
+ // AUTO GENERATED MODULES
+ // DO NOT ADD MORE MODULES BELOW THIS LINE
+diff --git a/compatibility_matrices/compatibility_matrix.4.xml b/compatibility_matrices/compatibility_matrix.4.xml
+new file mode 100644
+index 0000000000000000000000000000000000000000..952f53d19a005d35e8a129b1f070b26f19e3aee0
+--- /dev/null
++++ b/compatibility_matrices/compatibility_matrix.4.xml
+@@ -0,0 +1,525 @@
++<compatibility-matrix version="1.0" type="framework" level="4">
++    <hal format="hidl">
++        <name>android.hardware.atrace</name>
++        <version>1.0</version>
++        <interface>
++            <name>IAtraceDevice</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.audio</name>
++        <version>5.0</version>
++        <interface>
++            <name>IDevicesFactory</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.audio.effect</name>
++        <version>5.0</version>
++        <interface>
++            <name>IEffectsFactory</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.authsecret</name>
++        <version>1.0</version>
++        <interface>
++            <name>IAuthSecret</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.automotive.audiocontrol</name>
++        <version>1.0</version>
++        <interface>
++            <name>IAudioControl</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.automotive.evs</name>
++        <version>1.0</version>
++        <interface>
++            <name>IEvsEnumerator</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.automotive.vehicle</name>
++        <version>2.0</version>
++        <interface>
++            <name>IVehicle</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.biometrics.face</name>
++        <version>1.0</version>
++        <interface>
++            <name>IBiometricsFace</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.biometrics.fingerprint</name>
++        <version>2.1</version>
++        <interface>
++            <name>IBiometricsFingerprint</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.bluetooth</name>
++        <version>1.0</version>
++        <interface>
++            <name>IBluetoothHci</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.bluetooth.audio</name>
++        <version>2.0</version>
++        <interface>
++            <name>IBluetoothAudioProvidersFactory</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.boot</name>
++        <version>1.0</version>
++        <interface>
++            <name>IBootControl</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.broadcastradio</name>
++        <version>1.0-1</version>
++        <interface>
++            <name>IBroadcastRadioFactory</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.broadcastradio</name>
++        <version>2.0</version>
++        <interface>
++            <name>IBroadcastRadio</name>
++            <regex-instance>.*</regex-instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.camera.provider</name>
++        <version>2.4-5</version>
++        <interface>
++            <name>ICameraProvider</name>
++            <regex-instance>[^/]+/[0-9]+</regex-instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.cas</name>
++        <version>1.1</version>
++        <interface>
++            <name>IMediaCasService</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.configstore</name>
++        <version>1.1</version>
++        <interface>
++            <name>ISurfaceFlingerConfigs</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.confirmationui</name>
++        <version>1.0</version>
++        <interface>
++            <name>IConfirmationUI</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.contexthub</name>
++        <version>1.0</version>
++        <interface>
++            <name>IContexthub</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.drm</name>
++        <version>1.0-2</version>
++        <interface>
++            <name>ICryptoFactory</name>
++            <regex-instance>.*</regex-instance>
++        </interface>
++        <interface>
++            <name>IDrmFactory</name>
++            <regex-instance>.*</regex-instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.dumpstate</name>
++        <version>1.0</version>
++        <interface>
++            <name>IDumpstateDevice</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.gatekeeper</name>
++        <version>1.0</version>
++        <interface>
++            <name>IGatekeeper</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.gnss</name>
++        <version>2.0</version>
++        <interface>
++            <name>IGnss</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <!-- Either the AIDL or the HIDL allocator HAL must exist on the device.
++         If the HIDL composer HAL exists, it must be at least version 2.0.
++         See DeviceManifestTest.GrallocHal -->
++    <hal format="hidl">
++        <name>android.hardware.graphics.allocator</name>
++        <version>2.0</version>
++        <version>3.0</version>
++        <interface>
++            <name>IAllocator</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.graphics.composer</name>
++        <version>2.1-3</version>
++        <interface>
++            <name>IComposer</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.graphics.mapper</name>
++        <version>2.1</version>
++        <version>3.0</version>
++        <interface>
++            <name>IMapper</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <!-- Either the AIDL or the HIDL health HAL must exist on the device.
++         If the HIDL health HAL exists, it must be at least version 2.0.
++         See DeviceManifestTest.HealthHal -->
++    <hal format="hidl">
++        <name>android.hardware.health</name>
++        <version>2.0</version>
++        <interface>
++            <name>IHealth</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.health.storage</name>
++        <version>1.0</version>
++        <interface>
++            <name>IStorage</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.ir</name>
++        <version>1.0</version>
++        <interface>
++            <name>IConsumerIr</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.input.classifier</name>
++        <version>1.0</version>
++        <interface>
++            <name>IInputClassifier</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.keymaster</name>
++        <version>3.0</version>
++        <version>4.0</version>
++        <interface>
++            <name>IKeymasterDevice</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.keymaster</name>
++        <version>4.0</version>
++        <interface>
++            <name>IKeymasterDevice</name>
++            <instance>strongbox</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.light</name>
++        <version>2.0</version>
++        <interface>
++            <name>ILight</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.media.c2</name>
++        <version>1.0</version>
++        <interface>
++            <name>IComponentStore</name>
++            <instance>software</instance>
++            <regex-instance>default[0-9]*</regex-instance>
++            <regex-instance>vendor[0-9]*_software</regex-instance>
++        </interface>
++        <interface>
++            <name>IConfigurable</name>
++            <instance>default</instance>
++            <instance>software</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.media.omx</name>
++        <version>1.0</version>
++        <interface>
++            <name>IOmx</name>
++            <instance>default</instance>
++        </interface>
++        <interface>
++            <name>IOmxStore</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.memtrack</name>
++        <version>1.0</version>
++        <interface>
++            <name>IMemtrack</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.neuralnetworks</name>
++        <version>1.0-2</version>
++        <interface>
++            <name>IDevice</name>
++            <regex-instance>.*</regex-instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.nfc</name>
++        <version>1.2</version>
++        <interface>
++            <name>INfc</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.oemlock</name>
++        <version>1.0</version>
++        <interface>
++            <name>IOemLock</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.power</name>
++        <version>1.0-3</version>
++        <interface>
++            <name>IPower</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.power.stats</name>
++        <version>1.0</version>
++        <interface>
++            <name>IPowerStats</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.radio</name>
++        <version>1.4</version>
++        <interface>
++            <name>IRadio</name>
++            <instance>slot1</instance>
++            <instance>slot2</instance>
++            <instance>slot3</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.radio</name>
++        <version>1.2</version>
++        <interface>
++            <name>ISap</name>
++            <instance>slot1</instance>
++            <instance>slot2</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.radio.config</name>
++        <!--
++        Note: Devices launching with target-level 4, if implementing the
++        radio config HAL, must provide an implementation of 1.1 IRadioConfig
++        that can handle version 1.2 of IRadioConfigResponse and
++        IRadioConfigIndication.
++        -->
++        <version>1.1</version>
++        <interface>
++            <name>IRadioConfig</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.renderscript</name>
++        <version>1.0</version>
++        <interface>
++            <name>IDevice</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.secure_element</name>
++        <version>1.0</version>
++        <interface>
++            <name>ISecureElement</name>
++            <regex-instance>eSE[1-9][0-9]*</regex-instance>
++            <regex-instance>SIM[1-9][0-9]*</regex-instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.sensors</name>
++        <version>1.0</version>
++        <version>2.0</version>
++        <interface>
++            <name>ISensors</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.soundtrigger</name>
++        <version>2.0-2</version>
++        <interface>
++            <name>ISoundTriggerHw</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.tetheroffload.config</name>
++        <version>1.0</version>
++        <interface>
++            <name>IOffloadConfig</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.tetheroffload.control</name>
++        <version>1.0</version>
++        <interface>
++            <name>IOffloadControl</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.thermal</name>
++        <version>2.0</version>
++        <interface>
++            <name>IThermal</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.tv.cec</name>
++        <version>1.0</version>
++        <interface>
++            <name>IHdmiCec</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.tv.input</name>
++        <version>1.0</version>
++        <interface>
++            <name>ITvInput</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.usb</name>
++        <version>1.0-2</version>
++        <interface>
++            <name>IUsb</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.usb.gadget</name>
++        <version>1.0</version>
++        <interface>
++            <name>IUsbGadget</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.vibrator</name>
++        <version>1.0-3</version>
++        <interface>
++            <name>IVibrator</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.vr</name>
++        <version>1.0</version>
++        <interface>
++            <name>IVr</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.weaver</name>
++        <version>1.0</version>
++        <interface>
++            <name>IWeaver</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.wifi</name>
++        <version>1.0-3</version>
++        <interface>
++            <name>IWifi</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.wifi.hostapd</name>
++        <version>1.0-1</version>
++        <interface>
++            <name>IHostapd</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl">
++        <name>android.hardware.wifi.supplicant</name>
++        <version>1.0-2</version>
++        <interface>
++            <name>ISupplicant</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++</compatibility-matrix>
+diff --git a/vibrator/1.0/Android.bp b/vibrator/1.0/Android.bp
+new file mode 100644
+index 0000000000000000000000000000000000000000..1ae1cef04d918200e9c868abaf5c57afbe1686e2
+--- /dev/null
++++ b/vibrator/1.0/Android.bp
+@@ -0,0 +1,24 @@
++// This file is autogenerated by hidl-gen -Landroidbp.
++
++package {
++    // See: http://go/android-license-faq
++    // A large-scale-change added 'default_applicable_licenses' to import
++    // all of the 'license_kinds' from "hardware_interfaces_license"
++    // to get the below license kinds:
++    //   SPDX-license-identifier-Apache-2.0
++    default_applicable_licenses: ["hardware_interfaces_license"],
++}
++
++hidl_interface {
++    name: "android.hardware.vibrator@1.0",
++    root: "android.hardware",
++    srcs: [
++        "types.hal",
++        "IVibrator.hal",
++    ],
++    interfaces: [
++        "android.hidl.base@1.0",
++    ],
++    gen_java: true,
++    gen_java_constants: true,
++}
+diff --git a/vibrator/1.0/IVibrator.hal b/vibrator/1.0/IVibrator.hal
+new file mode 100644
+index 0000000000000000000000000000000000000000..757ad0d74f5da506a2825e1af484fd49bb06d1b5
+--- /dev/null
++++ b/vibrator/1.0/IVibrator.hal
+@@ -0,0 +1,72 @@
++/*
++ * Copyright (C) 2016 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package android.hardware.vibrator@1.0;
++
++interface IVibrator {
++  /**
++   * Turn on vibrator
++   *
++   * This function must only be called after the previous timeout has expired or
++   * was canceled (through off()).
++   * @param timeout_ms number of milliseconds to vibrate.
++   * @return vibratorOnRet whether vibrator command was successful or not.
++   */
++  on(uint32_t timeoutMs) generates (Status vibratorOnRet);
++
++  /**
++   * Turn off vibrator
++   *
++   * Cancel a previously-started vibration, if any.
++   * @return vibratorOffRet whether vibrator command was successful or not.
++   */
++  off() generates (Status vibratorOffRet);
++
++  /**
++   * Returns whether the vibrator supports changes to its vibrational amplitude.
++   */
++  supportsAmplitudeControl() generates (bool supports);
++
++  /**
++   * Sets the motor's vibrational amplitude.
++   *
++   * Changes the force being produced by the underlying motor.
++   *
++   * @param amplitude The unitless force setting. Note that this number must
++   *                  be between 1 and 255, inclusive. If the motor does not
++   *                  have exactly 255 steps, it must do it's best to map it
++   *                  onto the number of steps it does have.
++   * @return status Whether the command was successful or not. Must return
++   *                Status::UNSUPPORTED_OPERATION if setting the amplitude is
++   *                not supported by the device.
++   */
++  setAmplitude(uint8_t amplitude) generates (Status status);
++
++  /**
++   * Fire off a predefined haptic event.
++   *
++   * @param event The type of haptic event to trigger.
++   * @return status Whether the effect was successfully performed or not. Must
++   *                return Status::UNSUPPORTED_OPERATION is the effect is not
++   *                supported.
++   * @return lengthMs The length of time the event is expected to take in
++   *                  milliseconds. This doesn't need to be perfectly accurate,
++   *                  but should be a reasonable approximation. Should be a
++   *                  positive, non-zero value if the returned status is
++   *                  Status::OK, and set to 0 otherwise.
++   */
++  perform(Effect effect, EffectStrength strength) generates (Status status, uint32_t lengthMs);
++};
+diff --git a/vibrator/1.0/types.hal b/vibrator/1.0/types.hal
+new file mode 100644
+index 0000000000000000000000000000000000000000..a080c079114d2dbd164c153f4e3e047a11e3d3a9
+--- /dev/null
++++ b/vibrator/1.0/types.hal
+@@ -0,0 +1,48 @@
++/*
++ * Copyright (C) 2016 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package android.hardware.vibrator@1.0;
++
++enum Status : uint32_t {
++    OK,
++    UNKNOWN_ERROR,
++    BAD_VALUE,
++    UNSUPPORTED_OPERATION
++};
++
++@export
++enum Effect : uint32_t {
++    /**
++     * A single click effect.
++     *
++     * This effect should produce a sharp, crisp click sensation.
++     */
++    CLICK,
++    /**
++     * A double click effect.
++     *
++     * This effect should produce two sequential sharp, crisp click sensations with a minimal
++     * amount of time between them.
++     */
++    DOUBLE_CLICK
++};
++
++@export
++enum EffectStrength : uint8_t {
++    LIGHT,
++    MEDIUM,
++    STRONG
++};
+diff --git a/vibrator/1.1/Android.bp b/vibrator/1.1/Android.bp
+new file mode 100644
+index 0000000000000000000000000000000000000000..357c1f0c66b80cccee7a4d02e885b585ebb4ac70
+--- /dev/null
++++ b/vibrator/1.1/Android.bp
+@@ -0,0 +1,25 @@
++// This file is autogenerated by hidl-gen -Landroidbp.
++
++package {
++    // See: http://go/android-license-faq
++    // A large-scale-change added 'default_applicable_licenses' to import
++    // all of the 'license_kinds' from "hardware_interfaces_license"
++    // to get the below license kinds:
++    //   SPDX-license-identifier-Apache-2.0
++    default_applicable_licenses: ["hardware_interfaces_license"],
++}
++
++hidl_interface {
++    name: "android.hardware.vibrator@1.1",
++    root: "android.hardware",
++    srcs: [
++        "types.hal",
++        "IVibrator.hal",
++    ],
++    interfaces: [
++        "android.hardware.vibrator@1.0",
++        "android.hidl.base@1.0",
++    ],
++    gen_java: true,
++    gen_java_constants: true,
++}
+diff --git a/vibrator/1.1/IVibrator.hal b/vibrator/1.1/IVibrator.hal
+new file mode 100644
+index 0000000000000000000000000000000000000000..9a2f465cda754e1d5d9d913cf8bd0ae01ff2b509
+--- /dev/null
++++ b/vibrator/1.1/IVibrator.hal
+@@ -0,0 +1,39 @@
++/*
++ * Copyright (C) 2017 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package android.hardware.vibrator@1.1;
++
++import @1.0::EffectStrength;
++import @1.0::IVibrator;
++import @1.0::Status;
++
++interface IVibrator extends @1.0::IVibrator {
++  /**
++   * Fire off a predefined haptic event.
++   *
++   * @param event The type of haptic event to trigger.
++   * @return status Whether the effect was successfully performed or not. Must
++   *                return Status::UNSUPPORTED_OPERATION is the effect is not
++   *                supported.
++   * @return lengthMs The length of time the event is expected to take in
++   *                  milliseconds. This doesn't need to be perfectly accurate,
++   *                  but should be a reasonable approximation. Should be a
++   *                  positive, non-zero value if the returned status is
++   *                  Status::OK, and set to 0 otherwise.
++   */
++  perform_1_1(Effect_1_1 effect, EffectStrength strength)
++          generates (Status status, uint32_t lengthMs);
++};
+diff --git a/vibrator/1.1/types.hal b/vibrator/1.1/types.hal
+new file mode 100644
+index 0000000000000000000000000000000000000000..72deb4a7e965410f064a68565b6a792869cde2be
+--- /dev/null
++++ b/vibrator/1.1/types.hal
+@@ -0,0 +1,31 @@
++/*
++ * Copyright (C) 2017 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package android.hardware.vibrator@1.1;
++
++import @1.0::Effect;
++
++// NOTE: suffix '_1_1' is for legacy ABI compatibility. It cannot be
++// changed to 'Effect' which the convention dictates.
++@export
++enum Effect_1_1 : @1.0::Effect {
++    /**
++     * A tick effect.
++     *
++     * This effect should produce a soft, short sensation, like the tick of a clock.
++     */
++    TICK
++};
+diff --git a/vibrator/1.2/Android.bp b/vibrator/1.2/Android.bp
+new file mode 100644
+index 0000000000000000000000000000000000000000..42f97d4351a34f6ba71d694bc2522921a8d533d4
+--- /dev/null
++++ b/vibrator/1.2/Android.bp
+@@ -0,0 +1,25 @@
++// This file is autogenerated by hidl-gen -Landroidbp.
++
++package {
++    // See: http://go/android-license-faq
++    // A large-scale-change added 'default_applicable_licenses' to import
++    // all of the 'license_kinds' from "hardware_interfaces_license"
++    // to get the below license kinds:
++    //   SPDX-license-identifier-Apache-2.0
++    default_applicable_licenses: ["hardware_interfaces_license"],
++}
++
++hidl_interface {
++    name: "android.hardware.vibrator@1.2",
++    root: "android.hardware",
++    srcs: [
++        "types.hal",
++        "IVibrator.hal",
++    ],
++    interfaces: [
++        "android.hardware.vibrator@1.0",
++        "android.hardware.vibrator@1.1",
++        "android.hidl.base@1.0",
++    ],
++    gen_java: true,
++}
+diff --git a/vibrator/1.2/IVibrator.hal b/vibrator/1.2/IVibrator.hal
+new file mode 100644
+index 0000000000000000000000000000000000000000..7244da1b42cab1448c75f2cade6b97ee77fe2282
+--- /dev/null
++++ b/vibrator/1.2/IVibrator.hal
+@@ -0,0 +1,37 @@
++/*
++ * Copyright (C) 2018 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package android.hardware.vibrator@1.2;
++
++import @1.0::EffectStrength;
++import @1.0::Status;
++import @1.1::IVibrator;
++
++interface IVibrator extends @1.1::IVibrator {
++  /**
++   * Fire off a predefined haptic event.
++   *
++   * @param event The type of haptic event to trigger.
++   * @return status Whether the effect was successfully performed or not. Must
++   *     return Status::UNSUPPORTED_OPERATION is the effect is not supported.
++   * @return lengthMs The length of time the event is expected to take in
++   *     milliseconds. This doesn't need to be perfectly accurate, but should be a reasonable
++   *     approximation. Should be a positive, non-zero value if the returned status is Status::OK,
++   *     and set to 0 otherwise.
++   */
++  perform_1_2(Effect effect, EffectStrength strength)
++          generates (Status status, uint32_t lengthMs);
++};
+diff --git a/vibrator/1.2/types.hal b/vibrator/1.2/types.hal
+new file mode 100644
+index 0000000000000000000000000000000000000000..7604f2cea07c50db9ff29c35f634d4447e52abb7
+--- /dev/null
++++ b/vibrator/1.2/types.hal
+@@ -0,0 +1,64 @@
++/*
++ * Copyright (C) 2018 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package android.hardware.vibrator@1.2;
++
++import @1.1::Effect_1_1;
++
++// Note that while the previous type had a version suffix, this type does not. This is because the
++// versions are already present in the namespace and thus don't need to also be embedded in the
++// name of the type.
++enum Effect : @1.1::Effect_1_1 {
++     /**
++      * A thud effect.
++      *
++      * This effect should solid feeling bump, like the depression of a heavy mechanical button.
++      */
++     THUD,
++     /**
++      * A pop effect.
++      *
++      * A short, quick burst effect.
++      */
++     POP,
++
++     /**
++      * A heavy click effect.
++      *
++      * This should produce a sharp striking sensation, like a click but stronger.
++      */
++     HEAVY_CLICK,
++
++     /**
++      * Ringtone patterns. They may correspond with the device's ringtone audio, or may just be a
++      * pattern that can be played as a ringtone with any audio, depending on the device.
++      */
++     RINGTONE_1,
++     RINGTONE_2,
++     RINGTONE_3,
++     RINGTONE_4,
++     RINGTONE_5,
++     RINGTONE_6,
++     RINGTONE_7,
++     RINGTONE_8,
++     RINGTONE_9,
++     RINGTONE_10,
++     RINGTONE_11,
++     RINGTONE_12,
++     RINGTONE_13,
++     RINGTONE_14,
++     RINGTONE_15,
++};
+diff --git a/vibrator/1.3/Android.bp b/vibrator/1.3/Android.bp
+new file mode 100644
+index 0000000000000000000000000000000000000000..124f5d18342aaefce304b4b5d2d70fa114994896
+--- /dev/null
++++ b/vibrator/1.3/Android.bp
+@@ -0,0 +1,26 @@
++// This file is autogenerated by hidl-gen -Landroidbp.
++
++package {
++    // See: http://go/android-license-faq
++    // A large-scale-change added 'default_applicable_licenses' to import
++    // all of the 'license_kinds' from "hardware_interfaces_license"
++    // to get the below license kinds:
++    //   SPDX-license-identifier-Apache-2.0
++    default_applicable_licenses: ["hardware_interfaces_license"],
++}
++
++hidl_interface {
++    name: "android.hardware.vibrator@1.3",
++    root: "android.hardware",
++    srcs: [
++        "types.hal",
++        "IVibrator.hal",
++    ],
++    interfaces: [
++        "android.hardware.vibrator@1.0",
++        "android.hardware.vibrator@1.1",
++        "android.hardware.vibrator@1.2",
++        "android.hidl.base@1.0",
++    ],
++    gen_java: true,
++}
+diff --git a/vibrator/1.3/IVibrator.hal b/vibrator/1.3/IVibrator.hal
+new file mode 100644
+index 0000000000000000000000000000000000000000..1c870ee4cdb091a468c0c4ba7a9a1697c303612d
+--- /dev/null
++++ b/vibrator/1.3/IVibrator.hal
+@@ -0,0 +1,59 @@
++/*
++ * Copyright (C) 2018 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package android.hardware.vibrator@1.3;
++
++import @1.0::EffectStrength;
++import @1.0::Status;
++import @1.2::IVibrator;
++
++interface IVibrator extends @1.2::IVibrator {
++  /**
++   * Returns whether the vibrator supports control through an alternate interface.
++   */
++  supportsExternalControl() generates (bool supports);
++
++  /**
++   * Enables/disables control override of vibrator to audio.
++   *
++   * When this API is set, the vibrator control should be ceded to audio system
++   * for haptic audio. While this is enabled, issuing of other commands to control
++   * the vibrator is unsupported and the resulting behavior is undefined. Amplitude
++   * control may or may not be supported and is reflected in the return value of
++   * supportsAmplitudeControl() while this is enabled. When this is disabled, the
++   * vibrator should resume to an off state.
++   *
++   * @param enabled Whether external control should be enabled or disabled.
++   * @return status Whether the command was successful or not. Must return
++   *                Status::UNSUPPORTED_OPERATION if external control is
++   *                not supported by the device.
++   */
++  setExternalControl(bool enabled) generates (Status status);
++
++  /**
++   * Fire off a predefined haptic event.
++   *
++   * @param event The type of haptic event to trigger.
++   * @return status Whether the effect was successfully performed or not. Must
++   *     return Status::UNSUPPORTED_OPERATION if the effect is not supported.
++   * @return lengthMs The length of time the event is expected to take in
++   *     milliseconds. This doesn't need to be perfectly accurate, but should be a reasonable
++   *     approximation. Should be a positive, non-zero value if the returned status is Status::OK,
++   *     and set to 0 otherwise.
++   */
++  perform_1_3(Effect effect, EffectStrength strength)
++          generates (Status status, uint32_t lengthMs);
++};
+diff --git a/vibrator/1.3/types.hal b/vibrator/1.3/types.hal
+new file mode 100644
+index 0000000000000000000000000000000000000000..ceb62a5f6629176d983d9a8a496caec376cd4c34
+--- /dev/null
++++ b/vibrator/1.3/types.hal
+@@ -0,0 +1,30 @@
++/*
++ * Copyright (C) 2019 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package android.hardware.vibrator@1.3;
++
++import @1.2::Effect;
++
++enum Effect : @1.2::Effect {
++     /**
++      * A soft tick effect meant to be played as a texture.
++      *
++      * A soft, short sensation like the tick of a clock. Unlike regular effects, texture effects
++      * are expected to be played multiple times in quick succession, replicating a specific
++      * texture to the user as a form of haptic feedback.
++      */
++     TEXTURE_TICK
++};
+diff --git a/vr/1.0/Android.bp b/vr/1.0/Android.bp
+new file mode 100644
+index 0000000000000000000000000000000000000000..27d2ea82875e9919f26df1d37ac7172e1e9b6a33
+--- /dev/null
++++ b/vr/1.0/Android.bp
+@@ -0,0 +1,22 @@
++// This file is autogenerated by hidl-gen -Landroidbp.
++
++package {
++    // See: http://go/android-license-faq
++    // A large-scale-change added 'default_applicable_licenses' to import
++    // all of the 'license_kinds' from "hardware_interfaces_license"
++    // to get the below license kinds:
++    //   SPDX-license-identifier-Apache-2.0
++    default_applicable_licenses: ["hardware_interfaces_license"],
++}
++
++hidl_interface {
++    name: "android.hardware.vr@1.0",
++    root: "android.hardware",
++    srcs: [
++        "IVr.hal",
++    ],
++    interfaces: [
++        "android.hidl.base@1.0",
++    ],
++    gen_java: true,
++}
+diff --git a/vr/1.0/IVr.hal b/vr/1.0/IVr.hal
+new file mode 100644
+index 0000000000000000000000000000000000000000..1f996e9e675984760ac0f3d1ae11145fb15697a5
+--- /dev/null
++++ b/vr/1.0/IVr.hal
+@@ -0,0 +1,41 @@
++/*
++ * Copyright (C) 2016 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package android.hardware.vr@1.0;
++
++interface IVr {
++  /**
++   * Convenience method to set up any state needed at runtime startup.  This is
++   * called once from the VrManagerService during its boot phase.
++   */
++  @callflow(next={"*"})
++  @entry
++  @exit
++  init();
++
++  /**
++   * Set the VR mode state.  Possible states of the enabled parameter are:
++   * false - VR mode is disabled, turn off all VR-specific settings.
++   * true - VR mode is enabled, turn on all VR-specific settings.
++   *
++   * This must be called whenever the the Android system enters or leaves VR
++   * mode. This will typically occur when the user switches to or from a VR
++   * application that is doing stereoscopic rendering.
++   */
++  @callflow(next={"*"})
++  @exit
++  setVrMode(bool enabled);
++};
+diff --git a/wifi/aidl/default/wifi_chip.cpp b/wifi/aidl/default/wifi_chip.cpp
+index 7df168e3658acd09ecb7b6c7f5aaef7783807862..14a4ce2a2db305ca92f3b625be90e1217ac825d9 100644
+--- a/wifi/aidl/default/wifi_chip.cpp
++++ b/wifi/aidl/default/wifi_chip.cpp
+@@ -18,6 +18,7 @@
+ 
+ #include <android-base/logging.h>
+ #include <android-base/unique_fd.h>
++#include <algorithm>
+ #include <cutils/properties.h>
+ #include <fcntl.h>
+ #include <hardware_legacy/wifi_hal.h>
+@@ -253,6 +254,18 @@ WifiChip::WifiChip(int32_t chip_id, bool is_primary,
+ void WifiChip::retrieveDynamicIfaceCombination() {
+     if (using_dynamic_iface_combination_) return;
+ 
++    // V1 mode IDs also select STA/AP firmware. Replacing them with unified V3
++    // combinations skips WifiModeController::changeFirmwareMode on the next
++    // configuration and invalidates the already configured legacy mode ID.
++    // A matrix queried in one firmware mode cannot replace this mode contract.
++    if (std::any_of(modes_.begin(), modes_.end(), [](const IWifiChip::ChipMode& mode) {
++            return mode.id == feature_flags::chip_mode_ids::kV1Sta ||
++                   mode.id == feature_flags::chip_mode_ids::kV1Ap;
++        })) {
++        LOG(INFO) << "Preserving legacy firmware-switch chip modes";
++        return;
++    }
++
+     legacy_hal::wifi_iface_concurrency_matrix legacy_matrix;
+     legacy_hal::wifi_error legacy_status;
+ 

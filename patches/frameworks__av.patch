@@ -1,0 +1,250 @@
+diff --git a/media/module/mpeg2ts/ESQueue.cpp b/media/module/mpeg2ts/ESQueue.cpp
+index 2dc7b0a597e6657af36bbfeda746a51c92a2427f..a26b7af7469a274de5c18e6a2b7f05921df7705b 100644
+--- a/media/module/mpeg2ts/ESQueue.cpp
++++ b/media/module/mpeg2ts/ESQueue.cpp
+@@ -25,6 +25,7 @@
+ #include <media/stagefright/foundation/ABuffer.h>
+ #include <media/stagefright/foundation/AMessage.h>
+ #include <media/stagefright/foundation/ByteUtils.h>
++#include <media/stagefright/foundation/ColorUtils.h>
+ #include <media/stagefright/foundation/avc_utils.h>
+ #include <media/stagefright/MediaErrors.h>
+ #include <media/stagefright/MediaDefs.h>
+@@ -2266,9 +2267,11 @@ sp<ABuffer> ElementaryStreamQueue::dequeueAccessUnitMPEGVideo() {
+     Vector<size_t> userDataPositions;
+ 
+     bool sawPictureStart = false;
+-    int pprevStartCode = -1;
+-    int prevStartCode = -1;
+     int currentStartCode = -1;
++    bool collectingSequenceHeader = false;
++    bool hasSequenceColor = false;
++    ColorAspects sequenceColor{};
++    size_t firstUserDataOffset = SIZE_MAX;
+     bool gopFound = false;
+     bool isClosedGop = false;
+     bool brokenLink = false;
+@@ -2280,8 +2283,6 @@ sp<ABuffer> ElementaryStreamQueue::dequeueAccessUnitMPEGVideo() {
+             continue;
+         }
+ 
+-        pprevStartCode = prevStartCode;
+-        prevStartCode = currentStartCode;
+         currentStartCode = data[offset + 3];
+ 
+         if (currentStartCode == 0xb3 && mFormat == NULL) {
+@@ -2290,11 +2291,33 @@ sp<ABuffer> ElementaryStreamQueue::dequeueAccessUnitMPEGVideo() {
+             (void)fetchTimestamp(offset);
+             offset = 0;
+             mBuffer->setRange(0, size);
++            collectingSequenceHeader = true;
++            hasSequenceColor = false;
++            firstUserDataOffset = SIZE_MAX;
+         }
+ 
+-        if ((prevStartCode == 0xb3 && currentStartCode != 0xb5)
+-                || (pprevStartCode == 0xb3 && prevStartCode == 0xb5)) {
+-            // seqHeader without/with extension
++        if (collectingSequenceHeader && currentStartCode == 0xb2
++                && firstUserDataOffset == SIZE_MAX) {
++            firstUserDataOffset = offset;
++        }
++
++        if (collectingSequenceHeader && currentStartCode == 0xb5
++                && offset + 12 <= size && (data[offset + 4] >> 4) == 2
++                && (data[offset + 4] & 1) != 0) {
++            // MPEG-2 sequence_display_extension: its first byte contains the
++            // extension id, video format and colour_description bit. The
++            // following three bytes are ISO primaries, transfer and matrix.
++            ColorUtils::convertIsoColorAspectsToCodecAspects(
++                    data[offset + 5], data[offset + 6], data[offset + 7],
++                    false /* MPEG-2 uses limited range */, sequenceColor);
++            hasSequenceColor = true;
++        }
++
++        if (collectingSequenceHeader && currentStartCode != 0xb3
++                && currentStartCode != 0xb5 && currentStartCode != 0xb2) {
++            // Look through sequence extensions and user data before exposing
++            // the initial format. Keep user data in the first access unit so
++            // that captions retain their timestamp and mpeg-user-data entry.
+ 
+             if (mFormat == NULL) {
+                 if (size < 7u) {
+@@ -2312,19 +2335,27 @@ sp<ABuffer> ElementaryStreamQueue::dequeueAccessUnitMPEGVideo() {
+                 mFormat->setCString(kKeyMIMEType, MEDIA_MIMETYPE_VIDEO_MPEG2);
+                 mFormat->setInt32(kKeyWidth, width);
+                 mFormat->setInt32(kKeyHeight, height);
++                if (hasSequenceColor) {
++                    mFormat->setInt32(kKeyColorPrimaries, sequenceColor.mPrimaries);
++                    mFormat->setInt32(kKeyTransferFunction, sequenceColor.mTransfer);
++                    mFormat->setInt32(kKeyColorMatrix, sequenceColor.mMatrixCoeffs);
++                    mFormat->setInt32(kKeyColorRange, sequenceColor.mRange);
++                }
+ 
+                 ALOGI("found MPEG2 video codec config (%d x %d)", width, height);
+ 
+-                sp<ABuffer> csd = new ABuffer(offset);
+-                memcpy(csd->data(), data, offset);
++                const size_t configSize = firstUserDataOffset == SIZE_MAX
++                        ? offset : firstUserDataOffset;
++                sp<ABuffer> csd = new ABuffer(configSize);
++                memcpy(csd->data(), data, configSize);
+ 
+                 memmove(mBuffer->data(),
+-                        mBuffer->data() + offset,
+-                        mBuffer->size() - offset);
++                        mBuffer->data() + configSize,
++                        mBuffer->size() - configSize);
+ 
+-                mBuffer->setRange(0, mBuffer->size() - offset);
+-                size -= offset;
+-                (void)fetchTimestamp(offset);
++                mBuffer->setRange(0, mBuffer->size() - configSize);
++                size -= configSize;
++                (void)fetchTimestamp(configSize);
+                 offset = 0;
+ 
+                 // hexdump(csd->data(), csd->size());
+diff --git a/media/module/mpeg2ts/test/Android.bp b/media/module/mpeg2ts/test/Android.bp
+index cccefacc2898eba716ae04811182977df808e303..ae8a4388bdc775c9a1ce38e2246a1ec810e4bd7b 100644
+--- a/media/module/mpeg2ts/test/Android.bp
++++ b/media/module/mpeg2ts/test/Android.bp
+@@ -25,6 +25,32 @@ package {
+     ],
+ }
+ 
++cc_test_host {
++    name: "Gts3Mpeg2ColorHostTest",
++    srcs: ["Gts3Mpeg2ColorHostTest.cpp"],
++    static_libs: [
++        "libstagefright_mpeg2support",
++        "libstagefright_metadatautils",
++        "libstagefright_foundation",
++        "libmediandk_format",
++        "libmedia_ndkformatpriv",
++    ],
++    shared_libs: [
++        "android.hardware.cas.native@1.0",
++        "android.hidl.memory@1.0",
++        "libbinder",
++        "libcutils",
++        "libcrypto",
++        "libhidlbase",
++        "libhidlmemory",
++        "liblog",
++        "libutils",
++    ],
++    header_libs: ["libstagefright_headers", "libaudioclient_headers"],
++    cflags: ["-Wall", "-Werror"],
++    test_suites: ["general-tests"],
++}
++
+ cc_test{
+     name: "Mpeg2tsUnitTest",
+     gtest: true,
+diff --git a/media/module/mpeg2ts/test/Gts3Mpeg2ColorHostTest.cpp b/media/module/mpeg2ts/test/Gts3Mpeg2ColorHostTest.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..5a68e7a51b6d5b364a27e14314e51009c4499da3
+--- /dev/null
++++ b/media/module/mpeg2ts/test/Gts3Mpeg2ColorHostTest.cpp
+@@ -0,0 +1,100 @@
++/* Copyright (C) 2026 The Android Open Source Project
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ * http://www.apache.org/licenses/LICENSE-2.0
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++#include <gtest/gtest.h>
++#include <media/stagefright/MetaData.h>
++#include <media/stagefright/foundation/ABuffer.h>
++#include <media/stagefright/foundation/AMessage.h>
++#include <media/stagefright/foundation/ColorUtils.h>
++#include <mpeg2ts/ESQueue.h>
++#include <vector>
++#include <cstring>
++
++using namespace android;
++
++static std::vector<uint8_t> header(bool description, bool userData = false,
++                                   uint8_t iso = 1, bool extensions = true) {
++    std::vector<uint8_t> bytes = {0, 0, 1, 0xb3, 0x2d, 0x01, 0xe0, 0x13, 0x20, 0, 0x60, 0};
++    if (extensions) {
++        const std::vector<uint8_t> sequence = {0, 0, 1, 0xb5, 0x14, 0x8a, 0, 1, 0, 0};
++        bytes.insert(bytes.end(), sequence.begin(), sequence.end());
++        if (userData) {
++            const std::vector<uint8_t> user = {0, 0, 1, 0xb2, 't', 'e', 's', 't'};
++            bytes.insert(bytes.end(), user.begin(), user.end());
++        }
++        std::vector<uint8_t> display = {0, 0, 1, 0xb5, uint8_t(description ? 0x2b : 0x2a)};
++        if (description) display.insert(display.end(), {iso, iso, iso});
++        display.insert(display.end(), {0x16, 0x84, 0x0f, 0});
++        bytes.insert(bytes.end(), display.begin(), display.end());
++    }
++    const std::vector<uint8_t> gop = {0, 0, 1, 0xb8, 0, 0, 0, 0x40};
++    bytes.insert(bytes.end(), gop.begin(), gop.end());
++    return bytes;
++}
++
++static void checkFormat(ElementaryStreamQueue& queue, bool description, uint8_t iso = 1) {
++    auto format = queue.getFormat();
++    ASSERT_NE(format, nullptr);
++    int32_t value = 0;
++    ASSERT_TRUE(format->findInt32(kKeyWidth, &value));
++    EXPECT_EQ(value, 720);
++    ASSERT_TRUE(format->findInt32(kKeyHeight, &value));
++    EXPECT_EQ(value, 480);
++    const uint32_t keys[] = {kKeyColorPrimaries, kKeyTransferFunction, kKeyColorMatrix, kKeyColorRange};
++    ColorAspects expected{};
++    ColorUtils::convertIsoColorAspectsToCodecAspects(iso, iso, iso, false, expected);
++    const int32_t values[] = {static_cast<int32_t>(expected.mPrimaries),
++                             static_cast<int32_t>(expected.mTransfer),
++                             static_cast<int32_t>(expected.mMatrixCoeffs),
++                             static_cast<int32_t>(expected.mRange)};
++    for (size_t i = 0; i < 4; ++i) {
++        EXPECT_EQ(format->findInt32(keys[i], &value), description);
++        if (description) EXPECT_EQ(value, values[i]);
++    }
++}
++
++static void checkSplits(bool description, bool userData, uint8_t iso, bool extensions = true) {
++    auto bytes = header(description, userData, iso, extensions);
++    for (size_t split = 4; split < bytes.size(); ++split) {
++        SCOPED_TRACE(split);
++        ElementaryStreamQueue queue(ElementaryStreamQueue::MPEG_VIDEO);
++        ASSERT_EQ(queue.appendData(bytes.data(), split, 0), OK);
++        (void)queue.dequeueAccessUnit();
++        ASSERT_EQ(queue.appendData(bytes.data() + split, bytes.size() - split, 0), OK);
++        (void)queue.dequeueAccessUnit();
++        checkFormat(queue, description, iso);
++    }
++}
++
++TEST(Mpeg2Color, Bt709EverySplit) { checkSplits(true, false, 1); }
++TEST(Mpeg2Color, Bt601EverySplit) { checkSplits(true, false, 6); }
++TEST(Mpeg2Color, AbsentDescriptionEverySplit) { checkSplits(false, false, 1); }
++TEST(Mpeg2Color, UserDataBeforeDisplayExtension) { checkSplits(true, true, 1); }
++TEST(Mpeg2Color, Mpeg1WithoutExtensions) { checkSplits(false, false, 1, false); }
++
++TEST(Mpeg2Color, InitialUserDataStaysInFirstAccessUnit) {
++    auto bytes = header(true, true);
++    const std::vector<uint8_t> pictures = {0, 0, 1, 0, 0, 8, 0, 0, 0, 0, 1, 0, 0, 8, 0, 0};
++    bytes.insert(bytes.end(), pictures.begin(), pictures.end());
++    ElementaryStreamQueue queue(ElementaryStreamQueue::MPEG_VIDEO);
++    ASSERT_EQ(queue.appendData(bytes.data(), bytes.size(), 0), OK);
++    (void)queue.dequeueAccessUnit();
++    auto unit = queue.dequeueAccessUnit();
++    ASSERT_NE(unit, nullptr);
++    ASSERT_GE(unit->size(), 8u);
++    EXPECT_EQ(memcmp(unit->data(), "\x00\x00\x01\xb2test", 8), 0);
++    sp<ABuffer> positions;
++    ASSERT_TRUE(unit->meta()->findBuffer("mpeg-user-data", &positions));
++    ASSERT_EQ(positions->size(), sizeof(size_t));
++    size_t position = 1;
++    memcpy(&position, positions->data(), sizeof(position));
++    EXPECT_EQ(position, 0u);
++}

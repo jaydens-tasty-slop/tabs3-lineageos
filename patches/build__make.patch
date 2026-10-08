@@ -1,0 +1,78 @@
+diff --git a/core/Makefile b/core/Makefile
+index b8c418940c5d580d87c501e9485389355e6533ba..3ca3b3067ae28dfb700f7b9766304b4b5bb20ef8 100644
+--- a/core/Makefile
++++ b/core/Makefile
+@@ -6451,7 +6451,7 @@ define copy-image-and-generate-map
+     $(if $(filter $(_supported_fs_for_map_file_generator),$(_map_fs_type))$(_no_map_file),\
+       mkdir -p $(2); \
+       cp $(1) $(2); \
+-      $(if $(3),$(HOST_OUT_EXECUTABLES)/map_file_generator $(1) $(2)/$(3).map)) \
++      $(if $(3),$(HOST_OUT_EXECUTABLES)/map_file_generator $(1) $(2)/$(3).map $(if $(filter false,$(AB_OTA_UPDATER)),--non-ab))) \
+     $(eval _img :=) \
+     $(eval _map_fs_type :=) \
+     $(eval _no_map_file :=) \
+diff --git a/target/product/updatable_apex.mk b/target/product/updatable_apex.mk
+index 8b3bc9a7e50b25dc52fb1bf02fc471c35c0f69bb..244f698b48cab01f7b6d7321d81574443af24d61 100644
+--- a/target/product/updatable_apex.mk
++++ b/target/product/updatable_apex.mk
+@@ -16,5 +16,11 @@
+ 
+ # com.android.apex.cts.shim.v1_prebuilt overrides CtsShimPrebuilt
+ # and CtsShimPrivPrebuilt since they are packaged inside the APEX.
++# This experimental Tab S3 product keeps APEX ext4 features within the legacy
++# kernel's declared masks. The upstream prebuilt shim has shared blocks and
++# provides only CTS test fixtures, not runtime functionality. Leave the real
++# updatable APEX modules and their signature/verity checks enabled.
++ifneq ($(TARGET_PRODUCT),lineage_gts3lwifi)
+ PRODUCT_PACKAGES += com.android.apex.cts.shim.v1_prebuilt
++endif
+ PRODUCT_SYSTEM_PROPERTIES += ro.apex.updatable=true
+diff --git a/tools/fs_config/Android.bp b/tools/fs_config/Android.bp
+index a5b6fd0a4c8f33fef3abe001849b360b71ee1b0c..44f5ec1e7fdbd7ab6e9c7bb695900894912b13fb 100644
+--- a/tools/fs_config/Android.bp
++++ b/tools/fs_config/Android.bp
+@@ -277,14 +277,21 @@ genrule_defaults {
+     out: ["out"],
+ }
+ 
++// Vendor is embedded in System on devices without a separate vendor image.
++// In that layout no vendor fs_config module is installed, so System must keep
++// its entries. libcutils fs_config resolves vendor/ and system/vendor/ aliases.
+ // system
+ genrule {
+     name: "fs_config_dirs_system_gen",
+     defaults: ["fs_config_defaults"],
+-    cmd: fs_config_cmd_dirs +
+-        "--partition system " +
+-        "--all-partitions vendor,oem,odm,vendor_dlkm,odm_dlkm,system_dlkm " +
+-        "$(locations :target_fs_config_gen)",
++    cmd: select(soong_config_variable("fs_config", "vendor"), {
++        true: fs_config_cmd_dirs + "--partition system " +
++            "--all-partitions vendor,oem,odm,vendor_dlkm,odm_dlkm,system_dlkm " +
++            "$(locations :target_fs_config_gen)",
++        default: fs_config_cmd_dirs + "--partition system " +
++            "--all-partitions oem,odm,vendor_dlkm,odm_dlkm,system_dlkm " +
++            "$(locations :target_fs_config_gen)",
++    }),
+ }
+ 
+ prebuilt_etc {
+@@ -296,10 +303,14 @@ prebuilt_etc {
+ genrule {
+     name: "fs_config_files_system_gen",
+     defaults: ["fs_config_defaults"],
+-    cmd: fs_config_cmd_files +
+-        "--partition system " +
+-        "--all-partitions vendor,oem,odm,vendor_dlkm,odm_dlkm,system_dlkm " +
+-        "$(locations :target_fs_config_gen)",
++    cmd: select(soong_config_variable("fs_config", "vendor"), {
++        true: fs_config_cmd_files + "--partition system " +
++            "--all-partitions vendor,oem,odm,vendor_dlkm,odm_dlkm,system_dlkm " +
++            "$(locations :target_fs_config_gen)",
++        default: fs_config_cmd_files + "--partition system " +
++            "--all-partitions oem,odm,vendor_dlkm,odm_dlkm,system_dlkm " +
++            "$(locations :target_fs_config_gen)",
++    }),
+ }
+ 
+ prebuilt_etc {

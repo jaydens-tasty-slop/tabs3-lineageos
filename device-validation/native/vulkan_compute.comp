@@ -1,0 +1,8 @@
+#version 450
+layout(local_size_x=64) in;
+layout(set=0,binding=0,std430) buffer Results { uint values[]; };
+layout(push_constant) uniform Input { uint round; } inputValue;
+void main() {
+    uint index=gl_GlobalInvocationID.x;
+    if(index<128) values[index]=(index*17u)^(0xa5a50000u+inputValue.round);
+}

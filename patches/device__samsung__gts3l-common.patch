@@ -1,0 +1,2247 @@
+diff --git a/Android.mk b/Android.mk
+index 61c207424feb57887f0adcfe2b72660e5f7f19ea..1cc3101f84cd0e23dbb32612aaf84667e559a456 100644
+--- a/Android.mk
++++ b/Android.mk
+@@ -31,28 +31,7 @@ include $(call all-makefiles-under,$(LOCAL_PATH))
+ 
+ include $(CLEAR_VARS)
+ 
+-# A/B builds require us to create the mount points at compile time.
+-# Just creating it for all cases since it does not hurt.
+-FIRMWARE_MODEM_MOUNT_POINT := $(TARGET_OUT_VENDOR)/firmware-modem
+-FIRMWARE_MOUNT_POINT := $(TARGET_OUT_VENDOR)/firmware_mnt
+-DSP_MOUNT_POINT := $(TARGET_OUT_VENDOR)/dsp
+-
+-$(FIRMWARE_MODEM_MOUNT_POINT):
+-	@echo "Creating $(FIRMWARE_MODEM_MOUNT_POINT)"
+-	@mkdir -p $(TARGET_OUT_VENDOR)/firmware-modem
+-
+-$(FIRMWARE_MOUNT_POINT):
+-	@echo "Creating $(FIRMWARE_MOUNT_POINT)"
+-	@mkdir -p $(TARGET_OUT_VENDOR)/firmware_mnt
+-
+-$(DSP_MOUNT_POINT):
+-	@echo "Creating $(DSP_MOUNT_POINT)"
+-	@mkdir -p $(TARGET_OUT_VENDOR)/dsp
+-
+-ALL_DEFAULT_INSTALLED_MODULES += \
+-	$(FIRMWARE_MODEM_MOUNT_POINT) \
+-	$(FIRMWARE_MOUNT_POINT) \
+-	$(DSP_MOUNT_POINT)
++# Firmware and DSP mount points are retained by marker files in gts3l.mk.
+ 
+ IMS_LIBS := libimscamera_jni.so libimsmedia_jni.so
+ IMS_SYMLINKS := $(addprefix $(TARGET_OUT_SYSTEM_EXT_APPS_PRIVILEGED)/ims/lib/arm64/,$(notdir $(IMS_LIBS)))
+@@ -64,60 +43,7 @@ $(IMS_SYMLINKS): $(LOCAL_INSTALLED_MODULE)
+ 
+ ALL_DEFAULT_INSTALLED_MODULES += $(IMS_SYMLINKS)
+ 
+-RFS_MSM_ADSP_SYMLINKS := $(TARGET_OUT_VENDOR)/rfs/msm/adsp/
+-$(RFS_MSM_ADSP_SYMLINKS): $(LOCAL_INSTALLED_MODULE)
+-	@echo "Creating RFS MSM ADSP folder structure: $@"
+-	@rm -rf $@/*
+-	@mkdir -p $(dir $@)/readonly/vendor
+-	$(hide) ln -sf /data/vendor/tombstones/rfs/lpass $@/ramdumps
+-	$(hide) ln -sf /mnt/vendor/persist/rfs/msm/adsp $@/readwrite
+-	$(hide) ln -sf /mnt/vendor/persist/rfs/shared $@/shared
+-	$(hide) ln -sf /mnt/vendor/persist/hlos_rfs/shared $@/hlos
+-	$(hide) ln -sf /vendor/firmware_mnt $@/readonly/firmware
+-	$(hide) ln -sf /vendor/firmware $@/readonly/vendor/firmware
+-
+-RFS_MSM_CDSP_SYMLINKS := $(TARGET_OUT_VENDOR)/rfs/msm/cdsp/
+-$(RFS_MSM_CDSP_SYMLINKS): $(LOCAL_INSTALLED_MODULE)
+-	@echo "Creating RFS MSM CDSP folder structure: $@"
+-	@rm -rf $@/*
+-	@mkdir -p $(dir $@)/readonly/vendor
+-	$(hide) ln -sf /data/vendor/tombstones/rfs/cdsp $@/ramdumps
+-	$(hide) ln -sf /mnt/vendor/persist/rfs/msm/cdsp $@/readwrite
+-	$(hide) ln -sf /mnt/vendor/persist/rfs/shared $@/shared
+-	$(hide) ln -sf /mnt/vendor/persist/hlos_rfs/shared $@/hlos
+-	$(hide) ln -sf /vendor/firmware_mnt $@/readonly/firmware
+-	$(hide) ln -sf /vendor/firmware $@/readonly/vendor/firmware
+-
+-RFS_MSM_MPSS_SYMLINKS := $(TARGET_OUT_VENDOR)/rfs/msm/mpss/
+-$(RFS_MSM_MPSS_SYMLINKS): $(LOCAL_INSTALLED_MODULE)
+-	@echo "Creating RFS MSM MPSS folder structure: $@"
+-	@rm -rf $@/*
+-	@mkdir -p $(dir $@)/readonly/vendor
+-	$(hide) ln -sf /data/vendor/tombstones/rfs/modem $@/ramdumps
+-	$(hide) ln -sf /mnt/vendor/persist/rfs/msm/mpss $@/readwrite
+-	$(hide) ln -sf /mnt/vendor/persist/rfs/shared $@/shared
+-	$(hide) ln -sf /mnt/vendor/persist/hlos_rfs/shared $@/hlos
+-	$(hide) ln -sf /vendor/firmware-modem $@/readonly/firmware
+-	$(hide) ln -sf /vendor/firmware $@/readonly/vendor/firmware
+-
+-RFS_MSM_SLPI_SYMLINKS := $(TARGET_OUT_VENDOR)/rfs/msm/slpi/
+-$(RFS_MSM_SLPI_SYMLINKS): $(LOCAL_INSTALLED_MODULE)
+-	@echo "Creating RFS MSM SLPI folder structure: $@"
+-	@rm -rf $@/*
+-	@mkdir -p $(dir $@)/readonly/vendor
+-	$(hide) ln -sf /data/vendor/tombstones/rfs/slpi $@/ramdumps
+-	$(hide) ln -sf /mnt/vendor/persist/rfs/msm/slpi $@/readwrite
+-	$(hide) ln -sf /mnt/vendor/persist/rfs/shared $@/shared
+-	$(hide) ln -sf /mnt/vendor/persist/hlos_rfs/shared $@/hlos
+-	$(hide) ln -sf /vendor/firmware_mnt $@/readonly/firmware
+-	$(hide) ln -sf /vendor/firmware $@/readonly/vendor/firmware
+-
+-ALL_DEFAULT_INSTALLED_MODULES += \
+-	$(RFS_MSM_ADSP_SYMLINKS) \
+-	$(RFS_MSM_CDSP_SYMLINKS) \
+-	$(RFS_MSM_MPSS_SYMLINKS) \
+-	$(RFS_MSM_SLPI_SYMLINKS)
+-
++# RFS links use the current Qualcomm install_symlink modules.
+ WCNSS_INI_SYMLINK := $(TARGET_OUT_VENDOR)/firmware/wlan/qca_cld/WCNSS_qcom_cfg.ini
+ $(WCNSS_INI_SYMLINK): $(LOCAL_INSTALLED_MODULE)
+ 	@echo "WCNSS config ini link: $@"
+diff --git a/BoardConfigCommon.mk b/BoardConfigCommon.mk
+index aa16aad26e9ed3f2a4d88d0cf18aae8af907cd6a..b203f71e0146babdbde63c280630dbc8cec269dc 100755
+--- a/BoardConfigCommon.mk
++++ b/BoardConfigCommon.mk
+@@ -24,9 +24,6 @@ COMMON_PATH := device/samsung/gts3l-common
+ # Include path
+ TARGET_SPECIFIC_HEADER_PATH := $(COMMON_PATH)/include
+ 
+-# APEX
+-OVERRIDE_TARGET_FLATTEN_APEX := true
+-
+ # Architecture
+ TARGET_ARCH := arm64
+ TARGET_ARCH_VARIANT := armv8-a
+@@ -62,7 +59,7 @@ BOARD_KERNEL_IMAGE_NAME := Image.gz-dtb
+ BOARD_KERNEL_PAGESIZE := 4096
+ BOARD_MKBOOTIMG_ARGS := --ramdisk_offset 0x02200000 --tags_offset 0x02000000
+ BOARD_CUSTOM_BOOTIMG := true
+-BOARD_CUSTOM_BOOTIMG_MK := hardware/samsung/mkbootimg.mk
++BOARD_CUSTOM_BOOTIMG_MK := $(COMMON_PATH)/bootimg.mk
+ TARGET_KERNEL_ARCH := arm64
+ TARGET_KERNEL_CLANG_COMPILE := false
+ TARGET_KERNEL_LLVM_BINUTILS := false
+@@ -70,21 +67,35 @@ TARGET_KERNEL_VERSION := 3.18
+ TARGET_KERNEL_SOURCE := kernel/samsung/msm8996
+ TARGET_COMPILE_WITH_MSM_KERNEL := true
+ TARGET_KERNEL_ADDITIONAL_FLAGS := \
+-    HOSTCFLAGS="-fuse-ld=lld -Wno-unused-command-line-argument" \
+-    KBUILD_BUILD_USER=$(BUILD_USERNAME) KBUILD_BUILD_HOST=$(BUILD_HOSTNAME)
++    -j8 \
++    HOSTCC="/usr/bin/gcc -B/usr/bin/" HOSTCXX="/usr/bin/g++ -B/usr/bin/" \
++    HOSTAR=/usr/bin/ar HOSTLD=/usr/bin/ld \
++    HOSTCFLAGS="-O2 -std=gnu89" HOSTLDFLAGS="" \
++    KBUILD_BUILD_USER=rom-builder KBUILD_BUILD_HOST=podman
+ 
+ # Platform
+ TARGET_BOARD_PLATFORM := msm8996
+ 
++# Keep the original modem RFS firmware path with Qualcomm's current link modules.
++$(call soong_config_set,rfs,mpss_firmware_symlink_target,firmware_modem)
++
++# Keep APEX ext4 payloads within the kernel's declared feature masks.
++$(call soong_config_set_bool,gts3l_legacy,apex_no_shared_blocks,true)
++
+ # ANT+
+ BOARD_ANT_WIRELESS_DEVICE := "qualcomm-hidl"
+ 
+ # Audio
++TARGET_USES_QCOM_MM_AUDIO := true
+ AUDIO_FEATURE_ENABLED_AUDIOSPHERE := true
+ AUDIO_FEATURE_ENABLED_DS2_DOLBY_DAP := true
+ AUDIO_FEATURE_ENABLED_INSTANCE_ID := true
+ AUDIO_FEATURE_ENABLED_PROXY_DEVICE := true
+ USE_CUSTOM_AUDIO_POLICY := 1
++# The Samsung primary HAL requires the version-0.1, 48-byte offload prefix.
++$(call soong_config_set_bool,android_hardware_audio,legacy_offload_info_v1,true)
++# The Android 9 primary blob predates input-stream microphone steering fields.
++$(call soong_config_set_bool,android_hardware_audio,legacy_input_stream_v9,true)
+ 
+ # Bluetooth
+ BOARD_HAS_QCA_BT_ROME := true
+@@ -130,14 +141,22 @@ TARGET_FS_CONFIG_GEN := $(COMMON_PATH)/config.fs
+ PRODUCT_ENFORCE_VINTF_MANIFEST_OVERRIDE := true
+ DEVICE_MANIFEST_FILE := $(COMMON_PATH)/manifest.xml
+ DEVICE_MATRIX_FILE := $(COMMON_PATH)/compatibility_matrix.xml
++DEVICE_FRAMEWORK_COMPATIBILITY_MATRIX_FILE := $(COMMON_PATH)/framework_compatibility_matrix.xml
+ 
+ # Partitions
++# Android 16 defaults to A/B unless the legacy product explicitly opts out.
++AB_OTA_UPDATER := false
++# Reuse the filtered, audited System image for OTA packaging. Rebuilding it
++# from the target-files directory also collects generated recovery resources
++# and incidental outputs that were not declared product packages.
++COPY_IMAGES_FOR_TARGET_FILES_ZIP := true
+ BOARD_BOOTIMAGE_PARTITION_SIZE := 79691776
+ BOARD_CACHEIMAGE_PARTITION_SIZE := 209715200
+ BOARD_CACHEIMAGE_FILE_SYSTEM_TYPE := f2fs
+ BOARD_PERSISTIMAGE_PARTITION_SIZE := 33554432
+ BOARD_RECOVERYIMAGE_PARTITION_SIZE := 79691776
+ BOARD_SYSTEMIMAGE_PARTITION_SIZE := 4194304000
++BOARD_SYSTEMIMAGE_FILE_SYSTEM_TYPE := ext4
+ BOARD_USERDATAIMAGE_PARTITION_SIZE := 26226965504
+ BOARD_USERDATAIMAGE_FILE_SYSTEM_TYPE := f2fs
+ BOARD_FLASH_BLOCK_SIZE := 131072 # (BOARD_KERNEL_PAGESIZE * 64)
+@@ -148,7 +167,9 @@ BOARD_ROOT_EXTRA_SYMLINKS := \
+     /mnt/vendor/persist:/persist
+ 
+ # Root
+-BOARD_ROOT_EXTRA_FOLDERS := efs
++# There is no metadata partition on this device. Init binds a Cache directory
++# here before Android's post-fs aconfig initialization.
++BOARD_ROOT_EXTRA_FOLDERS := efs metadata
+ 
+ # Init
+ TARGET_PLATFORM_DEVICE_BASE := "/devices/soc/"
+@@ -168,7 +189,7 @@ BOARD_USES_QCOM_HARDWARE := true
+ 
+ # Recovery
+ TARGET_RECOVERY_FSTAB := $(COMMON_PATH)/rootdir/etc/fstab.qcom
+-TARGET_RECOVERY_PIXEL_FORMAT := "BGRA_8888"
++TARGET_RECOVERY_PIXEL_FORMAT := BGRA_8888
+ TARGET_USERIMAGES_USE_EXT4 := true
+ TARGET_USERIMAGES_USE_F2FS := true
+ 
+@@ -187,10 +208,6 @@ TARGET_LD_SHIM_LIBS := \
+     /vendor/lib/hw/audio.primary.msm8996.so|libaudioprimary_shim.so \
+     /vendor/lib/hw/camera.msm8996.so|libcamera_metadata_helper.so
+ 
+-# Treble
+-PRODUCT_FULL_TREBLE_OVERRIDE := true
+-BOARD_VNDK_VERSION := current
+-
+ # Verity
+ # Only needed for signing
+ BOARD_AVB_ENABLE := false
+@@ -208,4 +225,6 @@ WIFI_DRIVER_FW_PATH_AP := "ap"
+ WIFI_DRIVER_FW_PATH_STA := "sta"
+ WIFI_DRIVER_FW_PATH_P2P := "p2p"
+ WIFI_HIDL_UNIFIED_SUPPLICANT_SERVICE_RC_ENTRY := true
++# Keep legacy STA/AP modes: this driver requires explicit firmware switching.
++# The AIDL HAL preserves those IDs when querying driver concurrency support.
+ WPA_SUPPLICANT_VERSION := VER_0_8_X
+diff --git a/audio/configs/audio_policy_configuration.xml b/audio/configs/audio_policy_configuration.xml
+index 931fbadd52595f769ddf86e4395533e78e96b5a3..9d4735937c632a686d2717862c6a12f8b1cfb038 100644
+--- a/audio/configs/audio_policy_configuration.xml
++++ b/audio/configs/audio_policy_configuration.xml
+@@ -21,6 +21,18 @@
+                              samplingRates="48000" channelMasks="AUDIO_CHANNEL_OUT_STEREO"/>
+                 </mixPort>
+ 
++                <!-- msm8996 DSP compressed playback; keep PCM as the general route. -->
++                <mixPort name="compressed-offload" role="source"
++                         flags="AUDIO_OUTPUT_FLAG_DIRECT|AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD|AUDIO_OUTPUT_FLAG_NON_BLOCKING"
++                         maxOpenCount="1" maxActiveCount="1">
++                    <profile name="" format="AUDIO_FORMAT_MP3"
++                             samplingRates="44100,48000"
++                             channelMasks="AUDIO_CHANNEL_OUT_MONO,AUDIO_CHANNEL_OUT_STEREO"/>
++                    <profile name="" format="AUDIO_FORMAT_AAC_LC"
++                             samplingRates="44100,48000"
++                             channelMasks="AUDIO_CHANNEL_OUT_MONO,AUDIO_CHANNEL_OUT_STEREO"/>
++                </mixPort>
++
+                 <!-- Capture(Input) Streams -->
+                 <mixPort name="primary-in" role="sink">
+                     <profile name="" format="AUDIO_FORMAT_PCM_16_BIT"
+@@ -87,11 +99,11 @@
+                 <route sink="Earpiece" type="mix"
+                        sources="primary-out"/>
+                 <route sink="Speaker" type="mix"
+-                       sources="primary-out"/>
++                       sources="primary-out,compressed-offload"/>
+                 <route sink="Wired Headset" type="mix"
+-                       sources="primary-out"/>
++                       sources="primary-out,compressed-offload"/>
+                 <route sink="Wired Headphone" type="mix"
+-                       sources="primary-out"/>
++                       sources="primary-out,compressed-offload"/>
+                 <route sink="Bt Sco" type="mix"
+                        sources="primary-out"/>
+                 <route sink="Bt Sco Headset" type="mix"
+diff --git a/bootimg.mk b/bootimg.mk
+new file mode 100644
+index 0000000000000000000000000000000000000000..a7281c1c3bc24c37ff7fb5a6f659a8886ee5764c
+--- /dev/null
++++ b/bootimg.mk
+@@ -0,0 +1,30 @@
++# Copyright (C) 2017 The LineageOS Project
++# Copyright (C) 2026 Tab S3 ROM Builder
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++# http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++# SM-T820 uses boot header v0 with appended device trees. Its Samsung
++# bootloader also expects the marker preserved by hardware/samsung on LOS 21.
++$(INSTALLED_BOOTIMAGE_TARGET): $(MKBOOTIMG) $(INTERNAL_BOOTIMAGE_FILES) $(BOOTIMAGE_EXTRA_DEPS) $(INSTALLED_KERNEL_TARGET) $(COMMON_PATH)/write_samsung_boot_id.py
++	$(call pretty,"Target Samsung boot image: $@")
++	$(hide) $(MKBOOTIMG) --kernel $(call bootimage-to-kernel,$@) $(INTERNAL_BOOTIMAGE_ARGS) $(INTERNAL_MKBOOTIMG_VERSION_ARGS) $(BOARD_MKBOOTIMG_ARGS) --output $@
++	$(hide) /usr/bin/python3 $(COMMON_PATH)/write_samsung_boot_id.py $@
++	$(hide) printf SEANDROIDENFORCE >> $@
++	$(hide) $(call assert-max-image-size,$@,$(BOARD_BOOTIMAGE_PARTITION_SIZE),raw)
++
++$(INSTALLED_RECOVERYIMAGE_TARGET): $(MKBOOTIMG) $(recovery_ramdisk) $(recovery_kernel) $(RECOVERYIMAGE_EXTRA_DEPS) $(COMMON_PATH)/write_samsung_boot_id.py
++	$(call pretty,"Target Samsung recovery image: $@")
++	$(hide) $(MKBOOTIMG) $(INTERNAL_RECOVERYIMAGE_ARGS) $(INTERNAL_MKBOOTIMG_VERSION_ARGS) $(BOARD_MKBOOTIMG_ARGS) --output $@
++	$(hide) /usr/bin/python3 $(COMMON_PATH)/write_samsung_boot_id.py $@
++	$(hide) printf SEANDROIDENFORCE >> $@
++	$(hide) $(call assert-max-image-size,$@,$(BOARD_RECOVERYIMAGE_PARTITION_SIZE),raw)
+diff --git a/configs/apexd-recovery.rc b/configs/apexd-recovery.rc
+new file mode 100644
+index 0000000000000000000000000000000000000000..2afc3c309aa0acc9b532025044a69a29e1f27d7b
+--- /dev/null
++++ b/configs/apexd-recovery.rc
+@@ -0,0 +1,23 @@
++# Debug builds only. Preserve normal APEX startup and capabilities, but return
++# to TWRP on failure so logs can be collected over USB.+# Samsung's kernel selects recovery for any reboot target starting "recovery".
++# The suffix avoids Android init's BCB write: this tablet has no misc partition.
++
++service apexd /system/bin/apexd
++    override
++    interface aidl apexservice
++    class core
++    user root
++    group system
++    oneshot
++    disabled
++    reboot_on_failure reboot,recovery-no-bcb,apexd-failed
++    capabilities CHOWN DAC_OVERRIDE DAC_READ_SEARCH FOWNER SYS_ADMIN
++
++service apexd-bootstrap /system/bin/apexd --bootstrap
++    override
++    user root
++    group system
++    oneshot
++    disabled
++    reboot_on_failure reboot,recovery-no-bcb,bootstrap-apexd-failed
++    capabilities SYS_ADMIN
+diff --git a/configs/bringup-usb.rc b/configs/bringup-usb.rc
+new file mode 100644
+index 0000000000000000000000000000000000000000..0135be01ae347f4992ba9628e2e9e3f89ba0ab75
+--- /dev/null
++++ b/configs/bringup-usb.rc
+@@ -0,0 +1,7 @@
++# Enable authenticated USB ADB during this tablet's userdebug bring-up.
++# AdbService later reads this same preference. Property actions may run after
++# the queued boot event, so also select the live USB configuration explicitly.
++# Authentication and the existing authorized public keys remain required.
++on property:ro.persistent_properties.ready=true && property:ro.build.type=userdebug
++    setprop persist.sys.usb.config adb
++    setprop sys.usb.config adb
+diff --git a/configs/cgroups.json b/configs/cgroups.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..9fe919059eaf4247a6dbb80ceceb674206a8410e
+--- /dev/null
++++ b/configs/cgroups.json
+@@ -0,0 +1,12 @@
++{
++  "Cgroups": [
++    { "Controller": "blkio", "Path": "/dev/blkio", "Mode": "0775", "UID": "system", "GID": "system", "Optional": true },
++    { "Controller": "cpuacct", "Path": "/dev/cpuacct", "Mode": "0755", "UID": "system", "GID": "system" },
++    { "Controller": "memory", "Path": "/dev/memcg", "Mode": "0755", "UID": "system", "GID": "system" },
++    { "Controller": "freezer", "Path": "/dev/freezer", "Mode": "0755", "UID": "system", "GID": "system" }
++  ],
++  "Cgroups2": {
++    "Path": "/sys/fs/cgroup", "Mode": "0775", "UID": "system", "GID": "system",
++    "Optional": true, "Controllers": []
++  }
++}
+diff --git a/configs/firmware-mountpoint b/configs/firmware-mountpoint
+new file mode 100644
+index 0000000000000000000000000000000000000000..a93a1de4b53a31a4ddc226e233487f46a2c607fe
+--- /dev/null
++++ b/configs/firmware-mountpoint
+@@ -0,0 +1 @@
++This directory is a mount point for the tablet's existing firmware partition.
+diff --git a/configs/task_profiles.json b/configs/task_profiles.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..01aec7f36d02369b0884fa1c2185b2bd4419eaac
+--- /dev/null
++++ b/configs/task_profiles.json
+@@ -0,0 +1,11 @@
++{
++  "Attributes": [
++    { "Name": "CgroupProcs", "Controller": "cpuacct", "File": "cgroup.procs" }
++  ],
++  "Profiles": [
++    { "Name": "LowIoPriority", "Actions": [] },
++    { "Name": "NormalIoPriority", "Actions": [] },
++    { "Name": "HighIoPriority", "Actions": [] },
++    { "Name": "MaxIoPriority", "Actions": [] }
++  ]
++}
+diff --git a/extract-files.sh b/extract-files.sh
+index 92600a51af5f3e91488f9f0b9a0bd865a4297b68..cc3bf88a1bd5a62975a6c163f8c9d3a33130007d 100755
+--- a/extract-files.sh
++++ b/extract-files.sh
+@@ -81,6 +81,12 @@ function blob_fixup() {
+         ;;
+     vendor/lib/hw/audio.primary.msm8996.so)
+         "${PATCHELF}" --replace-needed "libcutils.so" "libprocessgroup.so" "${2}"
++        case "$("${PATCHELF}" --print-needed "${2}")" in
++            *libaudioprimary_shim.so*) ;;
++            *) "${PATCHELF}" --add-needed "libaudioprimary_shim.so" "${2}" ;;
++        esac
++        # patchelf can relocate PT_PHDR incorrectly for this ELF's nonzero base.
++        python3 "${MY_DIR}/fixup_elf_phdr.py" "${2}"
+         ;;
+     vendor/lib/hw/android.hardware.gnss@1.0-impl-qti.so)
+         "${PATCHELF}" --replace-needed "libcutils.so" "libprocessgroup.so" "${2}"
+diff --git a/fixup_elf_phdr.py b/fixup_elf_phdr.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..2d35504b8626120f787b2b7a31dc2ed6adda8cd2
+--- /dev/null
++++ b/fixup_elf_phdr.py
+@@ -0,0 +1,67 @@
++#!/usr/bin/env python3
++"""Correct patchelf's PT_PHDR address for a legacy ARM ELF with a nonzero base."""
++import argparse
++import pathlib
++import struct
++
++
++def inspect(data):
++    if data[:6] != b"\x7fELF\x01\x01" or len(data) < 52:
++        raise ValueError("Expected little-endian ELF32")
++    if struct.unpack_from("<HH", data, 16) != (3, 40):
++        raise ValueError("Expected ARM ET_DYN")
++    offset = struct.unpack_from("<I", data, 28)[0]
++    size, count = struct.unpack_from("<HH", data, 42)
++    if size != 32 or not 1 <= count <= 128 or offset + size*count > len(data):
++        raise ValueError("Invalid ELF program header table")
++    entries = [(offset+i*size, struct.unpack_from("<IIIIIIII", data, offset+i*size)) for i in range(count)]
++    phdrs = [(at, p) for at, p in entries if p[0] == 6]
++    loads = [p for at, p in entries if p[0] == 1]
++    if len(phdrs) != 1:
++        raise ValueError("Expected one PT_PHDR")
++    at, phdr = phdrs[0]
++    owners = [p for p in loads if p[1] <= offset and offset + count*size <= p[1]+p[4]]
++    if len(owners) != 1 or phdr[1] != offset or phdr[4] != count*size or phdr[5] != count*size:
++        raise ValueError("PT_PHDR table is not backed by exactly one LOAD segment")
++    address = owners[0][2] + offset - owners[0][1]
++    for p in loads:
++        if p[4] > p[5] or p[1]+p[4] > len(data) or (p[7] > 1 and p[1] % p[7] != p[2] % p[7]):
++            raise ValueError("Invalid LOAD mapping")
++    dynamic = [p for at, p in entries if p[0] == 2]
++    if len(dynamic) != 1 or not any(p[1] <= dynamic[0][1] and dynamic[0][1]+dynamic[0][4] <= p[1]+p[4]
++                                  and p[2]+dynamic[0][1]-p[1] == dynamic[0][2] for p in loads):
++        raise ValueError("PT_DYNAMIC is not backed by a LOAD segment")
++    return at, phdr, address
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("elf", type=pathlib.Path)
++    parser.add_argument("--check", action="store_true")
++    args = parser.parse_args()
++    path = args.elf
++    if not path.is_file() or path.is_symlink():
++        raise ValueError("A regular ELF file is required")
++    before = path.read_bytes()
++    at, phdr, address = inspect(before)
++    if args.check:
++        if phdr[2] != address or phdr[3] != address:
++            raise ValueError("PT_PHDR address disagrees with its actual LOAD mapping")
++        print("ELF PT_PHDR/PT_DYNAMIC mappings verified")
++        return
++    after = bytearray(before)
++    struct.pack_into("<II", after, at+8, address, address)
++    if after[:at+8] != before[:at+8] or after[at+16:] != before[at+16:]:
++        raise ValueError("Unexpected bytes changed")
++    _, corrected, expected = inspect(after)
++    if corrected[2] != expected or corrected[3] != expected:
++        raise ValueError("Corrected PT_PHDR did not verify")
++    if after != before:
++        path.write_bytes(after)
++        print("Corrected only PT_PHDR virtual/physical address fields: " + hex(phdr[2]) + " -> " + hex(address))
++    else:
++        print("ELF PT_PHDR already correct")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/framework_compatibility_matrix.xml b/framework_compatibility_matrix.xml
+new file mode 100644
+index 0000000000000000000000000000000000000000..3a37b172f69492e956a403df9a44155a102ab0f0
+--- /dev/null
++++ b/framework_compatibility_matrix.xml
+@@ -0,0 +1,175 @@
++<compatibility-matrix version="1.0" type="framework">
++    <!--Exact proprietary vendor extensions declared by this tablet; standard platform HAL requirements remain in the platform matrices.-->
++    <hal format="hidl" optional="true">
++        <name>android.hardware.gnss</name>
++        <version>1.0</version>
++        <interface>
++            <name>IGnss</name>
++            <instance>gnss_vendor</instance>
++        </interface>
++    </hal>
++    <hal format="hidl" optional="true">
++        <name>com.qualcomm.qti.ant</name>
++        <version>1.0</version>
++        <interface>
++            <name>IAntHci</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl" optional="true">
++        <name>com.qualcomm.qti.wifidisplayhal</name>
++        <version>1.0</version>
++        <interface>
++            <name>IDSManager</name>
++            <instance>wifidisplaydshal</instance>
++        </interface>
++        <interface>
++            <name>IHDCPSession</name>
++            <instance>wifidisplayhdcphal</instance>
++        </interface>
++    </hal>
++    <hal format="hidl" optional="true">
++        <name>vendor.display.color</name>
++        <version>1.0</version>
++        <interface>
++            <name>IDisplayColor</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl" optional="true">
++        <name>vendor.display.config</name>
++        <version>2.0</version>
++        <interface>
++            <name>IDisplayConfig</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl" optional="true">
++        <name>vendor.display.postproc</name>
++        <version>1.0</version>
++        <interface>
++            <name>IDisplayPostproc</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl" optional="true">
++        <name>vendor.qti.gnss</name>
++        <version>1.0</version>
++        <interface>
++            <name>ILocHidlGnss</name>
++            <instance>gnss_vendor</instance>
++        </interface>
++    </hal>
++    <hal format="hidl" optional="true">
++        <name>vendor.qti.hardware.alarm</name>
++        <version>1.0</version>
++        <interface>
++            <name>IAlarm</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl" optional="true">
++        <name>vendor.qti.hardware.capabilityconfigstore</name>
++        <version>1.0</version>
++        <interface>
++            <name>ICapabilityConfigStore</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl" optional="true">
++        <name>vendor.qti.hardware.fm</name>
++        <version>1.0</version>
++        <interface>
++            <name>IFmHci</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl" optional="true">
++        <name>vendor.qti.hardware.iop</name>
++        <version>1.0</version>
++        <interface>
++            <name>IIop</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl" optional="true">
++        <name>vendor.qti.hardware.perf</name>
++        <version>1.0</version>
++        <interface>
++            <name>IPerf</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl" optional="true">
++        <name>vendor.qti.hardware.qteeconnector</name>
++        <version>1.0</version>
++        <interface>
++            <name>IAppConnector</name>
++            <instance>default</instance>
++        </interface>
++        <interface>
++            <name>IGPAppConnector</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl" optional="true">
++        <name>vendor.qti.hardware.tui_comm</name>
++        <version>1.0</version>
++        <interface>
++            <name>ITuiComm</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl" optional="true">
++        <name>vendor.qti.hardware.wifidisplaysession</name>
++        <version>1.0</version>
++        <interface>
++            <name>IWifiDisplaySession</name>
++            <instance>wifidisplaysession</instance>
++        </interface>
++        <interface>
++            <name>IWifiDisplaySessionAudioTrack</name>
++            <instance>wifidisplaysessionaudiotrack</instance>
++        </interface>
++        <interface>
++            <name>IWifiDisplaySessionImageTrack</name>
++            <instance>wifidisplaysessionimagetrack</instance>
++        </interface>
++        <interface>
++            <name>IWifiDisplaySessionVideoTrack</name>
++            <instance>wifidisplaysessionvideotrack</instance>
++        </interface>
++    </hal>
++    <hal format="hidl" optional="true">
++        <name>vendor.samsung.hardware.bluetooth</name>
++        <version>1.0</version>
++        <interface>
++            <name>ISecBluetooth</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl" optional="true">
++        <name>vendor.samsung.hardware.exthealth</name>
++        <version>1.0</version>
++        <interface>
++            <name>IExtHealth</name>
++            <instance>exthealth</instance>
++        </interface>
++    </hal>
++    <hal format="hidl" optional="true">
++        <name>vendor.samsung.hardware.gnss</name>
++        <version>1.0</version>
++        <interface>
++            <name>ISecGnss</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl" optional="true">
++        <name>vendor.samsung.hardware.miscpower</name>
++        <version>1.0</version>
++        <interface>
++            <name>ISecMiscPower</name>
++            <instance>miscpower</instance>
++        </interface>
++    </hal>
++</compatibility-matrix>
+diff --git a/gts3l.mk b/gts3l.mk
+index 9ab1835767b1b4c47ce77eca04ca655f6d58a095..1a1edb7a9634f70fecced7421bf45ec60005f496 100755
+--- a/gts3l.mk
++++ b/gts3l.mk
+@@ -18,6 +18,31 @@
+ $(call inherit-product, $(SRC_TARGET_DIR)/product/product_launched_with_n.mk)
+ $(call inherit-product, $(SRC_TARGET_DIR)/product/non_ab_device.mk)
+ 
++# Android 16 no longer supports flattened APEX packages. Avoid compression
++# on this old loop/dm-verity implementation while keeping packaged APEXes.
++PRODUCT_COMPRESSED_APEX := false
++
++# The vendor manifest keeps FCM 4 even when the platform's unfrozen AIDL
++# selection installs a newer default set of framework matrices.
++PRODUCT_PACKAGES += framework_compatibility_matrix.4.xml
++
++# Kernel 3.18 has cgroup v1 controllers, including memory and cpuacct.
++PRODUCT_COPY_FILES += \
++    $(LOCAL_PATH)/configs/cgroups.json:$(TARGET_COPY_OUT_VENDOR)/etc/cgroups.json \
++    $(LOCAL_PATH)/configs/task_profiles.json:$(TARGET_COPY_OUT_VENDOR)/etc/task_profiles.json
++
++# Keep early APEX failures reachable through recovery USB during bring-up.
++# Sort after apexd.rc and stay on the System side of init's Treble boundary.
++ifneq ($(filter eng userdebug,$(TARGET_BUILD_VARIANT)),)
++PRODUCT_COPY_FILES += \
++    $(LOCAL_PATH)/configs/apexd-recovery.rc:$(TARGET_COPY_OUT_SYSTEM)/etc/init/zz-gts3l-apexd-recovery.rc
++endif
++
++ifeq ($(TARGET_BUILD_VARIANT),userdebug)
++PRODUCT_COPY_FILES += \
++    $(LOCAL_PATH)/configs/bringup-usb.rc:$(TARGET_COPY_OUT_SYSTEM)/etc/init/zz-gts3l-bringup-usb.rc
++endif
++
+ # Get non-open-source specific aspects
+ $(call inherit-product-if-exists, vendor/samsung/gts3l-common/gts3l-common-vendor.mk)
+ 
+@@ -42,6 +67,12 @@ PRODUCT_CHARACTERISTICS := tablet
+ # Exclude AudioFX
+ TARGET_EXCLUDES_AUDIOFX := true
+ 
++# Retain required firmware mount directories in the read-only Vendor image.
++PRODUCT_COPY_FILES += \
++    $(LOCAL_PATH)/configs/firmware-mountpoint:$(TARGET_COPY_OUT_VENDOR)/dsp/.mountpoint \
++    $(LOCAL_PATH)/configs/firmware-mountpoint:$(TARGET_COPY_OUT_VENDOR)/firmware_mnt/.mountpoint \
++    $(LOCAL_PATH)/configs/firmware-mountpoint:$(TARGET_COPY_OUT_VENDOR)/firmware-modem/.mountpoint
++
+ # Permissions
+ PRODUCT_COPY_FILES += \
+     frameworks/native/data/etc/android.hardware.audio.low_latency.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.hardware.audio.low_latency.xml \
+@@ -82,7 +113,7 @@ PRODUCT_COPY_FILES += \
+ 
+ # ANT+
+ PRODUCT_PACKAGES += \
+-    AntHalService
++    AntHalService-Soong
+ 
+ # Audio
+ PRODUCT_PACKAGES += \
+@@ -160,7 +191,7 @@ PRODUCT_PACKAGES += \
+     android.hardware.memtrack@1.0-service \
+     vendor.display.config@2.0 \
+     gralloc.msm8996 \
+-    hwcomposer.msm8996 \
++    hwcomposer.qcom \
+     memtrack.msm8996 \
+     libdisplayconfig \
+     libqdMetaData \
+@@ -184,9 +215,8 @@ PRODUCT_PACKAGES += \
+     android.hardware.drm@1.0.vendor \
+     android.hardware.drm@1.1.vendor
+ 
+-# FastCharge
+-PRODUCT_PACKAGES += \
+-    vendor.lineage.fastcharge@1.0-service.samsung
++# The former Lineage fast-charge toggle HAL was removed upstream. Charging
++# continues to use the device's unchanged kernel and charger configuration.
+ 
+ # Fingerprint
+ PRODUCT_PACKAGES += \
+@@ -261,7 +291,7 @@ PRODUCT_PACKAGES += \
+ 
+ # LiveDisplay
+ PRODUCT_PACKAGES += \
+-    vendor.lineage.livedisplay@2.0-service.samsung-qcom
++    vendor.lineage.livedisplay-service.samsung-qcom
+ 
+ # Media
+ PRODUCT_COPY_FILES += \
+@@ -289,6 +319,7 @@ PRODUCT_PACKAGES += \
+     libOmxAacEnc \
+     libOmxAmrEnc \
+     libOmxCore \
++    libmm-omxcore \
+     libOmxEvrcEnc \
+     libOmxG711Enc \
+     libOmxQcelp13Enc \
+@@ -306,11 +337,6 @@ PRODUCT_PACKAGES += \
+ PRODUCT_COPY_FILES += \
+     $(LOCAL_PATH)/configs/powerhint.xml:$(TARGET_COPY_OUT_VENDOR)/etc/powerhint.xml
+ 
+-# Profiles for cgroups, task_profiles
+-PRODUCT_COPY_FILES += \
+-    system/core/libprocessgroup/profiles/cgroups_28.json:$(TARGET_COPY_OUT_VENDOR)/etc/cgroups.json \
+-    system/core/libprocessgroup/profiles/task_profiles_28.json:$(TARGET_COPY_OUT_VENDOR)/etc/task_profiles.json
+-
+ # Qualcomm
+ PRODUCT_PACKAGES += \
+     libqti_vndfwk_detect \
+@@ -339,7 +365,7 @@ PRODUCT_PACKAGES += \
+     init.qcom.sh \
+     init.qcom.usb.rc \
+     init.qcom.usb.sh \
+-    init.usb.configfs.rc \
++    init.usb.configfs.gts3l.rc \
+     init.samsung.rc \
+     init.target.rc \
+     ueventd.qcom.rc \
+@@ -396,7 +422,7 @@ PRODUCT_COPY_FILES += \
+ 
+ # Touch
+ PRODUCT_PACKAGES += \
+-    vendor.lineage.touch@1.0-service.gts3l
++    vendor.lineage.touch-service.gts3l
+ 
+ # USB
+ PRODUCT_PACKAGES += \
+@@ -404,22 +430,34 @@ PRODUCT_PACKAGES += \
+ 
+ # Vibrator
+ PRODUCT_PACKAGES += \
+-    android.hardware.vibrator@1.0-impl \
+-    android.hardware.vibrator@1.0-service
++    android.hardware.vibrator-service.legacy \
++    vibrator.default
+ 
+-# VNDK
+-PRODUCT_COPY_FILES += \
+-    prebuilts/vndk/v32/arm64/arch-arm-armv8-a/shared/vndk-sp/libhidlbase.so:$(TARGET_COPY_OUT_VENDOR)/lib/libhidlbase-v32.so \
+-    prebuilts/vndk/v32/arm64/arch-arm64-armv8-a/shared/vndk-sp/libhidlbase.so:$(TARGET_COPY_OUT_VENDOR)/lib64/libhidlbase-v32.so \
+-    prebuilts/vndk/v32/arm64/arch-arm64-armv8-a/shared/vndk-sp/libhidlbase.so:$(TARGET_COPY_OUT_SYSTEM)/lib64/libhidlbase-v32.so \
+-    prebuilts/vndk/v33/arm64/arch-arm64-armv8-a/shared/vndk-sp/libutils.so:$(TARGET_COPY_OUT_VENDOR)/lib64/libutils-v33.so \
+-    prebuilts/vndk/v29/arm64/arch-arm64-armv8-a/shared/vndk-sp/libcutils.so:$(TARGET_COPY_OUT_SYSTEM_EXT)/lib64/libcutils-v29.so \
+-    prebuilts/vndk/v29/arm64/arch-arm-armv8-a/shared/vndk-core/libprotobuf-cpp-lite.so:$(TARGET_COPY_OUT_VENDOR)/lib/libprotobuf-cpp-lite-v29.so \
+-    prebuilts/vndk/v29/arm64/arch-arm64-armv8-a/shared/vndk-core/libprotobuf-cpp-full.so:$(TARGET_COPY_OUT_VENDOR)/lib64/libprotobuf-cpp-full-v29.so
++# Legacy ABI libraries are supplied as explicit Lineage compatibility modules.
++PRODUCT_PACKAGES += \
++    libhidlbase-v32 \
++    libutils-v33 \
++    libcutils-v29 \
++    libprotobuf-cpp-lite-v29 \
++    libprotobuf-cpp-full-v29
++
++# Blobs reference these through ELF dependencies/dlopen, outside Soong's
++# declared dependencies. Install vendor variants for the isolated vendor
++# namespace; a System/SystemExt copy alone is not visible there.
++PRODUCT_PACKAGES += \
++    libaudioroute.vendor \
++    libhidlbase-v32.vendor \
++    libcutils-v29.vendor \
++    libexpat.vendor \
++    libion.vendor \
++    libpower.vendor \
++    libprocessgroup.vendor \
++    libsqlite.vendor \
++    libutilscallstack.vendor
+ 
+ # WiFi
+ PRODUCT_PACKAGES += \
+-    android.hardware.wifi@1.0-service.legacy \
++    android.hardware.wifi-service \
+     libwpa_client \
+     hostapd \
+     wpa_supplicant \
+diff --git a/legacy/Android.mk b/legacy/Android.mk
+new file mode 100644
+index 0000000000000000000000000000000000000000..3d4719ea1cf0c0452258395d8bfbd03d43e1f76a
+--- /dev/null
++++ b/legacy/Android.mk
+@@ -0,0 +1,3 @@
++# SPDX-License-Identifier: Apache-2.0
++LOCAL_PATH := $(call my-dir)
++include $(call all-makefiles-under,$(LOCAL_PATH))
+diff --git a/legacy/libaac/Android.mk b/legacy/libaac/Android.mk
+new file mode 100644
+index 0000000000000000000000000000000000000000..d07270f5a0c02f5b72387abcf86bde222009afd8
+--- /dev/null
++++ b/legacy/libaac/Android.mk
+@@ -0,0 +1,18 @@
++LOCAL_PATH := $(call my-dir)
++include $(CLEAR_VARS)
++
++LOCAL_SRC_FILES := aacEncode.cpp
++LOCAL_SRC_FILES += aacDecode.cpp
++
++LOCAL_C_INCLUDES := $(LOCAL_PATH)
++LOCAL_C_INCLUDES += $(TOP)/external/aac/libAACenc/include
++LOCAL_C_INCLUDES += $(TOP)/external/aac/libAACdec/include
++LOCAL_C_INCLUDES += $(TOP)/external/aac/libSYS/include
++
++LOCAL_SHARED_LIBRARIES := liblog
++LOCAL_STATIC_LIBRARIES := libFraunhoferAAC
++
++LOCAL_32_BIT_ONLY := true
++LOCAL_MODULE := libaacwrapper
++
++include $(BUILD_SHARED_LIBRARY)
+diff --git a/legacy/libaac/aacDecode.cpp b/legacy/libaac/aacDecode.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..44296b653e402a4f6de00bed1f7e1a7d2cab0af3
+--- /dev/null
++++ b/legacy/libaac/aacDecode.cpp
+@@ -0,0 +1,125 @@
++/*
++ * Copyright (c) 2018, The Linux Foundation. All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are
++ * met:
++ *     * Redistributions of source code must retain the above copyright
++ *       notice, this list of conditions and the following disclaimer.
++ *     * Redistributions in binary form must reproduce the above
++ *       copyright notice, this list of conditions and the following
++ *       disclaimer in the documentation and/or other materials provided
++ *       with the distribution.
++ *     * Neither the name of The Linux Foundation nor the names of its
++ *       contributors may be used to endorse or promote products derived
++ *       from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
++ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
++ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT
++ * ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS
++ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
++ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
++ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
++ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
++ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
++ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
++ * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ * */
++
++#include "aacDecode.h"
++#include "aacdecoder_lib.h"
++#include <utils/Log.h>
++#include <string.h>
++
++aacDecode::aacDecode() {
++    p_aacHandle = NULL;
++    p_aacInfo = NULL;
++    memset(&s_aacConfig, 0, sizeof(s_aacConfig));
++}
++
++aacDecode::~aacDecode() {
++    if(!p_aacHandle) {
++        return;
++    }
++
++    aacDecoder_Close((HANDLE_AACDECODER)p_aacHandle);
++    p_aacHandle = NULL;
++}
++
++bool aacDecode::aacConfigure(aacConfigType * p_aacConfig) {
++    if(!p_aacConfig) {
++        return false;
++    }
++
++    memcpy(&s_aacConfig, p_aacConfig, sizeof(s_aacConfig));
++
++    p_aacHandle = aacDecoder_Open(TT_MP4_ADTS, 1);
++
++    if(!p_aacHandle) {
++        ALOGE("Failed to open AAC decoder");
++        return false;
++    }
++
++    p_aacInfo = (void*)aacDecoder_GetStreamInfo((HANDLE_AACDECODER)p_aacHandle);
++
++    if(!p_aacInfo) {
++        ALOGE("Failed to get stream info");
++        return false;
++    }
++
++    /* Configure AAC decoder */
++
++    aacDecoder_SetParam((HANDLE_AACDECODER)p_aacHandle,
++                        AAC_DRC_REFERENCE_LEVEL,
++                        64);
++
++    aacDecoder_SetParam((HANDLE_AACDECODER)p_aacHandle,
++                        AAC_DRC_ATTENUATION_FACTOR,
++                        127);
++
++    aacDecoder_SetParam((HANDLE_AACDECODER)p_aacHandle,
++                        AAC_PCM_MAX_OUTPUT_CHANNELS,
++                        s_aacConfig.n_channels > 6 ? -1 : s_aacConfig.n_channels);
++    return true;
++}
++
++bool aacDecode::aacDecodeFrame(unsigned char* p_buffer, unsigned int n_size) {
++    if(!p_buffer || n_size < 7) {
++        ALOGE("No/Incorrect buffer provided for AAC decoder");
++        return false;
++    }
++
++    if(!p_aacHandle) {
++        ALOGE("Decoder handle not available");
++        return false;
++    }
++
++    AAC_DECODER_ERROR err = AAC_DEC_UNKNOWN;
++
++    UINT nSize[] = {(UINT)n_size};
++    UINT nOcc[] = {(UINT)n_size};
++    UCHAR* pBuf[] = {p_buffer};
++
++    err = aacDecoder_Fill((HANDLE_AACDECODER)p_aacHandle, pBuf, nSize, nOcc);
++
++    if(err != AAC_DEC_OK || nOcc[0] != 0) {
++        ALOGE("Error in aacDecoder_Fill");
++        return false;
++    }
++
++    /* Fix the alloc length being passed to AAC Decoder since it expects INT_PCM
++       as input buffer but we have it as UINT8. INT_PCM is of type SHORT */
++
++    int factor = sizeof(INT_PCM)/sizeof(unsigned char);
++    int allocLen = (factor == 0) ? n_size : n_size/factor;
++
++    err = aacDecoder_DecodeFrame((HANDLE_AACDECODER)p_aacHandle,
++                                  (INT_PCM*)p_buffer, allocLen, 0);
++
++    if(err != AAC_DEC_OK) {
++        ALOGE("Failed to decode frame");
++        return false;
++    }
++    return true;
++}
+diff --git a/legacy/libaac/aacDecode.h b/legacy/libaac/aacDecode.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..41b9df5d9e289b2bb856769d8279a7c8f562c3f9
+--- /dev/null
++++ b/legacy/libaac/aacDecode.h
+@@ -0,0 +1,52 @@
++#ifndef __AAC_DECODE__
++#define __AAC_DECODE__
++/*
++ * Copyright (c) 2018, The Linux Foundation. All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are
++ * met:
++ *     * Redistributions of source code must retain the above copyright
++ *       notice, this list of conditions and the following disclaimer.
++ *     * Redistributions in binary form must reproduce the above
++ *       copyright notice, this list of conditions and the following
++ *       disclaimer in the documentation and/or other materials provided
++ *       with the distribution.
++ *     * Neither the name of The Linux Foundation nor the names of its
++ *       contributors may be used to endorse or promote products derived
++ *       from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
++ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
++ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT
++ * ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS
++ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
++ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
++ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
++ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
++ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
++ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
++ * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ * */
++
++typedef struct aacConfig {
++    unsigned int n_sampleRate;
++    unsigned int n_channels;
++    unsigned int n_bitsPerSample;
++    unsigned int n_bitrate;
++    unsigned int n_samplesPerFrame;
++}aacConfigType;
++
++class aacDecode {
++public:
++    aacDecode();
++    ~aacDecode();
++    bool aacConfigure(aacConfigType* p_aacConfig);
++    bool aacDecodeFrame(unsigned char* p_Buffer, unsigned int n_size);
++
++private:
++    void* p_aacHandle;
++    void* p_aacInfo;
++    aacConfigType s_aacConfig;
++};
++#endif
+diff --git a/legacy/libaac/aacEncode.cpp b/legacy/libaac/aacEncode.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..1d5b27332b535a994f061e3dd987e9d72a42894a
+--- /dev/null
++++ b/legacy/libaac/aacEncode.cpp
+@@ -0,0 +1,151 @@
++/*
++ * Copyright (c) 2018, The Linux Foundation. All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are
++ * met:
++ *     * Redistributions of source code must retain the above copyright
++ *       notice, this list of conditions and the following disclaimer.
++ *     * Redistributions in binary form must reproduce the above
++ *       copyright notice, this list of conditions and the following
++ *       disclaimer in the documentation and/or other materials provided
++ *       with the distribution.
++ *     * Neither the name of The Linux Foundation nor the names of its
++ *       contributors may be used to endorse or promote products derived
++ *       from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
++ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
++ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT
++ * ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS
++ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
++ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
++ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
++ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
++ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
++ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
++ * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ * */
++
++#include "aacEncode.h"
++#include "aacenc_lib.h"
++#include <utils/Log.h>
++#include <string.h>
++
++struct aacInfo
++{
++    AACENC_BufDesc inBuff;
++    AACENC_BufDesc outBuff;
++    AACENC_InArgs  inArg;
++    AACENC_OutArgs outArg;
++};
++
++aacEncode::aacEncode() {
++    p_aacHandle = NULL;
++    p_aacInfo = NULL;
++    memset(&s_aacConfig, 0, sizeof(s_aacConfig));
++}
++
++aacEncode::~aacEncode() {
++    if(!p_aacHandle) {
++        return;
++    }
++
++    if(aacEncClose((HANDLE_AACENCODER*)(&p_aacHandle)) != AACENC_OK) {
++        ALOGE("aacEncClose Failed");
++        return;
++    }
++}
++
++bool aacEncode::aacConfigure(aacConfigType * p_aacConfig) {
++    if(!p_aacConfig) {
++        return false;
++    }
++
++    memcpy(&s_aacConfig, p_aacConfig, sizeof(s_aacConfig));
++
++    /* Configure AAC encoder here */
++
++    AACENC_ERROR err = AACENC_OK;
++
++    p_aacInfo = (void*)new(aacInfo);
++    if(!p_aacInfo) {
++        ALOGE("Failed to allocate aacInfo");
++        return false;
++    }
++
++    /* Open AAC encoder */
++    err = aacEncOpen((HANDLE_AACENCODER*)(&p_aacHandle),
++                      0x01 /* AAC */,
++                      s_aacConfig.n_channels);
++
++    if(err != AACENC_OK) {
++        ALOGE("Failed top open AAC encoder");
++        return false;
++    }
++
++    /* Set Bitrate and SampleRate */
++    err = aacEncoder_SetParam((HANDLE_AACENCODER)p_aacHandle,
++                               AACENC_BITRATE,
++                               s_aacConfig.n_bitrate);
++
++    if(err != AACENC_OK) {
++        ALOGE("Failed to set bitrate param to AAC encoder");
++        return false;
++    }
++
++    err = aacEncoder_SetParam((HANDLE_AACENCODER)p_aacHandle,
++                                   AACENC_SAMPLERATE,
++                                   s_aacConfig.n_sampleRate);
++
++    if(err != AACENC_OK) {
++        ALOGE("Failed to set samplerate param to AAC encoder");
++        return false;
++    }
++
++    /* Fix Channel mode and order */
++    /* TODO */
++
++    /* Prefill encode structures */
++    /* TODO */
++
++    return true;
++}
++
++bool aacEncode::aacEncodeFrame(unsigned char * p_inBuffer,
++                              unsigned int n_inSize,
++                              unsigned char * p_outBuffer,
++                              unsigned int n_outSize,
++                              unsigned int * p_length) {
++    (void)n_inSize;
++    (void)n_outSize;
++    (void)p_length;
++    if(!p_inBuffer || !p_outBuffer) {
++        ALOGE("No buffers provided for AAC encoder");
++        return false;
++    }
++
++    aacInfo *tempAacInfo = (aacInfo*)p_aacInfo;
++    tempAacInfo->inBuff.bufs = (void**) (&p_inBuffer);
++    tempAacInfo->outBuff.bufs = (void**) (&p_outBuffer);
++
++    AACENC_ERROR err = AACENC_OK;
++
++    if(p_aacHandle) {
++        err = aacEncEncode((HANDLE_AACENCODER)p_aacHandle,
++                           &tempAacInfo->inBuff,
++                           &tempAacInfo->outBuff,
++                           &tempAacInfo->inArg,
++                           &tempAacInfo->outArg);
++
++        if(err != AACENC_OK) {
++            ALOGE("Failed to encode buffer");
++            return false;
++        }
++    } else {
++        ALOGE("No encoder available");
++        return false;
++    }
++
++    return true;
++}
+diff --git a/legacy/libaac/aacEncode.h b/legacy/libaac/aacEncode.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..46a77341a3a9fb362fa6f3555dccf07bea9b7ddd
+--- /dev/null
++++ b/legacy/libaac/aacEncode.h
+@@ -0,0 +1,55 @@
++#ifndef __AAC_ENCODE__
++#define __AAC_ENCODE__
++/*
++ * Copyright (c) 2018, The Linux Foundation. All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are
++ * met:
++ *     * Redistributions of source code must retain the above copyright
++ *       notice, this list of conditions and the following disclaimer.
++ *     * Redistributions in binary form must reproduce the above
++ *       copyright notice, this list of conditions and the following
++ *       disclaimer in the documentation and/or other materials provided
++ *       with the distribution.
++ *     * Neither the name of The Linux Foundation nor the names of its
++ *       contributors may be used to endorse or promote products derived
++ *       from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
++ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
++ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT
++ * ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS
++ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
++ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
++ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
++ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
++ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
++ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
++ * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ * */
++typedef struct aacConfig {
++    unsigned int n_sampleRate;
++    unsigned int n_channels;
++    unsigned int n_bitsPerSample;
++    unsigned int n_bitrate;
++    unsigned int n_samplesPerFrame;
++}aacConfigType;
++
++class aacEncode {
++public:
++    aacEncode();
++    ~aacEncode();
++    bool aacConfigure(aacConfigType* p_aacConfig);
++    bool aacEncodeFrame(unsigned char* p_inBuffer,
++                   unsigned int n_inSize,
++                   unsigned char* p_outBuffer,
++                   unsigned int n_outSize,
++                   unsigned int* p_length);
++
++private:
++    void* p_aacHandle;
++    void* p_aacInfo;
++    aacConfigType s_aacConfig;
++};
++#endif
+diff --git a/legacy/libmemtrack/Android.mk b/legacy/libmemtrack/Android.mk
+new file mode 100644
+index 0000000000000000000000000000000000000000..10fd40a9d9921a1663b2e21ddc742503f5d615d9
+--- /dev/null
++++ b/legacy/libmemtrack/Android.mk
+@@ -0,0 +1,30 @@
++# Copyright (C) 2013 The Android Open Source Project
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#      http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++LOCAL_PATH := $(call my-dir)
++
++# HAL module implemenation stored in
++# hw/<POWERS_HARDWARE_MODULE_ID>.<ro.hardware>.so
++include $(CLEAR_VARS)
++
++LOCAL_MODULE_RELATIVE_PATH := hw
++LOCAL_VENDOR_MODULE := true
++LOCAL_C_INCLUDES += hardware/libhardware/include
++LOCAL_CFLAGS := -Wconversion -Wall -Werror -Wno-sign-conversion
++LOCAL_CLANG  := true
++LOCAL_SHARED_LIBRARIES := liblog
++LOCAL_HEADER_LIBRARIES := libhardware_headers
++LOCAL_SRC_FILES := memtrack_msm.c kgsl.c
++LOCAL_MODULE := memtrack.$(TARGET_BOARD_PLATFORM)
++include $(BUILD_SHARED_LIBRARY)
+diff --git a/legacy/libmemtrack/kgsl.c b/legacy/libmemtrack/kgsl.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..a292d45629123baa8bf874513fca52852e0b8fcd
+--- /dev/null
++++ b/legacy/libmemtrack/kgsl.c
+@@ -0,0 +1,119 @@
++/*
++ * Copyright (C) 2013 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#include <errno.h>
++#include <stdbool.h>
++#include <stdio.h>
++#include <string.h>
++#include <sys/mman.h>
++
++#include <hardware/memtrack.h>
++
++#include "memtrack_msm.h"
++
++#define ARRAY_SIZE(x) (sizeof(x)/sizeof(x[0]))
++#define min(x, y) ((x) < (y) ? (x) : (y))
++
++struct memtrack_record record_templates[] = {
++    {
++        .flags = MEMTRACK_FLAG_SMAPS_ACCOUNTED |
++                 MEMTRACK_FLAG_PRIVATE |
++                 MEMTRACK_FLAG_NONSECURE,
++    },
++    {
++        .flags = MEMTRACK_FLAG_SMAPS_UNACCOUNTED |
++                 MEMTRACK_FLAG_PRIVATE |
++                 MEMTRACK_FLAG_NONSECURE,
++    },
++};
++
++int kgsl_memtrack_get_memory(pid_t pid, enum memtrack_type type,
++                             struct memtrack_record *records,
++                             size_t *num_records)
++{
++    size_t allocated_records = min(*num_records, ARRAY_SIZE(record_templates));
++    char syspath[128];
++    size_t accounted_size = 0;
++    size_t unaccounted_size = 0;
++    FILE *fp;
++    int ret;
++
++    *num_records = ARRAY_SIZE(record_templates);
++
++    /* fastpath to return the necessary number of records */
++    if (allocated_records == 0)
++        return 0;
++
++    memcpy(records, record_templates,
++            sizeof(struct memtrack_record) * allocated_records);
++
++    if (type == MEMTRACK_TYPE_GL) {
++
++        snprintf(syspath, sizeof(syspath),
++                 "/sys/class/kgsl/kgsl/proc/%d/gpumem_mapped", pid);
++
++        fp = fopen(syspath, "r");
++        if (fp == NULL)
++            return -errno;
++
++        ret = fscanf(fp, "%zu", &accounted_size);
++        if (ret != 1) {
++            fclose(fp);
++            return -EINVAL;
++        }
++        fclose(fp);
++
++        snprintf(syspath, sizeof(syspath),
++                 "/sys/class/kgsl/kgsl/proc/%d/gpumem_unmapped", pid);
++
++        fp = fopen(syspath, "r");
++        if (fp == NULL) {
++            fclose(fp);
++            return -errno;
++        }
++
++        ret = fscanf(fp, "%zu", &unaccounted_size);
++        if (ret != 1) {
++            fclose(fp);
++            return -EINVAL;
++        }
++        fclose(fp);
++
++    } else if (type == MEMTRACK_TYPE_GRAPHICS) {
++
++        snprintf(syspath, sizeof(syspath),
++                 "/sys/class/kgsl/kgsl/proc/%d/imported_mem", pid);
++
++        fp = fopen(syspath, "r");
++        if (fp == NULL)
++            return -errno;
++
++        ret = fscanf(fp, "%zu", &unaccounted_size);
++        if (ret != 1) {
++            fclose(fp);
++            return -EINVAL;
++        }
++        fclose(fp);
++    }
++
++    if (allocated_records > 0)
++    records[0].size_in_bytes = accounted_size;
++
++    if (allocated_records > 1)
++    records[1].size_in_bytes = unaccounted_size;
++
++    return 0;
++}
+diff --git a/legacy/libmemtrack/memtrack_msm.c b/legacy/libmemtrack/memtrack_msm.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..e369d5fd48cdda014b687b42414fd81034e6c247
+--- /dev/null
++++ b/legacy/libmemtrack/memtrack_msm.c
+@@ -0,0 +1,63 @@
++/*
++ * Copyright (C) 2013 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#include <errno.h>
++
++#include <hardware/memtrack.h>
++
++#include "memtrack_msm.h"
++
++int msm_memtrack_init(const struct memtrack_module *module)
++{
++    if(!module)
++        return -1;
++    return 0;
++}
++
++int msm_memtrack_get_memory(const struct memtrack_module *module,
++                                pid_t pid,
++                                int type,
++                                struct memtrack_record *records,
++                                size_t *num_records)
++{
++    if(!module)
++        return -1;
++    if (type == MEMTRACK_TYPE_GL || type == MEMTRACK_TYPE_GRAPHICS) {
++        return kgsl_memtrack_get_memory(pid, type, records, num_records);
++    }
++
++    return -EINVAL;
++}
++
++static struct hw_module_methods_t memtrack_module_methods = {
++    .open = NULL,
++};
++
++struct memtrack_module HAL_MODULE_INFO_SYM = {
++    .common = {
++        .tag = HARDWARE_MODULE_TAG,
++        .module_api_version = MEMTRACK_MODULE_API_VERSION_0_1,
++        .hal_api_version = HARDWARE_HAL_API_VERSION,
++        .id = MEMTRACK_HARDWARE_MODULE_ID,
++        .name = "MSM Memory Tracker HAL",
++        .author = "The Android Open Source Project",
++        .methods = &memtrack_module_methods,
++    },
++
++    .init = msm_memtrack_init,
++    .getMemory = msm_memtrack_get_memory,
++};
++
+diff --git a/legacy/libmemtrack/memtrack_msm.h b/legacy/libmemtrack/memtrack_msm.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..74aa5768e14418ae091e18fd923e060320779ae8
+--- /dev/null
++++ b/legacy/libmemtrack/memtrack_msm.h
+@@ -0,0 +1,24 @@
++/*
++ * Copyright (C) 2013 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#ifndef _MEMTRACK_MSM_H_
++#define _MEMTRACK_MSM_H_
++
++int kgsl_memtrack_get_memory(pid_t pid, enum memtrack_type type,
++                             struct memtrack_record *records,
++                             size_t *num_records);
++
++#endif
+diff --git a/legacy/wifiloader/Android.mk b/legacy/wifiloader/Android.mk
+new file mode 100644
+index 0000000000000000000000000000000000000000..0f7e8c988a393df2d9ac40781ddfd6471145563e
+--- /dev/null
++++ b/legacy/wifiloader/Android.mk
+@@ -0,0 +1,33 @@
++ifeq ($(BOARD_HAVE_SAMSUNG_WIFI),true)
++
++LOCAL_PATH := $(call my-dir)
++include $(CLEAR_VARS)
++
++LOCAL_SRC_FILES := \
++    wifiloader.c
++
++LOCAL_SHARED_LIBRARIES := \
++    libcutils liblog libutils
++
++LOCAL_C_INCLUDES := \
++	system/core/include
++
++ifneq ($(WIFI_DRIVER_MODULE_NAME),)
++LOCAL_CFLAGS += -DWIFI_DRIVER_MODULE_NAME=\"$(WIFI_DRIVER_MODULE_NAME)\"
++endif
++
++ifneq ($(WIFI_DRIVER_MODULE_PATH),)
++LOCAL_CFLAGS += -DWIFI_DRIVER_MODULE_PATH=\"$(WIFI_DRIVER_MODULE_PATH)\"
++endif
++
++ifneq ($(WIFI_DRIVER_FW_PATH_PARAM),)
++LOCAL_CFLAGS += -DWIFI_DRIVER_FW_PATH_PARAM=\"$(WIFI_DRIVER_FW_PATH_PARAM)\"
++endif
++
++LOCAL_MODULE := wifiloader
++LOCAL_VENDOR_MODULE := true
++LOCAL_MODULE_TAGS := optional
++
++include $(BUILD_EXECUTABLE)
++
++endif
+diff --git a/legacy/wifiloader/wifiloader.c b/legacy/wifiloader/wifiloader.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..ce01b02e13e818e197df6126ec8762abbb3f8254
+--- /dev/null
++++ b/legacy/wifiloader/wifiloader.c
+@@ -0,0 +1,137 @@
++/*
++ * Copyright (c) 2015      Andreas Schneider <asn@cryptomilk.org>
++ * Copyright (c) 2017      Christopher N. Hesse <raymanfx@gmail.com>
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#define LOG_TAG "wifiloader"
++#define LOG_NDEBUG 0
++
++#include <errno.h>
++#include <fcntl.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <cutils/log.h>
++#include <cutils/properties.h>
++#include <sys/stat.h>
++#include <sys/syscall.h>
++
++#include <private/android_filesystem_config.h>
++
++#define DEFERRED_INITCALLS        "/proc/deferred_initcalls"
++
++#ifndef WIFI_DRIVER_MODULE_NAME
++#define WIFI_DRIVER_MODULE_NAME   "wlan"
++#endif
++
++#ifndef WIFI_DRIVER_MODULE_PATH
++#define WIFI_DRIVER_MODULE_PATH   "/system/lib/modules/" WIFI_DRIVER_MODULE_NAME ".ko"
++#endif
++
++#ifndef WIFI_DRIVER_FW_PATH_PARAM
++#define WIFI_DRIVER_FW_PATH_PARAM "/sys/module/wlan/parameters/fwpath"
++#endif
++
++#define finit_module(fd, params, flags) syscall(__NR_finit_module, fd, params, flags)
++
++
++static int check_module_loaded(char const *tag)
++{
++    FILE *proc;
++    char line[126];
++
++    if ((proc = fopen("/proc/modules", "r")) == NULL) {
++        ALOGW("Could not open %s: %s", "/proc/modules", strerror(errno));
++        return -errno;
++    }
++
++    while ((fgets(line, sizeof(line), proc)) != NULL) {
++        if (strncmp(line, tag, strlen(tag)) == 0) {
++            fclose(proc);
++            return 1;
++        }
++    }
++
++    fclose(proc);
++    return 0;
++}
++
++static int load_module(char const *path)
++{
++    int fd;
++
++    if (check_module_loaded(WIFI_DRIVER_MODULE_NAME) > 0) {
++        ALOGE("Driver: %s already loaded", path);
++        return -1;
++    }
++
++    fd = open(path, O_RDONLY);
++    if (fd == -1) {
++        ALOGE("Failed to open %s - error: %s", path, strerror(errno));
++        return -errno;
++    }
++
++    // load the .ko image
++    if (finit_module(fd, "", 0) != 0) {
++        ALOGE("Failed to load module %s - error: %s", path, strerror(errno));
++        close(fd);
++        return -errno;
++    }
++
++    // setup proper permissions for firmware change
++    if (chown(WIFI_DRIVER_FW_PATH_PARAM, AID_WIFI, AID_WIFI) != 0) {
++        ALOGE("Failed to chown firmware path %s - error: %s",
++              WIFI_DRIVER_FW_PATH_PARAM, strerror(errno));
++        close(fd);
++        return -errno;
++    }
++
++    // let wifi HAL know we succeeded
++    ALOGV("Successfully loaded WLAN module: %s", WIFI_DRIVER_MODULE_NAME);
++    property_set("wlan.driver.status", "ok");
++
++    close(fd);
++    return 0;
++}
++
++int main(void)
++{
++    char buf[8] = { '\0' };
++    FILE *fp;
++    size_t r;
++    struct stat st;
++
++    if (stat(WIFI_DRIVER_MODULE_PATH, &st) == 0) {
++        ALOGD("Loading WiFi kernel module: %s", WIFI_DRIVER_MODULE_PATH);
++        load_module(WIFI_DRIVER_MODULE_PATH);
++    }
++
++    ALOGD("Trigger initcall of deferred modules\n");
++
++    fp = fopen(DEFERRED_INITCALLS, "r");
++    if (fp == NULL) {
++        ALOGE("Failed to open %s - error: %s\n",
++              DEFERRED_INITCALLS,
++              strerror(errno));
++        return -errno;
++    }
++
++    r = fread(buf, sizeof(buf), 1, fp);
++    fclose(fp);
++
++    ALOGV("%s=%s\n", DEFERRED_INITCALLS, buf);
++
++    return 0;
++}
+diff --git a/manifest.xml b/manifest.xml
+index f092ef8608610adac5cc1d0c3481088f06d598c5..cc98b43623f827687f9aba5056f5fbeb404e818d 100644
+--- a/manifest.xml
++++ b/manifest.xml
+@@ -1,3 +1,4 @@
++<?xml version='1.0' encoding='UTF-8'?>
+ <manifest version="1.0" type="device" target-level="4">
+     <hal format="hidl">
+         <name>android.hardware.audio</name>
+@@ -133,15 +134,6 @@
+             <instance>default</instance>
+         </interface>
+     </hal>
+-    <!--hal format="hidl">
+-        <name>android.hardware.media.c2</name>
+-        <transport>hwbinder</transport>
+-        <version>1.0</version>
+-        <interface>
+-            <name>IComponentStore</name>
+-            <instance>default</instance>
+-        </interface>
+-    </hal-->
+     <hal format="hidl">
+         <name>android.hardware.media.omx</name>
+         <transport>hwbinder</transport>
+@@ -182,15 +174,6 @@
+             <instance>default</instance>
+         </interface>
+     </hal>
+-    <hal format="hidl">
+-        <name>android.hardware.vibrator</name>
+-        <transport>hwbinder</transport>
+-        <version>1.0</version>
+-        <interface>
+-            <name>IVibrator</name>
+-            <instance>default</instance>
+-        </interface>
+-    </hal>
+     <hal format="hidl">
+         <name>com.qualcomm.qti.ant</name>
+         <transport>hwbinder</transport>
+@@ -244,20 +227,19 @@
+             <instance>default</instance>
+         </interface>
+     </hal>
+-    <hal format="hidl">
++    <hal format="aidl">
+         <name>vendor.lineage.livedisplay</name>
+-        <transport>hwbinder</transport>
+-        <version>2.0</version>
++        <version>1</version>
+         <interface>
+             <name>IAdaptiveBacklight</name>
+             <instance>default</instance>
+         </interface>
+         <interface>
+-            <name>IDisplayModes</name>
++            <name>IDisplayColorCalibration</name>
+             <instance>default</instance>
+         </interface>
+         <interface>
+-            <name>IReadingEnhancement</name>
++            <name>IDisplayModes</name>
+             <instance>default</instance>
+         </interface>
+         <interface>
+diff --git a/overlay/frameworks/base/core/res/res/values/config.xml b/overlay/frameworks/base/core/res/res/values/config.xml
+index e49cd9ba18336787c346f7d084416a89bfd0fdbc..3023e1ae0241ceda57f039a60f95f507c04287d7 100644
+--- a/overlay/frameworks/base/core/res/res/values/config.xml
++++ b/overlay/frameworks/base/core/res/res/values/config.xml
+@@ -38,7 +38,8 @@
+          * The remote submix module "audio.r_submix.default" must be installed on the device.
+          * The device must be provisioned with HDCP keys (for protected content).
+     -->
+-    <bool name="config_enableWifiDisplay">true</bool>
++    <!-- Legacy WFD vendor components have unresolved baseline dependencies. -->
++    <bool name="config_enableWifiDisplay">false</bool>
+ 
+     <!-- Set to true if the wifi display supports compositing content stored
+          in gralloc protected buffers.  For this to be true, there must exist
+diff --git a/rootdir/Android.mk b/rootdir/Android.mk
+index 0fd8a9206529428203153bf9ced71126efc66771..a691c72ed12741e30c667765e7d9f10807d75552 100644
+--- a/rootdir/Android.mk
++++ b/rootdir/Android.mk
+@@ -61,7 +61,8 @@ LOCAL_MODULE_PATH  := $(TARGET_OUT_VENDOR_ETC)
+ include $(BUILD_PREBUILT)
+ 
+ include $(CLEAR_VARS)
+-LOCAL_MODULE       := init.usb.configfs.rc
++LOCAL_MODULE       := init.usb.configfs.gts3l.rc
++LOCAL_MODULE_STEM  := init.usb.configfs.rc
+ LOCAL_MODULE_TAGS  := optional
+ LOCAL_MODULE_CLASS := ETC
+ LOCAL_SRC_FILES    := etc/init.usb.configfs.rc
+diff --git a/rootdir/etc/init.samsung.rc b/rootdir/etc/init.samsung.rc
+index be8a3d200735bde2e45281e52765773d6a81480a..19cb18a4e29009839cfd4acfb58d8ce6d00864ca 100644
+--- a/rootdir/etc/init.samsung.rc
++++ b/rootdir/etc/init.samsung.rc
+@@ -5,6 +5,23 @@
+ #
+ 
+ on init
++    # Mounting cgroup v1 hides the ownership set on the tmpfs mount point.
++    # system_server creates isolated WebView/app-zygote process groups here.
++    chown system system /dev/cpuacct
++    chmod 0755 /dev/cpuacct
++    chown system system /dev/cpuacct/cgroup.procs
++    chown system system /dev/cpuacct/tasks
++    chmod 0664 /dev/cpuacct/cgroup.procs
++    chmod 0664 /dev/cpuacct/tasks
++
++    # Legacy traffic accounting: system_server has net_bw_stats/net_bw_acct.
++    # App socket tagging is mediated by netd, rather than writable proc files.
++    chown root net_bw_acct /proc/net/xt_qtaguid/ctrl
++    chmod 0660 /proc/net/xt_qtaguid/ctrl
++    chown root net_bw_stats /proc/net/xt_qtaguid/stats
++    chmod 0640 /proc/net/xt_qtaguid/stats
++    chown root net_bw_stats /proc/net/xt_qtaguid/iface_stat_all
++    chmod 0640 /proc/net/xt_qtaguid/iface_stat_all
+     symlink /dev/block/bootdevice/by-name/persistent  /dev/block/persistent
+     symlink /dev/block/bootdevice/by-name/steady  /dev/block/steady
+ 
+diff --git a/rootdir/etc/init.target.rc b/rootdir/etc/init.target.rc
+index 4b0c46085893ad11d825b61d560d0943a42924b7..f1da894f76893f7ff4e01533b72271a46e4c5eac 100644
+--- a/rootdir/etc/init.target.rc
++++ b/rootdir/etc/init.target.rc
+@@ -37,7 +37,16 @@ on early-init
+ on fs
+     wait /dev/block/platform/soc/${ro.boot.bootdevice}
+     symlink /dev/block/platform/soc/${ro.boot.bootdevice} /dev/block/bootdevice
+-    mount_all /vendor/etc/fstab.qcom
++    # Data is latemount: mount it only in late-fs, after early HAL startup.
++    mount_all /vendor/etc/fstab.qcom --early
++
++    # Cache is mounted above. Keep Android 16 flag storage across normal boots
++    # without repartitioning or waiting for the latemount Data filesystem.
++    # Wiping Cache also resets this metadata; aconfigd recreates build defaults.
++    mkdir /cache/gts3l-metadata 0755 root root
++    mount none /cache/gts3l-metadata /metadata bind
++    restorecon_recursive /metadata
++
+     setprop ro.crypto.fde_algorithm AES-256-XTS
+     swapon_all /vendor/etc/fstab.qcom
+ 
+@@ -516,4 +525,3 @@ on property:vendor.sys.listeners.registered=*
+ service vendor.wifiloader /vendor/bin/wifiloader
+     class main
+     oneshot
+-
+diff --git a/rootdir/etc/ueventd.qcom.rc b/rootdir/etc/ueventd.qcom.rc
+index 3591b8171d13915c313fc4d818d2c47754c520e3..7484cc006241ff455e15a17d4c047887819f500d 100644
+--- a/rootdir/etc/ueventd.qcom.rc
++++ b/rootdir/etc/ueventd.qcom.rc
+@@ -166,7 +166,7 @@ firmware_directories /vendor/firmware_mnt/image/ /vendor/firmware-modem/image/
+ /dev/msm_vidc_dec_sec     0660   system     audio
+ /dev/msm_vidc_enc         0660   system     audio
+ /dev/msm_rotator          0660   system     system
+-/dev/hw_random            0600   root       root
++/dev/hw_random            0400   prng_seeder prng_seeder
+ /dev/sdsprpc-smd          0660   system     system
+ 
+ #permissions for audio
+diff --git a/sepolicy/file_contexts b/sepolicy/file_contexts
+index bd78eefa605931b7d53e683636a4aaaffc2bc428..7e8d4cea47f986cca11dab69f378ffa6e1c81814 100644
+--- a/sepolicy/file_contexts
++++ b/sepolicy/file_contexts
+@@ -177,9 +177,8 @@
+ /(vendor|system/vendor)/bin/hw/android\.hardware\.health@2\.0-service\.samsung                     u:object_r:hal_health_default_exec:s0
+ /(vendor|system/vendor)/bin/hw/android\.hardware\.keymaster@3\.0-service\.gts3l                    u:object_r:hal_keymaster_default_exec:s0
+ /(vendor|system/vendor)/bin/hw/android\.hardware\.light-service\.gts3l                             u:object_r:hal_light_default_exec:s0
+-/(vendor|system/vendor)/bin/hw/vendor\.lineage\.fastcharge@1\.0-service\.samsung                   u:object_r:hal_lineage_fastcharge_default_exec:s0
+-/(vendor|system/vendor)/bin/hw/vendor\.lineage\.livedisplay@2\.0-service\.samsung-qcom             u:object_r:hal_lineage_livedisplay_sysfs_exec:s0
+-/(vendor|system/vendor)/bin/hw/vendor\.lineage\.touch@1\.0-service\.gts3l                          u:object_r:hal_lineage_touch_default_exec:s0
++/(vendor|system/vendor)/bin/hw/vendor\.lineage\.livedisplay-service\.samsung-qcom             u:object_r:hal_lineage_livedisplay_sysfs_exec:s0
++/(vendor|system/vendor)/bin/hw/vendor\.lineage\.touch-service\.gts3l                          u:object_r:hal_lineage_touch_default_exec:s0
+ /(vendor|system/vendor)/bin/hw/vendor\.samsung\.hardware\.miscpower@1\.0-service                   u:object_r:hal_power_default_exec:s0
+ 
+ # Rootfs
+diff --git a/sepolicy/hal_lineage_fastcharge_default.te b/sepolicy/hal_lineage_fastcharge_default.te
+deleted file mode 100644
+index 4420271e06942432dfbc6fe9a8089a0bca3e0ffa..0000000000000000000000000000000000000000
+--- a/sepolicy/hal_lineage_fastcharge_default.te
++++ /dev/null
+@@ -1,4 +0,0 @@
+-allow hal_lineage_fastcharge_default sysfs_sec_switch:dir search;
+-allow hal_lineage_fastcharge_default sysfs_sec_switch:file rw_file_perms;
+-
+-set_prop(hal_lineage_fastcharge, sec_fastcharge_prop)
+\ No newline at end of file
+diff --git a/sepolicy/set-audio-rotation.te b/sepolicy/set-audio-rotation.te
+index 14410e5433d1ac8cca793294fd2d48191b6434a0..88b3e1a26be2eb493954c5d91b2e2de203bff15e 100644
+--- a/sepolicy/set-audio-rotation.te
++++ b/sepolicy/set-audio-rotation.te
+@@ -1,5 +1,5 @@
+ type set-audio-rotation, domain, coredomain;
+-type set-audio-rotation_exec, exec_type, file_type;
++type set-audio-rotation_exec, exec_type, file_type, system_file_type;
+ 
+ init_daemon_domain(set-audio-rotation)
+ 
+diff --git a/shims/libcamera_client/CameraMetadata.cpp b/shims/libcamera_client/CameraMetadata.cpp
+index 04bfbae4582082b9567d0f4f5f37cf89d36d6dd0..aa294ea6156ad200c9e402fcedac30d7397dc423 100644
+--- a/shims/libcamera_client/CameraMetadata.cpp
++++ b/shims/libcamera_client/CameraMetadata.cpp
+@@ -270,7 +270,7 @@ status_t CameraMetadata::update(uint32_t tag,
+         return res;
+     }
+     // string.size() doesn't count the null termination character.
+-    return updateImpl(tag, (const void*)string.string(), string.size() + 1);
++    return updateImpl(tag, (const void*)string.c_str(), string.size() + 1);
+ }
+ 
+ status_t CameraMetadata::update(const camera_metadata_ro_entry &entry) {
+diff --git a/shims/libcamera_client/CameraParameters.cpp b/shims/libcamera_client/CameraParameters.cpp
+index ac057246766646f3c2e829cbfba26b687b0c6534..f25271a93dfab945076c181c306b1c79912d7167 100644
+--- a/shims/libcamera_client/CameraParameters.cpp
++++ b/shims/libcamera_client/CameraParameters.cpp
+@@ -207,7 +207,7 @@ String8 CameraParameters::flatten() const
+ 
+ void CameraParameters::unflatten(const String8 &params)
+ {
+-    const char *a = params.string();
++    const char *a = params.c_str();
+     const char *b;
+ 
+     mMap.clear();
+@@ -273,7 +273,7 @@ const char *CameraParameters::get(const char *key) const
+     String8 v = mMap.valueFor(String8(key));
+     if (v.length() == 0)
+         return 0;
+-    return v.string();
++    return v.c_str();
+ }
+ 
+ int CameraParameters::getInt(const char *key) const
+@@ -465,7 +465,7 @@ void CameraParameters::dump() const
+         String8 k, v;
+         k = mMap.keyAt(i);
+         v = mMap.valueAt(i);
+-        ALOGD("%s: %s\n", k.string(), v.string());
++        ALOGD("%s: %s\n", k.c_str(), v.c_str());
+     }
+ }
+ 
+@@ -480,10 +480,10 @@ status_t CameraParameters::dump(int fd, const Vector<String16>& /*args*/) const
+         String8 k, v;
+         k = mMap.keyAt(i);
+         v = mMap.valueAt(i);
+-        snprintf(buffer, 255, "\t%s: %s\n", k.string(), v.string());
++        snprintf(buffer, 255, "\t%s: %s\n", k.c_str(), v.c_str());
+         result.append(buffer);
+     }
+-    write(fd, result.string(), result.size());
++    write(fd, result.c_str(), result.size());
+     return NO_ERROR;
+ }
+ 
+diff --git a/system.prop b/system.prop
+index 25947c6cf9d0d44e37a3fc23d5f755bd29d076a2..3fc36c24d0523b6071e0b2db85a09e182954eba3 100755
+--- a/system.prop
++++ b/system.prop
+@@ -56,7 +56,9 @@ bluetooth.profile.sap.server.enabled?=true
+ 
+ # BPF
+ ro.kernel.ebpf.supported=false
+-bpf.progs_loaded=1
++
++# Packed APEX on the legacy loop driver
++ro.apexd.legacy_loop_io=true
+ 
+ # Camera
+ camera.disable_zsl_mode=1
+@@ -138,7 +140,7 @@ vendor.usb.controller=6a00000.dwc3
+ wifi.interface=wlan0
+ 
+ # WFD
+-persist.debug.wfd.enable=1
++persist.debug.wfd.enable=0
+ persist.sys.wfd.virtual=0
+ 
+ # Zygote
+diff --git a/touch/Android.bp b/touch/Android.bp
+index 5bd39d8c3af6d5fca15cd6f75dee5a761740e1d4..6ddc99e5925aea5bbe9d6b2a8988e36c9b67271a 100644
+--- a/touch/Android.bp
++++ b/touch/Android.bp
+@@ -13,10 +13,9 @@
+ // limitations under the License.
+ 
+ cc_binary {
+-    name: "vendor.lineage.touch@1.0-service.gts3l",
++    name: "vendor.lineage.touch-service.gts3l",
+     init_rc: ["vendor.lineage.touch@1.0-service.gts3l.rc"],
+     vintf_fragments: ["vendor.lineage.touch@1.0-service.gts3l.xml"],
+-    defaults: ["hidl_defaults"],
+     relative_install_path: "hw",
+     vendor: true,
+     srcs: [
+@@ -25,8 +24,8 @@ cc_binary {
+     ],
+     shared_libs: [
+         "libbase",
+-        "libhidlbase",
++        "libbinder_ndk",
+         "libutils",
+-        "vendor.lineage.touch@1.0",
++        "vendor.lineage.touch-V1-ndk",
+     ],
+ }
+diff --git a/touch/KeyDisabler.cpp b/touch/KeyDisabler.cpp
+index 63e60f6f909247cc96131a931926c85e8d877afe..218472fd5b0c521241f0f045194a91ba5966c011 100644
+--- a/touch/KeyDisabler.cpp
++++ b/touch/KeyDisabler.cpp
+@@ -17,6 +17,7 @@
+ #include <android-base/file.h>
+ #include <android-base/logging.h>
+ #include <android-base/strings.h>
++#include <unistd.h>
+ 
+ #include "KeyDisabler.h"
+ 
+@@ -24,43 +25,42 @@ using ::android::base::ReadFileToString;
+ using ::android::base::Trim;
+ using ::android::base::WriteStringToFile;
+ 
++namespace aidl {
+ namespace vendor {
+ namespace lineage {
+ namespace touch {
+-namespace V1_0 {
+-namespace implementation {
+ 
+ constexpr const char kControlPath[] = "/sys/class/sec/sec_touchkey/input/enabled";
+ 
+ KeyDisabler::KeyDisabler() : has_key_disabler_(!access(kControlPath, R_OK | W_OK)) {}
+ 
+-// Methods from ::vendor::lineage::touch::V1_0::IKeyDisabler follow.
+-Return<bool> KeyDisabler::isEnabled() {
++ndk::ScopedAStatus KeyDisabler::getEnabled(bool* enabled) {
+     std::string buf;
+-
+-    if (!has_key_disabler_) return false;
++    *enabled = false;
++    if (!has_key_disabler_) return ndk::ScopedAStatus::fromExceptionCode(EX_UNSUPPORTED_OPERATION);
+ 
+     if (!ReadFileToString(kControlPath, &buf, true)) {
+         LOG(ERROR) << "Failed to read from " << kControlPath;
+-        return false;
++        return ndk::ScopedAStatus::fromServiceSpecificError(errno);
+     }
+ 
+-    return Trim(buf) == "1";
++    // This node enables the physical keys. The HAL enables their disabling.
++    *enabled = Trim(buf) == "0";
++    return ndk::ScopedAStatus::ok();
+ }
+ 
+-Return<bool> KeyDisabler::setEnabled(bool enabled) {
+-    if (!has_key_disabler_) return false;
++ndk::ScopedAStatus KeyDisabler::setEnabled(bool enabled) {
++    if (!has_key_disabler_) return ndk::ScopedAStatus::fromExceptionCode(EX_UNSUPPORTED_OPERATION);
+ 
+     if (!WriteStringToFile(std::to_string(!enabled), kControlPath)) {
+         LOG(ERROR) << "Failed to write to " << kControlPath;
+-        return false;
++        return ndk::ScopedAStatus::fromServiceSpecificError(errno);
+     }
+ 
+-    return true;
++    return ndk::ScopedAStatus::ok();
+ }
+ 
+-}  // namespace implementation
+-}  // namespace V1_0
+ }  // namespace touch
+ }  // namespace lineage
+ }  // namespace vendor
++}  // namespace aidl
+diff --git a/touch/KeyDisabler.h b/touch/KeyDisabler.h
+index 28478eb9bb1e5a8a7ae81b663389d870c685e017..ccd436c2c412d76f02189a622a068bd03d04dc87 100644
+--- a/touch/KeyDisabler.h
++++ b/touch/KeyDisabler.h
+@@ -16,29 +16,23 @@
+ 
+ #pragma once
+ 
+-#include <vendor/lineage/touch/1.0/IKeyDisabler.h>
++#include <aidl/vendor/lineage/touch/BnKeyDisabler.h>
+ 
++namespace aidl {
+ namespace vendor {
+ namespace lineage {
+ namespace touch {
+-namespace V1_0 {
+-namespace implementation {
+-
+-using ::android::hardware::Return;
+-
+-class KeyDisabler : public IKeyDisabler {
++class KeyDisabler : public BnKeyDisabler {
+   public:
+     KeyDisabler();
+-    // Methods from ::vendor::lineage::touch::V1_0::IKeyDisabler follow.
+-    Return<bool> isEnabled() override;
+-    Return<bool> setEnabled(bool enabled) override;
++    ndk::ScopedAStatus getEnabled(bool* enabled) override;
++    ndk::ScopedAStatus setEnabled(bool enabled) override;
+ 
+   private:
+     const bool has_key_disabler_;
+ };
+ 
+-}  // namespace implementation
+-}  // namespace V1_0
+ }  // namespace touch
+ }  // namespace lineage
+ }  // namespace vendor
++}  // namespace aidl
+diff --git a/touch/service.cpp b/touch/service.cpp
+index 29109e34c01b6a3364de07b9ee9fc4d1314582cb..5b2bf819ac48eea2c0241b07ede5037649e3018a 100644
+--- a/touch/service.cpp
++++ b/touch/service.cpp
+@@ -14,49 +14,21 @@
+  * limitations under the License.
+  */
+ 
+-#define LOG_TAG "vendor.lineage.touch@1.0-service.gts3l"
++#define LOG_TAG "vendor.lineage.touch-service.gts3l"
+ 
+ #include <android-base/logging.h>
+-#include <hidl/HidlTransportSupport.h>
+-
++#include <android/binder_manager.h>
++#include <android/binder_process.h>
+ #include "KeyDisabler.h"
+ 
+-using android::OK;
+-using android::sp;
+-using android::status_t;
+-using android::hardware::configureRpcThreadpool;
+-using android::hardware::joinRpcThreadpool;
+-
+-using ::vendor::lineage::touch::V1_0::IKeyDisabler;
+-using ::vendor::lineage::touch::V1_0::implementation::KeyDisabler;
++using aidl::vendor::lineage::touch::KeyDisabler;
+ 
+ int main() {
+-    sp<KeyDisabler> keyDisabler;
+-    status_t status;
+-
+-    LOG(INFO) << "Touch HAL service is starting.";
+-
+-    keyDisabler = new KeyDisabler();
+-    if (keyDisabler == nullptr) {
+-        LOG(ERROR) << "Can not create an instance of Touch HAL KeyDisabler Iface, exiting.";
+-        goto shutdown;
+-    }
+-
+-    configureRpcThreadpool(1, true /*callerWillJoin*/);
+-
+-    status = keyDisabler->registerAsService();
+-    if (status != OK) {
+-        LOG(ERROR) << "Could not register service for Touch HAL KeyDisabler Iface ("
+-                   << status << ")";
+-        goto shutdown;
+-    }
+-
+-    LOG(INFO) << "Touch HAL service is ready.";
+-    joinRpcThreadpool();
+-    // Should not pass this line
+-
+-shutdown:
+-    // In normal operation, we don't expect the thread pool to shutdown
+-    LOG(ERROR) << "Touch HAL service is shutting down.";
++    ABinderProcess_setThreadPoolMaxThreadCount(0);
++    auto keyDisabler = ndk::SharedRefBase::make<KeyDisabler>();
++    const std::string instance = std::string(KeyDisabler::descriptor) + "/default";
++    const auto status = AServiceManager_addService(keyDisabler->asBinder().get(), instance.c_str());
++    CHECK_EQ(status, STATUS_OK) << "Failed to register " << instance;
++    ABinderProcess_joinThreadPool();
+     return 1;
+ }
+diff --git a/touch/vendor.lineage.touch@1.0-service.gts3l.rc b/touch/vendor.lineage.touch@1.0-service.gts3l.rc
+index a795a2599e0e9034796f57d34392a42d96146e9c..e364daf5514c9dbfd4ba640aa7941129f61b951a 100644
+--- a/touch/vendor.lineage.touch@1.0-service.gts3l.rc
++++ b/touch/vendor.lineage.touch@1.0-service.gts3l.rc
+@@ -3,7 +3,7 @@ on init
+     chown system system /sys/class/sec/sec_touchkey/input/enabled
+     chmod 0660 /sys/class/sec/sec_touchkey/input/enabled
+ 
+-service vendor.touch-hal-1-0 /vendor/bin/hw/vendor.lineage.touch@1.0-service.gts3l
++service vendor.touch-hal /vendor/bin/hw/vendor.lineage.touch-service.gts3l
+     class hal
+     user system
+     group system
+diff --git a/touch/vendor.lineage.touch@1.0-service.gts3l.xml b/touch/vendor.lineage.touch@1.0-service.gts3l.xml
+index c8bebbc1e28e75878fb845b31cfe9598baa43662..8237fb56257252087c75bf212d6d012346f345d2 100644
+--- a/touch/vendor.lineage.touch@1.0-service.gts3l.xml
++++ b/touch/vendor.lineage.touch@1.0-service.gts3l.xml
+@@ -1,8 +1,7 @@
+ <manifest version="1.0" type="device">
+-    <hal format="hidl">
++    <hal format="aidl">
+         <name>vendor.lineage.touch</name>
+-        <transport>hwbinder</transport>
+-        <version>1.0</version>
++        <version>1</version>
+         <interface>
+             <name>IKeyDisabler</name>
+             <instance>default</instance>
+diff --git a/write_samsung_boot_id.py b/write_samsung_boot_id.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6e53a4a43076f69a866ec3567610b3fb9cefaec6
+--- /dev/null
++++ b/write_samsung_boot_id.py
+@@ -0,0 +1,30 @@
++#!/usr/bin/env python3
++# Copyright (C) 2026 Tab S3 ROM Builder
++# SPDX-License-Identifier: Apache-2.0
++"""Preserve the legacy v0/dt_size boot ID used by the working Samsung ROM."""
++import hashlib
++import pathlib
++import struct
++import sys
++
++path = pathlib.Path(sys.argv[1])
++data = bytearray(path.read_bytes())
++if len(data) < 1632 or data[:8] != b"ANDROID!":
++    raise SystemExit("Not an Android boot image")
++kernel, _, ramdisk, _, second, _, _, page, version = struct.unpack_from("<9I", data, 8)
++if version != 0 or page != 4096 or second != 0:
++    raise SystemExit("Unexpected SM-T820 boot image layout")
++offset = page
++digest = hashlib.sha1()
++for size in (kernel, ramdisk, second):
++    if offset + size > len(data):
++        raise SystemExit("Truncated boot image payload")
++    digest.update(data[offset:offset + size])
++    digest.update(struct.pack("<I", size))
++    offset += ((size + page - 1) // page) * page
++# Legacy mkbootimg includes the v0 dt_size field in the boot ID, even when
++# the DTBs are appended to Image.gz-dtb and dt_size is zero. The owner's
++# original 20240309 ROM has this exact convention.
++digest.update(struct.pack("<I", 0))
++data[576:608] = digest.digest() + bytes(12)
++path.write_bytes(data)

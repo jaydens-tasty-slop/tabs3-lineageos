@@ -1,0 +1,17 @@
+diff --git a/applypatch/Android.bp b/applypatch/Android.bp
+index 0d6d23b90cd4c90867bade90ec6c471e27fd5ee0..b1a07253accc6f41583becfdd2b1c295c7e5a8d0 100644
+--- a/applypatch/Android.bp
++++ b/applypatch/Android.bp
+@@ -141,9 +141,9 @@ cc_binary {
+         "libziparchive",
+     ],
+ 
+-    init_rc: [
+-        "vendor_flash_recovery.rc",
+-    ],
++    // The SM-T820 port preserves the owner's existing TWRP. Do not install
++    // an init service that could overwrite it when an old persistent
++    // recovery_update setting is restored from Android 14 user data.
+ }
+ 
+ cc_library_static {

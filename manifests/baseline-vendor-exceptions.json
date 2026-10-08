@@ -1,0 +1,143 @@
+{
+  "baseline_zip_sha256": "d0dd2e8ce142afba3779f0a9bcfe7d03223bea334f9e09cb53bcf7b9085bfd12",
+  "baseline_system_sha256": "a8b1ca8841c88ffabdf84a77901b597234b2cd4d0468d55eeaac41ac9a232bfb",
+  "comparison_report": "research/baseline-vendor-dependency-comparison.json",
+  "comparison_report_sha256": "5d016204eb4b036e8bd430cd40c5e285c2bbac03f61aaf8f0e53a2a3b6a42f40",
+  "scope": "Only these exact unmodified baseline blobs and their measured missing dependencies may be accepted. These are inherited unresolved dependencies, not functional hardware claims.",
+  "exceptions": [
+    {
+      "path": "vendor/bin/qmuxd",
+      "architecture": "arm64",
+      "blob_sha256": "f768264ba688573fa506479ed537d8909a6669230ff75005fdf071aff70b37e7",
+      "missing": [
+        "libconfigdb.so"
+      ]
+    },
+    {
+      "path": "vendor/lib/libOmxVideoDSMode.so",
+      "architecture": "arm",
+      "blob_sha256": "ae8d92d03c8d8408288e83ea8dbbd3353b4712136f31851b0e579d7a87cb9dc8",
+      "missing": [
+        "libwfdcommonutils_proprietary.so",
+        "libwfdmmservice.so"
+      ]
+    },
+    {
+      "path": "vendor/lib/libOmxVpp.so",
+      "architecture": "arm",
+      "blob_sha256": "836fa74797bbe7a9aa6c96b0fa3fe3b2ad98003f09874031119703f82a706159",
+      "missing": [
+        "libmm-omxcore.so"
+      ]
+    },
+    {
+      "path": "vendor/lib/libdrmtime.so",
+      "architecture": "arm",
+      "blob_sha256": "7b06bc8f5d2fd80d7928173d902cba4d77c05a0470bf01dab6b374d38cf469ce",
+      "missing": [
+        "libtime_genoff.so"
+      ]
+    },
+    {
+      "path": "vendor/lib/libdsi_netctrl.so",
+      "architecture": "arm",
+      "blob_sha256": "846583f64e0bffe684d0674c1cc33ace4d7c11c3393cb7c34c6180f8a77fc3c6",
+      "missing": [
+        "libconfigdb.so",
+        "libnetmgr.so"
+      ]
+    },
+    {
+      "path": "vendor/lib/libremotedisplay_wfd.so",
+      "architecture": "arm",
+      "blob_sha256": "6ccb85d66ee414682a390d38371af3c6d217fc7aed606ec3bcb4825889eacd1a",
+      "missing": [
+        "libhdcp2.so",
+        "libmediaextractor.so",
+        "libremotedisplay.so",
+        "libsecuibc.so",
+        "libsfextcp.so"
+      ]
+    },
+    {
+      "path": "vendor/lib/libwfdavenhancements.so",
+      "architecture": "arm",
+      "blob_sha256": "e2a2f70224cfd50a82554aa5ae0edafb906df71c28c4923da17db9c4c492afa8",
+      "missing": [
+        "libmediaextractor.so"
+      ]
+    },
+    {
+      "path": "vendor/lib/libwfdmmsink.so",
+      "architecture": "arm",
+      "blob_sha256": "29af003e7b5b3d0ddfe37c3a8ce8632722925e1fd311d543e893603d46456419",
+      "missing": [
+        "libmmrtpdecoder.so",
+        "libwfdcodecv4l2.so",
+        "libwfdcommonutils.so",
+        "libwfdconfigutils.so",
+        "libwfdmminterface.so"
+      ]
+    },
+    {
+      "path": "vendor/lib/libwfduibcsinkinterface.so",
+      "architecture": "arm",
+      "blob_sha256": "b481c6fe992e1fe27623d346b06ec2c3621603343f8776eb126fd4cf00949307",
+      "missing": [
+        "libwfdcommonutils.so",
+        "libwfdconfigutils.so"
+      ]
+    },
+    {
+      "path": "vendor/lib64/libblurdetection_interface.so",
+      "architecture": "arm64",
+      "blob_sha256": "8d940caa8b79c4bcf86b49f513b331a8109743b31696adba1e2841b0414c3947",
+      "missing": [
+        "libuniplugin.so"
+      ]
+    },
+    {
+      "path": "vendor/lib64/libdsi_netctrl.so",
+      "architecture": "arm64",
+      "blob_sha256": "3f0db56ded7299c2d23fc6fbf82909a02dc75f0e06fb86ce0f3f656ce6562ee3",
+      "missing": [
+        "libconfigdb.so",
+        "libnetmgr.so"
+      ]
+    },
+    {
+      "path": "vendor/lib64/libflashedlls_interface.so",
+      "architecture": "arm64",
+      "blob_sha256": "08f6537b4d0821682195d33a34cc547ea69963e64fdbcd45ac622d94aa042665",
+      "missing": [
+        "libuniplugin.so"
+      ]
+    },
+    {
+      "path": "vendor/lib64/libhighlight_interface.so",
+      "architecture": "arm64",
+      "blob_sha256": "fa13c47a9d3dcde6766f57e0f77e85271f21a6401c9fa34e15b7e72279dcc9a3",
+      "missing": [
+        "libHighLightVideo.so",
+        "libuniplugin.so"
+      ]
+    },
+    {
+      "path": "vendor/lib64/libhypermotion_interface.so",
+      "architecture": "arm64",
+      "blob_sha256": "7d9f897790abf5aebecd31d93b52965ddd225b99100794c3eb0e7119162c4b75",
+      "missing": [
+        "libhypermotion_core.so",
+        "libuniplugin.so"
+      ]
+    },
+    {
+      "path": "vendor/lib64/libsmartfocus_interface.so",
+      "architecture": "arm64",
+      "blob_sha256": "806e934bb5b2ac73d68bc2039aaa4ee4e7f079d2044046c2c9f38ddd2bc8b318",
+      "missing": [
+        "libuniplugin.so"
+      ]
+    }
+  ]
+}

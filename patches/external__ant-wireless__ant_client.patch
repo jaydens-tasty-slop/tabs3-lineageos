@@ -1,0 +1,52 @@
+diff --git a/AndroidManifest.xml b/AndroidManifest.xml
+index 524ae4c085902b56ec1cf8b6e582fd6a14ab4ea0..f8916d47f19d37948a8ac0917ee850a6fb69a9bf 100644
+--- a/AndroidManifest.xml
++++ b/AndroidManifest.xml
+@@ -27,7 +27,7 @@ limitations under the License.
+ 
+     <application android:icon="@mipmap/ic_launcher"
+         android:label="@string/app_name"
+-        android:process="system"
++    android:process=":ant"
+         android:permission="com.dsi.ant.permission.ANTRADIO" >
+ 
+         <service android:exported="true" android:name=".AntService">
+diff --git a/sepolicy/ANTHALService.te b/sepolicy/ANTHALService.te
+index f84d91f20f9efcb40cd2e264ace6aae0ce489c7f..eff92ec943be868426acd94155df58b93dd3d191 100644
+--- a/sepolicy/ANTHALService.te
++++ b/sepolicy/ANTHALService.te
+@@ -1,4 +1,2 @@
+-# Currently ANTHALService runs as part of the system server, so we just need
+-# to allow the system server to be a client of the ant hal.
+-hal_client_domain(system_server, hal_dsi_ant);
+-
++# The platform-signed ANT application runs in its own system_app process.
++hal_client_domain(system_app, hal_dsi_ant);
+diff --git a/src/com/dsi/ant/server/AntService.java b/src/com/dsi/ant/server/AntService.java
+index 0983272d08a70e1f2c41b916b6b0e65fa5a72a1a..00e4cf90b9e6a63f58f6aee57f8b376dd026a20d 100644
+--- a/src/com/dsi/ant/server/AntService.java
++++ b/src/com/dsi/ant/server/AntService.java
+@@ -750,12 +750,16 @@ public class AntService extends Service
+                 filter.addAction(Intent.ACTION_USER_SWITCHED);
+             }
+         }
+-        registerReceiver(mReceiver, filter);
++        // ANT clients may be separate apps. Explicitly export their receiver,
++        // while requiring the same radio permission as the service API.
++        registerReceiver(mReceiver, filter,
++                "com.dsi.ant.permission.ANTRADIO", null, Context.RECEIVER_EXPORTED);
+ 
+         if (mRequiresBluetoothOn) {
+             IntentFilter stateChangedFilter = new IntentFilter();
+             stateChangedFilter.addAction(BluetoothAdapter.ACTION_STATE_CHANGED);
+-            registerReceiver(mStateChangedReceiver, stateChangedFilter);
++            registerReceiver(mStateChangedReceiver, stateChangedFilter,
++                    Context.RECEIVER_EXPORTED);
+         }
+     }
+ 
+@@ -878,4 +882,3 @@ public class AntService extends Service
+         }
+     };
+ }
+-

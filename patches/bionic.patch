@@ -1,0 +1,80 @@
+diff --git a/libc/bionic/sys_epoll.cpp b/libc/bionic/sys_epoll.cpp
+index be97818da9dd1010dd46c0de1c9313bed30b14ec..e938bf69cadc418cce8c721e840a3e15b180ddbd 100644
+--- a/libc/bionic/sys_epoll.cpp
++++ b/libc/bionic/sys_epoll.cpp
+@@ -27,6 +27,7 @@
+  */
+ 
+ #include <errno.h>
++#include <limits.h>
+ #include <sys/epoll.h>
+ 
+ #include "private/SigSetConverter.h"
+@@ -80,7 +81,27 @@ int epoll_pwait2_64(int fd, epoll_event* events, int max_events, const timespec*
+     kts_ptr = &kts;
+   }
+ #endif
+-  return __epoll_pwait2(fd, events, max_events, kts_ptr, ss, sizeof(*ss));
++  const int result = __epoll_pwait2(fd, events, max_events, kts_ptr, ss, sizeof(*ss));
++  if (result != -1 || errno != ENOSYS) return result;
++
++  // Preserve signal masks and avoid an immediate retry loop on pre-5.11
++  // kernels. Round a fractional millisecond up and clamp instead of
++  // overflowing into epoll_pwait's negative (infinite) timeout range.
++  int timeout_ms = -1;
++  if (timeout != nullptr) {
++    if (timeout->tv_sec < 0 || timeout->tv_nsec < 0 || timeout->tv_nsec >= 1000000000) {
++      errno = EINVAL;
++      return -1;
++    }
++    if (timeout->tv_sec > INT_MAX / 1000) {
++      timeout_ms = INT_MAX;
++    } else {
++      const int64_t ms = static_cast<int64_t>(timeout->tv_sec) * 1000 +
++                         (timeout->tv_nsec + 999999) / 1000000;
++      timeout_ms = ms > INT_MAX ? INT_MAX : static_cast<int>(ms);
++    }
++  }
++  return __epoll_pwait(fd, events, max_events, timeout_ms, ss, sizeof(*ss));
+ }
+ 
+ int epoll_wait(int fd, struct epoll_event* events, int max_events, int timeout) {
+diff --git a/libc/upstream-openbsd/android/include/arc4random.h b/libc/upstream-openbsd/android/include/arc4random.h
+index 1940398ba85606f19e022aa5844f51ef3679e33c..52e6082636c72965d10329804dd7ae390c0e433b 100644
+--- a/libc/upstream-openbsd/android/include/arc4random.h
++++ b/libc/upstream-openbsd/android/include/arc4random.h
+@@ -18,6 +18,7 @@
+  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+  */
+ 
++#include <errno.h>
+ #include <pthread.h>
+ #include <sys/mman.h>
+ #include <sys/prctl.h>
+@@ -42,7 +43,16 @@ static inline void _getentropy_fail(void) {
+ }
+ 
+ static inline void _rs_forkdetect(void) {
+-  // Not needed thanks to the MADV_WIPEONFORK below.
++  // Older Samsung kernels do not implement MADV_WIPEONFORK. Keep the
++  // fork reseeding guarantee: discard inherited state before consuming it.
++  // bionic's fork implementation holds g_arc4random_mutex across fork.
++  static pid_t owner_pid;
++  const pid_t pid = getpid();
++  if (rs != NULL && owner_pid != pid) {
++    explicit_bzero(rs, sizeof(*rs));
++    explicit_bzero(rsx, sizeof(*rsx));
++  }
++  owner_pid = pid;
+ }
+ 
+ static inline int _rs_allocate(struct _rs** rsp, struct _rsx** rsxp) {
+@@ -60,7 +70,7 @@ static inline int _rs_allocate(struct _rs** rsp, struct _rsx** rsxp) {
+   }
+ 
+   // Equivalent to OpenBSD's minherit(MAP_INHERIT_ZERO).
+-  if (madvise(p, size, MADV_WIPEONFORK) == -1) {
++  if (madvise(p, size, MADV_WIPEONFORK) == -1 && errno != EINVAL) {
+     async_safe_fatal("arc4random data MADV_WIPEONFORK failed: %m");
+   }
+ 

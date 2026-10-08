@@ -1,0 +1,166 @@
+diff --git a/36/64/arm64/source-based/libnetd_updatable.so.lsdump b/36/64/arm64/source-based/libnetd_updatable.so.lsdump
+index 3f8ded3c6adbb547bd27115069e326c491d17973..1837f59d7f8310bc394feb791911b2dacb27db49 100644
+--- a/36/64/arm64/source-based/libnetd_updatable.so.lsdump
++++ b/36/64/arm64/source-based/libnetd_updatable.so.lsdump
+@@ -51,6 +51,27 @@
+   {
+    "name" : "libnetd_updatable_init"
+   },
++  {
++   "name" : "libnetd_updatable_legacy_canTagOtherUid"
++  },
++  {
++   "name" : "libnetd_updatable_legacy_isUidNetworkingBlocked"
++  },
++  {
++   "name" : "libnetd_updatable_legacy_setDataSaver"
++  },
++  {
++   "name" : "libnetd_updatable_legacy_setEnabledChains"
++  },
++  {
++   "name" : "libnetd_updatable_legacy_setReady"
++  },
++  {
++   "name" : "libnetd_updatable_legacy_setUidChain"
++  },
++  {
++   "name" : "libnetd_updatable_legacy_setUidPermission"
++  },
+   {
+    "name" : "libnetd_updatable_tagSocket"
+   },
+@@ -218,6 +239,102 @@
+    "return_type" : "_ZTIi",
+    "source_file" : "packages/modules/Connectivity/bpf/netd/include/NetdUpdatablePublic.h"
+   },
++  {
++   "function_name" : "libnetd_updatable_legacy_canTagOtherUid",
++   "linker_set_key" : "libnetd_updatable_legacy_canTagOtherUid",
++   "parameters" :
++   [
++    {
++     "referenced_type" : "_ZTIj"
++    }
++   ],
++   "return_type" : "_ZTIb",
++   "source_file" : "packages/modules/Connectivity/bpf/netd/include/NetdUpdatablePublic.h"
++  },
++  {
++   "function_name" : "libnetd_updatable_legacy_isUidNetworkingBlocked",
++   "linker_set_key" : "libnetd_updatable_legacy_isUidNetworkingBlocked",
++   "parameters" :
++   [
++    {
++     "referenced_type" : "_ZTIj"
++    },
++    {
++     "referenced_type" : "_ZTIb"
++    }
++   ],
++   "return_type" : "_ZTIi",
++   "source_file" : "packages/modules/Connectivity/bpf/netd/include/NetdUpdatablePublic.h"
++  },
++  {
++   "function_name" : "libnetd_updatable_legacy_setDataSaver",
++   "linker_set_key" : "libnetd_updatable_legacy_setDataSaver",
++   "parameters" :
++   [
++    {
++     "referenced_type" : "_ZTIb"
++    }
++   ],
++   "return_type" : "_ZTIv",
++   "source_file" : "packages/modules/Connectivity/bpf/netd/include/NetdUpdatablePublic.h"
++  },
++  {
++   "function_name" : "libnetd_updatable_legacy_setEnabledChains",
++   "linker_set_key" : "libnetd_updatable_legacy_setEnabledChains",
++   "parameters" :
++   [
++    {
++     "referenced_type" : "_ZTIj"
++    }
++   ],
++   "return_type" : "_ZTIi",
++   "source_file" : "packages/modules/Connectivity/bpf/netd/include/NetdUpdatablePublic.h"
++  },
++  {
++   "function_name" : "libnetd_updatable_legacy_setReady",
++   "linker_set_key" : "libnetd_updatable_legacy_setReady",
++   "parameters" :
++   [
++    {
++     "referenced_type" : "_ZTIb"
++    }
++   ],
++   "return_type" : "_ZTIv",
++   "source_file" : "packages/modules/Connectivity/bpf/netd/include/NetdUpdatablePublic.h"
++  },
++  {
++   "function_name" : "libnetd_updatable_legacy_setUidChain",
++   "linker_set_key" : "libnetd_updatable_legacy_setUidChain",
++   "parameters" :
++   [
++    {
++     "referenced_type" : "_ZTIi"
++    },
++    {
++     "referenced_type" : "_ZTIPKi"
++    },
++    {
++     "referenced_type" : "_ZTIm"
++    }
++   ],
++   "return_type" : "_ZTIi",
++   "source_file" : "packages/modules/Connectivity/bpf/netd/include/NetdUpdatablePublic.h"
++  },
++  {
++   "function_name" : "libnetd_updatable_legacy_setUidPermission",
++   "linker_set_key" : "libnetd_updatable_legacy_setUidPermission",
++   "parameters" :
++   [
++    {
++     "referenced_type" : "_ZTIi"
++    },
++    {
++     "referenced_type" : "_ZTIi"
++    }
++   ],
++   "return_type" : "_ZTIi",
++   "source_file" : "packages/modules/Connectivity/bpf/netd/include/NetdUpdatablePublic.h"
++  },
+   {
+    "function_name" : "libnetd_updatable_tagSocket",
+    "linker_set_key" : "libnetd_updatable_tagSocket",
+@@ -297,6 +414,14 @@
+    "referenced_type" : "_ZTIKc",
+    "size" : 8,
+    "source_file" : "system/logging/liblog/include/android/log.h"
++  },
++  {
++   "alignment" : 8,
++   "linker_set_key" : "_ZTIPKi",
++   "name" : "const int *",
++   "referenced_type" : "_ZTIKi",
++   "size" : 8,
++   "source_file" : "packages/modules/Connectivity/bpf/netd/include/NetdUpdatablePublic.h"
+   }
+  ],
+  "qualified_types" :
+@@ -327,6 +452,15 @@
+    "referenced_type" : "_ZTIc",
+    "size" : 1,
+    "source_file" : "system/logging/liblog/include/android/log.h"
++  },
++  {
++   "alignment" : 4,
++   "is_const" : true,
++   "linker_set_key" : "_ZTIKi",
++   "name" : "const int",
++   "referenced_type" : "_ZTIi",
++   "size" : 4,
++   "source_file" : "packages/modules/Connectivity/bpf/netd/include/NetdUpdatablePublic.h"
+   }
+  ],
+  "record_types" :

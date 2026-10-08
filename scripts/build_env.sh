@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Source from either build entry point; paths are stable across containers.
+cd /workspace/android
+export GIT_CONFIG_GLOBAL=/workspace/state/gitconfig
+export BUILD_USERNAME=rom-builder
+export BUILD_HOSTNAME=podman
+export USE_CCACHE=1
+export CCACHE_EXEC=/usr/bin/ccache
+export CCACHE_DIR=/workspace/state/ccache
+export CCACHE_MAXSIZE=30G
+export PYTHONDONTWRITEBYTECODE=1
+ccache --set-config=max_size=30G
+export MALLOC_ARENA_MAX=2
+export GOMAXPROCS=8
+export GOGC=25
+export GOMEMLIMIT=24GiB
+export JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=8
+export NINJA_HIGHMEM_NUM_JOBS=1
+export OUT_DIR=out
+source build/envsetup.sh
+lunch lineage_gts3lwifi-bp4a-userdebug

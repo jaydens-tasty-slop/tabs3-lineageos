@@ -1,0 +1,85 @@
+diff --git a/apexd/apexd_loop.cpp b/apexd/apexd_loop.cpp
+index c31c5dc36f3ae29cad11b1e639a227ac539862fb..c735014d808f84c2bdfbe80980f93c496015c831 100644
+--- a/apexd/apexd_loop.cpp
++++ b/apexd/apexd_loop.cpp
+@@ -540,8 +540,11 @@ Result<LoopbackDeviceUniqueFd> CreateAndConfigureLoopDevice(
+    * kernel driver will automatically enable Direct I/O when it sees that
+    * condition is now met.
+    */
+-  bool use_buffered_io = false;
+-  unique_fd target_fd(open(target.c_str(), O_RDONLY | O_CLOEXEC | O_DIRECT));
++  // Device opt-in for vendor loop drivers predating reliable direct I/O.
++  // APEX signature and dm-verity checks are unchanged.
++  bool use_buffered_io = GetBoolProperty("ro.apexd.legacy_loop_io", false);
++  unique_fd target_fd(open(target.c_str(), O_RDONLY | O_CLOEXEC |
++                                        (use_buffered_io ? 0 : O_DIRECT)));
+   if (target_fd.get() == -1) {
+     struct statfs stbuf;
+     int saved_errno = errno;
+diff --git a/apexer/apexer.py b/apexer/apexer.py
+index 8b20ad72d81d277808a40832390c238e8a3664ca..9320bfb2a10ecce6d2408e72a0c4efb7d52d15bd 100644
+--- a/apexer/apexer.py
++++ b/apexer/apexer.py
+@@ -121,6 +121,10 @@ def ParseArgs(argv):
+       action='store_true',
+       help='hashtree is omitted from "image".'
+   )
++  parser.add_argument(
++      '--no_share_dup_blocks',
++      action='store_true',
++      help='avoid ext4 shared blocks for kernels that cannot read that feature')
+   parser.add_argument(
+       '--android_jar_path',
+       required=False,
+@@ -380,6 +384,9 @@ def ValidateArgs(args):
+       if build_info.no_hashtree:
+         args.no_hashtree = True
+ 
++  if build_info is not None and build_info.no_share_dup_blocks:
++    args.no_share_dup_blocks = True
++
+   if not args.min_sdk_version:
+     if build_info is not None:
+       if build_info.min_sdk_version:
+@@ -427,6 +434,9 @@ def GenerateBuildInfo(args):
+   if args.no_hashtree:
+     build_info.no_hashtree = True
+ 
++  if args.no_share_dup_blocks:
++    build_info.no_share_dup_blocks = True
++
+   if args.override_apk_package_name:
+     build_info.override_apk_package_name = args.override_apk_package_name
+ 
+@@ -556,7 +566,8 @@ def CreateImageExt4(args, work_dir, manifests_dir, img_file):
+     cmd.extend(['-S', compiled_file_contexts])
+     cmd.extend(['-C', args.canned_fs_config])
+     cmd.extend(['-a', '/'])
+-    cmd.append('-s')  # share dup blocks
++    if not args.no_share_dup_blocks:
++      cmd.append('-s')  # share dup blocks
+     cmd.append(img_file)
+     RunCommand(cmd, args.verbose, {'E2FSPROGS_FAKE_TIME': '1'})
+ 
+@@ -567,7 +578,8 @@ def CreateImageExt4(args, work_dir, manifests_dir, img_file):
+     cmd.extend(['-S', compiled_file_contexts])
+     cmd.extend(['-C', args.canned_fs_config])
+     cmd.extend(['-a', '/'])
+-    cmd.append('-s')  # share dup blocks
++    if not args.no_share_dup_blocks:
++      cmd.append('-s')  # share dup blocks
+     cmd.append(img_file)
+     RunCommand(cmd, args.verbose, {'E2FSPROGS_FAKE_TIME': '1'})
+ 
+diff --git a/proto/apex_build_info.proto b/proto/apex_build_info.proto
+index fd8a349999b010fd8af19f18315bfa030589ffc1..b7d1f23cc28589d2fe4bb44c30dc2ae940f0632a 100644
+--- a/proto/apex_build_info.proto
++++ b/proto/apex_build_info.proto
+@@ -51,4 +51,7 @@ message ApexBuildInfo {
+ 
+   // Value of --payload_fs_type passed at build time.
+   string payload_fs_type = 10;
++
++  // Whether ext4 duplicate-block sharing was disabled for a legacy kernel.
++  bool no_share_dup_blocks = 11;
+ }

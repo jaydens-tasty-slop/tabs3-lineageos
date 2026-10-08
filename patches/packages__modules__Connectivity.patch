@@ -1,0 +1,1408 @@
+diff --git a/Tethering/src/com/android/networkstack/tethering/TetheringConfiguration.java b/Tethering/src/com/android/networkstack/tethering/TetheringConfiguration.java
+index 2235871c3cbc14f19de3f019ecab36b8947a8dd5..518476f737a486d920037bbc37e6fa64a17e551e 100644
+--- a/Tethering/src/com/android/networkstack/tethering/TetheringConfiguration.java
++++ b/Tethering/src/com/android/networkstack/tethering/TetheringConfiguration.java
+@@ -33,6 +33,7 @@ import android.content.Context;
+ import android.content.res.Resources;
+ import android.net.TetheringConfigurationParcel;
+ import android.os.PersistableBundle;
++import android.os.SystemProperties;
+ import android.provider.DeviceConfig;
+ import android.provider.Settings;
+ import android.telephony.CarrierConfigManager;
+@@ -600,6 +601,7 @@ public class TetheringConfiguration {
+     }
+ 
+     private boolean getEnableBpfOffload(final Resources res) {
++        if (!SystemProperties.getBoolean("ro.kernel.ebpf.supported", true)) return false;
+         // Get BPF offload config
+         // Priority 1: Device config
+         // Priority 2: Resource config
+diff --git a/bpf/dns_helper/Android.bp b/bpf/dns_helper/Android.bp
+index 716eb101c517fbe499bc2ee91a1a87536e505746..5d75277e73978437bc04209123f291ea85fa820c 100644
+--- a/bpf/dns_helper/Android.bp
++++ b/bpf/dns_helper/Android.bp
+@@ -41,6 +41,7 @@ cc_library {
+     ],
+     shared_libs: [
+         "libbase",
++        "libnetd_updatable",
+     ],
+     export_include_dirs: ["include"],
+     header_abi_checker: {
+diff --git a/bpf/dns_helper/DnsHelper.cpp b/bpf/dns_helper/DnsHelper.cpp
+index 3372908add60988949c0f2c2df6b038ccead9a4f..0365706a4bad60ac0c69c256480884e6bcf031b1 100644
+--- a/bpf/dns_helper/DnsHelper.cpp
++++ b/bpf/dns_helper/DnsHelper.cpp
+@@ -15,6 +15,8 @@
+  */
+ 
+ #include <errno.h>
++#include <android-base/properties.h>
++#include "NetdUpdatablePublic.h"
+ 
+ #include "DnsBpfHelper.h"
+ #include "DnsHelperPublic.h"
+@@ -22,6 +24,11 @@
+ static android::net::DnsBpfHelper sDnsBpfHelper;
+ 
+ int ADnsHelper_init() {
++  if (!android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) {
++    // Controller setup must have installed the actual legacy packet filters.
++    const int status = libnetd_updatable_legacy_isUidNetworkingBlocked(0, false);
++    return status < 0 ? status : 0;
++  }
+   auto result = sDnsBpfHelper.init();
+   if (!result.ok()) return -result.error().code();
+ 
+@@ -29,6 +36,9 @@ int ADnsHelper_init() {
+ }
+ 
+ int ADnsHelper_isUidNetworkingBlocked(uid_t uid, bool metered) {
++  if (!android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) {
++    return libnetd_updatable_legacy_isUidNetworkingBlocked(uid, metered);
++  }
+   auto result = sDnsBpfHelper.isUidNetworkingBlocked(uid, metered);
+   if (!result.ok()) return -result.error().code();
+ 
+diff --git a/bpf/loader/NetBpfLoad.cpp b/bpf/loader/NetBpfLoad.cpp
+index 238864798b76c1d0ee0f6904d283da56732f330e..38d1f48adf69e7d4c98be6eb8609fa98c0d2af6a 100644
+--- a/bpf/loader/NetBpfLoad.cpp
++++ b/bpf/loader/NetBpfLoad.cpp
+@@ -1604,6 +1604,17 @@ static int doLoad(char** argv, char * const envp[]) {
+ 
+     logTetheringApexVersion();
+ 
++    if (!android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) {
++        // Explicit legacy-device opt-in. Networking uses netd's owner match
++        // firewall and xt_qtaguid accounting, rather than pretending BPF loaded.
++        if (!exists("/proc/net/xt_qtaguid/ctrl")) {
++            ALOGE("Legacy networking requested without xt_qtaguid support");
++            return 1;
++        }
++        ALOGI("Legacy xt_qtaguid networking selected; no BPF programs loaded");
++        return android::base::SetProperty("bpf.progs_loaded", "1") ? 0 : 1;
++    }
++
+     // both S and T require kernel 4.9 (and eBpf support)
+     // (this also guarantees 'kernelVer' isn't an invalid uninitialized 0)
+     if (!isAtLeastKernelVersion(4, 9)) {
+diff --git a/bpf/netd/Android.bp b/bpf/netd/Android.bp
+index 3660764a29d8af0c2ebbaf72fce12b4a0962ba19..84db162461883bcc14cddecc2a00f29c5af9f191 100644
+--- a/bpf/netd/Android.bp
++++ b/bpf/netd/Android.bp
+@@ -35,6 +35,7 @@ cc_library {
+     srcs: [
+         "BpfHandler.cpp",
+         "NetdUpdatable.cpp",
++        "LegacyPolicy.cpp",
+     ],
+     static_libs: [
+         "libmodules-utils-build",
+diff --git a/bpf/netd/LegacyPolicy.cpp b/bpf/netd/LegacyPolicy.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..474ec988f174258eb595231a17d781ee481ed313
+--- /dev/null
++++ b/bpf/netd/LegacyPolicy.cpp
+@@ -0,0 +1,84 @@
++/* Copyright (C) 2026 Tab S3 ROM Builder
++ * SPDX-License-Identifier: Apache-2.0
++ */
++#include "NetdUpdatablePublic.h"
++
++#include <errno.h>
++#include <array>
++#include <map>
++#include <mutex>
++#include <set>
++
++namespace {
++std::mutex policyLock;
++std::array<std::set<uid_t>, 13> uidChains;
++std::map<uid_t, int32_t> uidPermissions;
++uint32_t enabledChains = 0;
++bool dataSaver = false;
++bool policyReady = false;
++
++bool allowlist(int chain) {
++    return chain == 1 || chain == 3 || chain == 4 || chain == 5 || chain == 6 || chain == 10;
++}
++}
++
++int libnetd_updatable_legacy_setUidChain(int32_t chain, const int32_t* uids, size_t count) {
++    if (chain < 1 || chain > 12 || (count && !uids)) return -EINVAL;
++    std::set<uid_t> replacement;
++    for (size_t i = 0; i < count; i++) {
++        if (uids[i] < 0) return -EINVAL;
++        replacement.insert(static_cast<uid_t>(uids[i]));
++    }
++    std::lock_guard guard(policyLock);
++    uidChains[chain] = std::move(replacement);
++    return 0;
++}
++
++int libnetd_updatable_legacy_setEnabledChains(uint32_t enabled) {
++    if (enabled & ~0x3feU) return -EINVAL; // Child chains 1 through 9.
++    std::lock_guard guard(policyLock);
++    enabledChains = enabled;
++    return 0;
++}
++
++void libnetd_updatable_legacy_setDataSaver(bool enabled) {
++    std::lock_guard guard(policyLock);
++    dataSaver = enabled;
++}
++
++int libnetd_updatable_legacy_setUidPermission(int32_t uid, int32_t permission) {
++    if (uid < 0 || (permission != -1 && (permission & ~12))) return -EINVAL;
++    std::lock_guard guard(policyLock);
++    // The Android permission map is indexed by appId, shared across users.
++    uid_t appId = static_cast<uid_t>(uid) % 100000;
++    if (permission == 0 || permission == -1) uidPermissions.erase(appId);
++    else uidPermissions[appId] = permission;
++    return 0;
++}
++
++bool libnetd_updatable_legacy_canTagOtherUid(uid_t uid) {
++    if (uid < 10000) return true;
++    std::lock_guard guard(policyLock);
++    auto permission = uidPermissions.find(uid % 100000);
++    return permission != uidPermissions.end() && (permission->second & 8); // UPDATE_DEVICE_STATS.
++}
++
++void libnetd_updatable_legacy_setReady(bool ready) {
++    std::lock_guard guard(policyLock);
++    policyReady = ready;
++}
++
++int libnetd_updatable_legacy_isUidNetworkingBlocked(uid_t uid, bool metered) {
++    std::lock_guard guard(policyLock);
++    if (!policyReady) return -EUNATCH;
++    // Match the system UID exemption in the installed xt_owner chains.
++    if (uid < 10000) return 0;
++    for (int chain = 1; chain <= 9; chain++) {
++        if (!(enabledChains & (1U << chain))) continue;
++        bool present = uidChains[chain].count(uid);
++        if (present != allowlist(chain)) return 1;
++    }
++    if (metered && (uidChains[11].count(uid) || uidChains[12].count(uid) ||
++                   (dataSaver && !uidChains[10].count(uid)))) return 1;
++    return 0;
++}
+diff --git a/bpf/netd/NetdUpdatable.cpp b/bpf/netd/NetdUpdatable.cpp
+index 3b15916398be151b2fbc6d78a0f7b3ca26af1010..b082f8a4cc3eac8046856e0c20048e90fa2ef983 100644
+--- a/bpf/netd/NetdUpdatable.cpp
++++ b/bpf/netd/NetdUpdatable.cpp
+@@ -17,8 +17,14 @@
+ #define LOG_TAG "NetdUpdatable"
+ 
+ #include "BpfHandler.h"
++#include <errno.h>
++#include <inttypes.h>
++#include <unistd.h>
+ 
+ #include <android-base/logging.h>
++#include <android-base/properties.h>
++#include <android-base/file.h>
++#include <android-base/stringprintf.h>
+ #include <netdutils/Status.h>
+ 
+ #include "NetdUpdatablePublic.h"
+@@ -29,6 +35,13 @@ int libnetd_updatable_init(const char* cg2_path) {
+     android::base::InitLogging(/*argv=*/nullptr);
+     LOG(INFO) << __func__ << ": Initializing";
+ 
++    if (!android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) {
++        // Legacy netd packet filters are installed by Controllers::init().
++        if (access("/proc/net/xt_qtaguid/ctrl", W_OK) != 0) return -errno;
++        LOG(INFO) << "Using xt_qtaguid and legacy netd firewall";
++        return 0;
++    }
++
+     android::netdutils::Status ret = sBpfHandler.init(cg2_path);
+     if (!android::netdutils::isOk(ret)) {
+         LOG(ERROR) << __func__ << ": Failed: (" << ret.code() << ") " << ret.msg();
+@@ -38,9 +51,23 @@ int libnetd_updatable_init(const char* cg2_path) {
+ }
+ 
+ int libnetd_updatable_tagSocket(int sockFd, uint32_t tag, uid_t chargeUid, uid_t realUid) {
++    if (!android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) {
++        // The legacy permission state is populated by the same privileged
++        // permission-map updates as the BPF path.
++        if (chargeUid == static_cast<uid_t>(-1)) chargeUid = realUid;
++        if (chargeUid != realUid && !libnetd_updatable_legacy_canTagOtherUid(realUid)) return -EPERM;
++        const uint64_t kernelTag = static_cast<uint64_t>(tag) << 32;
++        const std::string command = android::base::StringPrintf("t %d %" PRIu64 " %u",
++                                                               sockFd, kernelTag, chargeUid);
++        return android::base::WriteStringToFile(command, "/proc/net/xt_qtaguid/ctrl") ? 0 : -errno;
++    }
+     return sBpfHandler.tagSocket(sockFd, tag, chargeUid, realUid);
+ }
+ 
+ int libnetd_updatable_untagSocket(int sockFd) {
++    if (!android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) {
++        const std::string command = android::base::StringPrintf("u %d", sockFd);
++        return android::base::WriteStringToFile(command, "/proc/net/xt_qtaguid/ctrl") ? 0 : -errno;
++    }
+     return sBpfHandler.untagSocket(sockFd);
+ }
+diff --git a/bpf/netd/include/NetdUpdatablePublic.h b/bpf/netd/include/NetdUpdatablePublic.h
+index 1ca5ea2aeb6525131428d8d8846de8cf671d6104..0d08b9a958be114b9153d7bbc52d5acfb3ce401e 100644
+--- a/bpf/netd/include/NetdUpdatablePublic.h
++++ b/bpf/netd/include/NetdUpdatablePublic.h
+@@ -17,6 +17,8 @@
+ #pragma once
+ 
+ #include <stdint.h>
++#include <stddef.h>
++#include <stdbool.h>
+ #include <sys/cdefs.h>
+ #include <sys/types.h>
+ 
+@@ -58,4 +60,14 @@ int libnetd_updatable_tagSocket(int sockFd, uint32_t tag, uid_t chargeUid,
+  */
+ int libnetd_updatable_untagSocket(int sockFd);
+ 
+-__END_DECLS
+\ No newline at end of file
++// Private ROM compatibility API. The state is shared by netd and DNS in
++// this process, and updated only after the corresponding kernel rules succeed.
++int libnetd_updatable_legacy_setUidChain(int32_t chain, const int32_t* uids, size_t count);
++int libnetd_updatable_legacy_setEnabledChains(uint32_t enabled);
++void libnetd_updatable_legacy_setDataSaver(bool enabled);
++int libnetd_updatable_legacy_setUidPermission(int32_t uid, int32_t permission);
++bool libnetd_updatable_legacy_canTagOtherUid(uid_t uid);
++void libnetd_updatable_legacy_setReady(bool ready);
++int libnetd_updatable_legacy_isUidNetworkingBlocked(uid_t uid, bool metered);
++
++__END_DECLS
+diff --git a/bpf/netd/libnetd_updatable.map.txt b/bpf/netd/libnetd_updatable.map.txt
+index dcb11a1019164cd77b948e651ad8ae8c37970345..213547a392a098c1843d5bbe2fb0ff4ef59cd1ee 100644
+--- a/bpf/netd/libnetd_updatable.map.txt
++++ b/bpf/netd/libnetd_updatable.map.txt
+@@ -22,6 +22,13 @@ LIBNETD_UPDATABLE {
+     libnetd_updatable_init; # apex
+     libnetd_updatable_tagSocket; # apex
+     libnetd_updatable_untagSocket; # apex
++    libnetd_updatable_legacy_setUidChain; # apex
++    libnetd_updatable_legacy_setEnabledChains; # apex
++    libnetd_updatable_legacy_setDataSaver; # apex
++    libnetd_updatable_legacy_setUidPermission; # apex
++    libnetd_updatable_legacy_canTagOtherUid; # apex
++    libnetd_updatable_legacy_setReady; # apex
++    libnetd_updatable_legacy_isUidNetworkingBlocked; # apex
+   local:
+     *;
+ };
+diff --git a/framework/src/android/net/ConnectivityManager.java b/framework/src/android/net/ConnectivityManager.java
+index 1a07d33f0740bdba8b86a68f8f7ee3a0cb06b8ee..b69b5c2c24c2da753246d3e8cb3dfd0f19d6e1c4 100644
+--- a/framework/src/android/net/ConnectivityManager.java
++++ b/framework/src/android/net/ConnectivityManager.java
+@@ -2992,6 +2992,18 @@ public class ConnectivityManager {
+         return sInstance;
+     }
+ 
++    /**
++     * Resolve the legacy policy binder after Context constructs this manager.
++     * Public visibility is required by the jarjar-relocated map reader used by
++     * NetworkStack. Binder methods still enforce their normal permissions.
++     * @hide
++     */
++    public static IConnectivityManager getLegacyNetworkPolicyService() {
++        final ConnectivityManager manager = getInstanceOrNull();
++        if (manager == null) throw new IllegalStateException("Connectivity service is not ready");
++        return manager.mService;
++    }
++
+     /**
+      * @deprecated - use getSystemService. This is a kludge to support static access in certain
+      *               situations where a Context pointer is unavailable.
+diff --git a/framework/src/android/net/IConnectivityManager.aidl b/framework/src/android/net/IConnectivityManager.aidl
+index 067a76f5bd2e4ff8869903677ec43934f511fdd3..21f5c67d5661567828b0ab0f6052afc142e20ccb 100644
+--- a/framework/src/android/net/IConnectivityManager.aidl
++++ b/framework/src/android/net/IConnectivityManager.aidl
+@@ -253,6 +253,10 @@ interface IConnectivityManager
+ 
+     boolean getFirewallChainEnabled(int chain);
+ 
++    // Internal policy queries for devices using the legacy netd backend.
++    boolean getLegacyUidNetworkingBlocked(int uid, boolean isMetered);
++    boolean getLegacyDataSaverEnabled();
++
+     void replaceFirewallChain(int chain, in int[] uids);
+ 
+     IBinder getCompanionDeviceManagerProxyService();
+diff --git a/framework/src/android/net/NetworkStackBpfNetMaps.java b/framework/src/android/net/NetworkStackBpfNetMaps.java
+index b7c4e34fad35b95b7818c351bd579e92e40511cf..1957b31e75c402b1be9d7352117710ca899c7f5d 100644
+--- a/framework/src/android/net/NetworkStackBpfNetMaps.java
++++ b/framework/src/android/net/NetworkStackBpfNetMaps.java
+@@ -24,6 +24,8 @@ import android.annotation.NonNull;
+ import android.annotation.RequiresApi;
+ import android.os.Build;
+ import android.os.ServiceSpecificException;
++import android.os.SystemProperties;
++import android.os.RemoteException;
+ import android.system.ErrnoException;
+ 
+ import com.android.internal.annotations.VisibleForTesting;
+@@ -56,6 +58,16 @@ public class NetworkStackBpfNetMaps {
+     private final IBpfMap<S32, UidOwnerValue> mUidOwnerMap;
+     private final IBpfMap<S32, U8> mDataSaverEnabledMap;
+     private final Dependencies mDeps;
++    private final boolean mLegacyBackend;
++
++    private interface ServiceQuery<T> { T run(IConnectivityManager service) throws RemoteException; }
++    private <T> T queryLegacy(ServiceQuery<T> query) {
++        try {
++            return query.run(ConnectivityManager.getLegacyNetworkPolicyService());
++        } catch (RemoteException e) {
++            throw e.rethrowFromSystemServer();
++        }
++    }
+ 
+     private static class SingletonHolder {
+         static final NetworkStackBpfNetMaps sInstance = new NetworkStackBpfNetMaps();
+@@ -81,6 +93,13 @@ public class NetworkStackBpfNetMaps {
+                             + " is not supported below Android T");
+         }
+         mDeps = deps;
++        mLegacyBackend = !SystemProperties.getBoolean("ro.kernel.ebpf.supported", true);
++        if (mLegacyBackend) {
++            mConfigurationMap = null;
++            mUidOwnerMap = null;
++            mDataSaverEnabledMap = null;
++            return;
++        }
+         mConfigurationMap = mDeps.getConfigurationMap();
+         mUidOwnerMap = mDeps.getUidOwnerMap();
+         mDataSaverEnabledMap = mDeps.getDataSaverEnabledMap();
+@@ -132,6 +151,9 @@ public class NetworkStackBpfNetMaps {
+      *                                  cause of the failure.
+      */
+     public boolean isChainEnabled(final int chain) {
++        if (mLegacyBackend) {
++            return queryLegacy(service -> service.getFirewallChainEnabled(chain));
++        }
+         return BpfNetMapsUtils.isChainEnabled(mConfigurationMap, chain);
+     }
+ 
+@@ -147,6 +169,9 @@ public class NetworkStackBpfNetMaps {
+      *                                  cause of the failure.
+      */
+     public int getUidRule(final int chain, final int uid) {
++        if (mLegacyBackend) {
++            return queryLegacy(service -> service.getUidFirewallRule(chain, uid));
++        }
+         return BpfNetMapsUtils.getUidRule(mUidOwnerMap, chain, uid);
+     }
+ 
+@@ -164,6 +189,9 @@ public class NetworkStackBpfNetMaps {
+      * @hide
+      */
+     public boolean isUidNetworkingBlocked(final int uid, boolean isNetworkMetered) {
++        if (mLegacyBackend) {
++            return queryLegacy(service -> service.getLegacyUidNetworkingBlocked(uid, isNetworkMetered));
++        }
+         return BpfNetMapsUtils.isUidNetworkingBlocked(uid, isNetworkMetered,
+                 mConfigurationMap, mUidOwnerMap, mDataSaverEnabledMap);
+     }
+@@ -182,6 +210,9 @@ public class NetworkStackBpfNetMaps {
+      *                                  cause of the failure.
+      */
+     public boolean getDataSaverEnabled() {
++        if (mLegacyBackend) {
++            return queryLegacy(service -> service.getLegacyDataSaverEnabled());
++        }
+         return BpfNetMapsUtils.getDataSaverEnabled(mDataSaverEnabledMap);
+     }
+ }
+diff --git a/service-t/jni/com_android_server_net_NetworkStatsService.cpp b/service-t/jni/com_android_server_net_NetworkStatsService.cpp
+index a724f3fbe3dd34d6d9cf900017dcba273881b884..0f268259e21f9f38e14b5c416ba1ab49875e9f56 100644
+--- a/service-t/jni/com_android_server_net_NetworkStatsService.cpp
++++ b/service-t/jni/com_android_server_net_NetworkStatsService.cpp
+@@ -22,6 +22,7 @@
+ #include <fcntl.h>
+ #include <inttypes.h>
+ #include <jni.h>
++#include <android-base/properties.h>
+ #include <nativehelper/jni_macros.h>
+ #include <nativehelper/ScopedUtfChars.h>
+ #include <sys/stat.h>
+@@ -50,6 +51,7 @@ static struct {
+ } gNetworkStatsEntry;
+ 
+ static void nativeRegisterIface(JNIEnv* env, jclass clazz, jstring iface) {
++    if (!android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) return;
+     ScopedUtfChars iface8(env, iface);
+     if (!iface8.c_str()) return;
+     bpfRegisterIface(iface8.c_str());
+@@ -91,6 +93,8 @@ static jobject nativeGetUidStat(JNIEnv* env, jclass clazz, jint uid) {
+ }
+ 
+ static void nativeInitNetworkTracing(JNIEnv* env, jclass clazz) {
++    // This tracer records eBPF events; xt_qtaguid exposes counters only.
++    if (!android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) return;
+     NetworkTraceHandler::InitPerfettoTracing();
+ }
+ 
+diff --git a/service-t/src/com/android/server/net/BpfInterfaceMapHelper.java b/service-t/src/com/android/server/net/BpfInterfaceMapHelper.java
+index d569b78d15729e2ba7eb30ffc111e6366a3115ff..f732add219abc213b2eb684aaf56d40144f9eccf 100644
+--- a/service-t/src/com/android/server/net/BpfInterfaceMapHelper.java
++++ b/service-t/src/com/android/server/net/BpfInterfaceMapHelper.java
+@@ -17,6 +17,7 @@ package com.android.server.net;
+ 
+ import android.os.Build;
+ import android.system.ErrnoException;
++import android.system.Os;
+ import android.util.IndentingPrintWriter;
+ import android.util.Log;
+ 
+@@ -26,6 +27,7 @@ import com.android.internal.annotations.VisibleForTesting;
+ import com.android.net.module.util.BpfDump;
+ import com.android.net.module.util.BpfMap;
+ import com.android.net.module.util.IBpfMap;
++import com.android.net.module.util.MemoryBpfMap;
+ import com.android.net.module.util.Struct.S32;
+ 
+ /**
+@@ -55,6 +57,7 @@ public class BpfInterfaceMapHelper {
+     public static class Dependencies {
+         /** Create BpfMap for updating interface and index mapping. */
+         public IBpfMap<S32, InterfaceMapValue> getInterfaceMap() {
++            if (LegacyNetworkStats.enabled()) return new MemoryBpfMap<>();
+             try {
+                 return new BpfMap<>(IFACE_INDEX_NAME_MAP_PATH,
+                     BpfMap.BPF_F_RDONLY, S32.class, InterfaceMapValue.class);
+@@ -67,6 +70,7 @@ public class BpfInterfaceMapHelper {
+ 
+     /** get interface name by interface index from bpf map */
+     public String getIfNameByIndex(final int index) {
++        if (LegacyNetworkStats.enabled()) return Os.if_indextoname(index);
+         try {
+             final InterfaceMapValue value = mIndexToIfaceBpfMap.getValue(new S32(index));
+             if (value == null) {
+diff --git a/service-t/src/com/android/server/net/LegacyNetworkStats.java b/service-t/src/com/android/server/net/LegacyNetworkStats.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..ec01be74c9694c58b374a2f385432678317c0fe7
+--- /dev/null
++++ b/service-t/src/com/android/server/net/LegacyNetworkStats.java
+@@ -0,0 +1,121 @@
++/* Copyright (C) 2026 Tab S3 ROM Builder
++ * SPDX-License-Identifier: Apache-2.0
++ */
++package com.android.server.net;
++
++import android.net.NetworkStats;
++import android.os.SystemClock;
++import android.os.SystemProperties;
++import android.system.ErrnoException;
++import android.system.OsConstants;
++import java.io.BufferedReader;
++import java.io.FileReader;
++import java.io.FileOutputStream;
++import java.io.IOException;
++import java.nio.charset.StandardCharsets;
++import java.util.HashSet;
++
++/** Reads the cumulative xt_qtaguid counters instead of absent eBPF maps. */
++final class LegacyNetworkStats {
++    static boolean enabled() {
++        return !SystemProperties.getBoolean("ro.kernel.ebpf.supported", true);
++    }
++
++    static void writeCounterSet(int uid, int set) throws ErrnoException {
++        if (uid < 0 || set < 0 || set > 1) throw new ErrnoException("qtaguid counter set", OsConstants.EINVAL);
++        try (FileOutputStream output = new FileOutputStream("/proc/net/xt_qtaguid/ctrl")) {
++            output.write(("s " + set + " " + uid).getBytes(StandardCharsets.US_ASCII));
++        } catch (IOException e) {
++            throw new ErrnoException("qtaguid counter set", OsConstants.EIO, e);
++        }
++    }
++
++    static void deleteUid(int uid) throws IOException {
++        if (uid < 0) throw new IOException("Invalid accounting UID");
++        try (FileOutputStream output = new FileOutputStream("/proc/net/xt_qtaguid/ctrl")) {
++            output.write(("d 0 " + uid).getBytes(StandardCharsets.US_ASCII));
++        }
++    }
++
++    private static long counter(String value) throws IOException {
++        try {
++            long result = Long.parseLong(value);
++            if (result < 0) throw new NumberFormatException("negative counter");
++            return result;
++        } catch (NumberFormatException e) {
++            throw new IOException("Invalid xt_qtaguid counter", e);
++        }
++    }
++
++    static NetworkStats detail() throws IOException {
++        NetworkStats stats = new NetworkStats(SystemClock.elapsedRealtime(), 0);
++        try (BufferedReader input = new BufferedReader(new FileReader("/proc/net/xt_qtaguid/stats"))) {
++            String header = input.readLine();
++            if (header == null || !header.startsWith("idx iface ")) throw new IOException("Invalid xt_qtaguid header");
++            String line;
++            long lastIndex = 1;
++            while ((line = input.readLine()) != null) {
++                String[] fields = line.trim().split("\\s+");
++                if (fields.length < 9) throw new IOException("Truncated xt_qtaguid stats row");
++                long index = counter(fields[0]);
++                if (index != lastIndex + 1) throw new IOException("Inconsistent xt_qtaguid index");
++                lastIndex = index;
++                NetworkStats.Entry entry = new NetworkStats.Entry();
++                entry.iface = fields[1];
++                entry.uid = Math.toIntExact(counter(fields[3]));
++                entry.set = Math.toIntExact(counter(fields[4]));
++                entry.tag = NetworkStatsFactory.kernelToTag(fields[2]);
++                entry.rxBytes = counter(fields[5]);
++                entry.rxPackets = counter(fields[6]);
++                entry.txBytes = counter(fields[7]);
++                entry.txPackets = counter(fields[8]);
++                stats.combineValues(entry);
++            }
++        } catch (NumberFormatException | ArithmeticException e) {
++            throw new IOException("Invalid xt_qtaguid stats row", e);
++        }
++        return stats;
++    }
++
++    static NetworkStats interfaces() throws IOException {
++        NetworkStats stats = new NetworkStats(SystemClock.elapsedRealtime(), 6);
++        try (BufferedReader input = new BufferedReader(new FileReader("/proc/net/xt_qtaguid/iface_stat_all"))) {
++            String line;
++            while ((line = input.readLine()) != null) {
++                String[] fields = line.trim().split("\\s+");
++                if (fields.length < 10) throw new IOException("Truncated xt_qtaguid interface row");
++                NetworkStats.Entry entry = new NetworkStats.Entry();
++                entry.iface = fields[0];
++                entry.uid = NetworkStats.UID_ALL;
++                entry.set = NetworkStats.SET_ALL;
++                entry.tag = NetworkStats.TAG_NONE;
++                entry.rxBytes = counter(fields[2]);
++                entry.rxPackets = counter(fields[3]);
++                entry.txBytes = counter(fields[4]);
++                entry.txPackets = counter(fields[5]);
++                if (counter(fields[1]) != 0) {
++                    entry.rxBytes += counter(fields[6]);
++                    entry.rxPackets += counter(fields[7]);
++                    entry.txBytes += counter(fields[8]);
++                    entry.txPackets += counter(fields[9]);
++                }
++                stats.combineValues(entry);
++            }
++        }
++        return stats;
++    }
++
++    static NetworkStats.Entry total(String iface, int uid) {
++        try {
++            if (uid >= 0) return detail().getTotal(null, uid);
++            NetworkStats stats = interfaces();
++            if (iface == null) return stats.getTotal(null);
++            HashSet<String> names = new HashSet<>();
++            names.add(iface);
++            return stats.getTotal(null, names);
++        } catch (IOException e) {
++            android.util.Log.e("LegacyNetworkStats", "Unable to read kernel traffic counters", e);
++            return null; // TrafficStats' existing unsupported/error result.
++        }
++    }
++}
+diff --git a/service-t/src/com/android/server/net/NetworkStatsFactory.java b/service-t/src/com/android/server/net/NetworkStatsFactory.java
+index 7d48b71d7564a373e568b22ad0d71b5483bbdfbd..c442c7543f378e64eff82771379818eba5f8568a 100644
+--- a/service-t/src/com/android/server/net/NetworkStatsFactory.java
++++ b/service-t/src/com/android/server/net/NetworkStatsFactory.java
+@@ -109,6 +109,7 @@ public class NetworkStatsFactory {
+          */
+         @NonNull
+         public NetworkStats getNetworkStatsDetail() throws IOException {
++            if (LegacyNetworkStats.enabled()) return LegacyNetworkStats.detail();
+             final NetworkStats stats = new NetworkStats(SystemClock.elapsedRealtime(), 0);
+             final int ret = nativeReadNetworkStatsDetail(stats);
+             if (ret != 0) {
+@@ -122,6 +123,7 @@ public class NetworkStatsFactory {
+          */
+         @NonNull
+         public NetworkStats getNetworkStatsDev() throws IOException {
++            if (LegacyNetworkStats.enabled()) return LegacyNetworkStats.interfaces();
+             final NetworkStats stats = new NetworkStats(SystemClock.elapsedRealtime(), 6);
+             final int ret = nativeReadNetworkStatsDev(stats);
+             if (ret != 0) {
+@@ -256,13 +258,19 @@ public class NetworkStatsFactory {
+             requestSwapActiveStatsMapLocked();
+             // Stats are always read from the inactive map, so they must be read after the
+             // swap
+-            final NetworkStats diff = mDeps.getNetworkStatsDetail();
++            final NetworkStats snapshot = mDeps.getNetworkStatsDetail();
++            final NetworkStats diff = LegacyNetworkStats.enabled()
++                    ? NetworkStats.subtract(snapshot, mPersistSnapshot, null, null) : snapshot;
+             // Filter based on UID tag set before merging.
+             final NetworkStats filteredDiff = mSupportPerUidTagThrottling
+                     ? filterStatsByUidTagSets(diff) : diff;
+             // BPF stats are incremental; fold into mPersistSnapshot.
+             mPersistSnapshot.setElapsedRealtime(diff.getElapsedRealtime());
+-            mPersistSnapshot.combineAllValues(filteredDiff);
++            if (LegacyNetworkStats.enabled()) {
++                mPersistSnapshot = snapshot;
++            } else {
++                mPersistSnapshot.combineAllValues(filteredDiff);
++            }
+ 
+             // Update the stats adjusted for TunAnd464Xlat
+             // Apply 464xlat adjustments before VPN adjustments. If VPNs are using v4 on a v6 only
+diff --git a/service-t/src/com/android/server/net/NetworkStatsService.java b/service-t/src/com/android/server/net/NetworkStatsService.java
+index c82955f44f2eb2353d936b2002d69347cd2c0004..5488df6bd426625058d87591031fc7d2fa804110 100644
+--- a/service-t/src/com/android/server/net/NetworkStatsService.java
++++ b/service-t/src/com/android/server/net/NetworkStatsService.java
+@@ -178,6 +178,7 @@ import com.android.net.module.util.BpfMap;
+ import com.android.net.module.util.CollectionUtils;
+ import com.android.net.module.util.DeviceConfigUtils;
+ import com.android.net.module.util.IBpfMap;
++import com.android.net.module.util.MemoryBpfMap;
+ import com.android.net.module.util.LocationPermissionChecker;
+ import com.android.net.module.util.NetworkStatsUtils;
+ import com.android.net.module.util.PermissionUtils;
+@@ -705,7 +706,7 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
+                 Log.e(TAG, "Failed to delete CookieTagMap entry for " + sockId.cookie  + ": " + e);
+             }
+         }, mHandler);
+-        mHandler.post(mSkDestroyListener::start);
++        if (!LegacyNetworkStats.enabled()) mHandler.post(mSkDestroyListener::start);
+     }
+ 
+     /**
+@@ -861,6 +862,10 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
+ 
+         /** Get counter sets map for each UID. */
+         public IBpfMap<S32, U8> getUidCounterSetMap() {
++            if (LegacyNetworkStats.enabled()) {
++                return new MemoryBpfMap<>((key, oldValue, newValue) ->
++                        LegacyNetworkStats.writeCounterSet(key.val, newValue == null ? 0 : newValue.val));
++            }
+             try {
+                 return new BpfMap<>(UID_COUNTERSET_MAP_PATH, S32.class, U8.class);
+             } catch (ErrnoException e) {
+@@ -871,6 +876,7 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
+ 
+         /** Gets the cookie tag map */
+         public IBpfMap<S64, CookieTagMapValue> getCookieTagMap() {
++            if (LegacyNetworkStats.enabled()) return new MemoryBpfMap<>();
+             try {
+                 return new BpfMap<>(COOKIE_TAG_MAP_PATH,
+                         S64.class, CookieTagMapValue.class);
+@@ -882,6 +888,7 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
+ 
+         /** Gets stats map A */
+         public IBpfMap<StatsMapKey, StatsMapValue> getStatsMapA() {
++            if (LegacyNetworkStats.enabled()) return new MemoryBpfMap<>();
+             try {
+                 return new BpfMap<>(STATS_MAP_A_PATH, StatsMapKey.class, StatsMapValue.class);
+             } catch (ErrnoException e) {
+@@ -892,6 +899,7 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
+ 
+         /** Gets stats map B */
+         public IBpfMap<StatsMapKey, StatsMapValue> getStatsMapB() {
++            if (LegacyNetworkStats.enabled()) return new MemoryBpfMap<>();
+             try {
+                 return new BpfMap<>(STATS_MAP_B_PATH, StatsMapKey.class, StatsMapValue.class);
+             } catch (ErrnoException e) {
+@@ -902,6 +910,7 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
+ 
+         /** Gets the uid stats map */
+         public IBpfMap<S32, StatsMapValue> getAppUidStatsMap() {
++            if (LegacyNetworkStats.enabled()) return new MemoryBpfMap<>();
+             try {
+                 return new BpfMap<>(APP_UID_STATS_MAP_PATH,
+                         S32.class, StatsMapValue.class);
+@@ -913,6 +922,7 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
+ 
+         /** Gets interface stats map */
+         public IBpfMap<S32, StatsMapValue> getIfaceStatsMap() {
++            if (LegacyNetworkStats.enabled()) return new MemoryBpfMap<>();
+             try {
+                 return new BpfMap<>(IFACE_STATS_MAP_PATH, S32.class, StatsMapValue.class);
+             } catch (ErrnoException e) {
+@@ -997,6 +1007,7 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
+          */
+         @Nullable
+         public NetworkStats.Entry nativeGetTotalStat() {
++            if (LegacyNetworkStats.enabled()) return LegacyNetworkStats.total(null, UID_ALL);
+             return NetworkStatsService.nativeGetTotalStat();
+         }
+ 
+@@ -1009,6 +1020,7 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
+          */
+         @Nullable
+         public NetworkStats.Entry nativeGetIfaceStat(String iface) {
++            if (LegacyNetworkStats.enabled()) return LegacyNetworkStats.total(iface, UID_ALL);
+             return NetworkStatsService.nativeGetIfaceStat(iface);
+         }
+ 
+@@ -1021,6 +1033,7 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
+          */
+         @Nullable
+         public NetworkStats.Entry nativeGetUidStat(int uid) {
++            if (LegacyNetworkStats.enabled()) return LegacyNetworkStats.total(null, uid);
+             return NetworkStatsService.nativeGetUidStat(uid);
+         }
+     }
+@@ -2798,6 +2811,15 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
+         } catch (ErrnoException e) {
+             logErrorIfNotErrNoent(e, "Failed to delete tag data from app uid stats map");
+         }
++        // Delete qtaguid's UID state after the counter-set listener resets its entry.
++        // Doing it first would recreate state for an uninstalled UID.
++        if (LegacyNetworkStats.enabled()) {
++            try {
++                LegacyNetworkStats.deleteUid(uid);
++            } catch (IOException e) {
++                Log.e(TAG, "Failed to delete legacy UID accounting data", e);
++            }
++        }
+     }
+ 
+     /**
+diff --git a/service/jni/com_android_server_connectivity_ClatCoordinator.cpp b/service/jni/com_android_server_connectivity_ClatCoordinator.cpp
+index 70991ebad37d4f196850d4d777b960a604f2c7b8..5567b5e53e7aa7422353641f7895213be1e2b5a3 100644
+--- a/service/jni/com_android_server_connectivity_ClatCoordinator.cpp
++++ b/service/jni/com_android_server_connectivity_ClatCoordinator.cpp
+@@ -34,6 +34,8 @@
+ #include <unistd.h>
+ 
+ #include <android-modules-utils/sdk_level.h>
++#include <android-base/properties.h>
++#include <cutils/qtaguid.h>
+ #include <bpf/BpfMap.h>
+ #include <bpf/BpfUtils.h>
+ #include <netjniutils/netjniutils.h>
+@@ -106,6 +108,10 @@ static void verifyClatPerms() {
+     // failures here are 99% likely to be build problems.
+     V(kClatdDir, S_IFDIR|0750, CLAT, SYSTEM, "system_file", DIR);
+     V(kClatdBin, S_IFREG|S_ISUID|S_ISGID|0755, CLAT, CLAT, "clatd_exec", BIN);
++    if (!android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) {
++        if (fatal) abort();
++        return; // No eBPF accelerator; binary checks above still apply.
++    }
+ 
+     // Move on to verifying that the bpf programs and maps are as expected.
+     // This relies on the kernel and bpfloader.
+@@ -532,7 +538,18 @@ static jlong com_android_server_connectivity_ClatCoordinator_getSocketCookie(
+ /*
+  * JNI registration.
+  */
++static void tagLegacySocket(JNIEnv* env, jclass, jobject javaFd, jboolean tag) {
++    int fd = netjniutils::GetNativeFileDescriptor(env, javaFd);
++    if (fd < 0) {
++        throwIOException(env, "Invalid socket descriptor", EBADF);
++        return;
++    }
++    int status = tag ? qtaguid_tagSocket(fd, 0, AID_CLAT) : qtaguid_untagSocket(fd);
++    if (status) throwIOException(env, "Legacy CLAT socket accounting", -status);
++}
++
+ static const JNINativeMethod gMethods[] = {
++        {"native_tagLegacySocket", "(Ljava/io/FileDescriptor;Z)V", (void*)tagLegacySocket},
+         /* name, signature, funcPtr */
+         {"native_selectIpv4Address", "(Ljava/lang/String;I)Ljava/lang/String;",
+          (void*)com_android_server_connectivity_ClatCoordinator_selectIpv4Address},
+diff --git a/service/src/com/android/server/BpfNetMaps.java b/service/src/com/android/server/BpfNetMaps.java
+index a96819380c8658d2f9f0202243587161de3e74e9..8f28ec5bc3e8c76c895e4aa0c11e178fa2d0c861 100644
+--- a/service/src/com/android/server/BpfNetMaps.java
++++ b/service/src/com/android/server/BpfNetMaps.java
+@@ -57,6 +57,7 @@ import android.net.BpfNetMapsUtils;
+ import android.net.INetd;
+ import android.net.UidOwnerValue;
+ import android.os.Build;
++import android.os.IBinder;
+ import android.os.RemoteException;
+ import android.os.ServiceSpecificException;
+ import android.os.UserHandle;
+@@ -76,6 +77,7 @@ import com.android.modules.utils.build.SdkLevel;
+ import com.android.net.module.util.BpfDump;
+ import com.android.net.module.util.BpfMap;
+ import com.android.net.module.util.IBpfMap;
++import com.android.net.module.util.MemoryBpfMap;
+ import com.android.net.module.util.SingleWriterBpfMap;
+ import com.android.net.module.util.Struct;
+ import com.android.net.module.util.Struct.Bool;
+@@ -299,7 +301,18 @@ public class BpfNetMaps {
+     }
+ 
+     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+-    private static void initBpfMaps() {
++    private static void initBpfMaps(INetd netd) {
++        if (LegacyNetworkPolicy.enabled() && sConfigurationMap == null) {
++            LegacyNetworkPolicy policy = new LegacyNetworkPolicy(netd);
++            sConfigurationMap = policy.configurationMap();
++            sUidOwnerMap = policy.ownerMap();
++            sUidPermissionMap = policy.permissionMap();
++            sCookieTagMap = new MemoryBpfMap<>();
++            sDataSaverEnabledMap = policy.dataSaverMap();
++            sIngressDiscardMap = new MemoryBpfMap<>();
++            sLocalNetAccessMap = new MemoryBpfMap<>();
++            sLocalNetBlockedUidMap = new MemoryBpfMap<>();
++        }
+         if (sConfigurationMap == null) {
+             sConfigurationMap = getConfigurationMap();
+         }
+@@ -351,7 +364,7 @@ public class BpfNetMaps {
+             throw new IllegalStateException("Failed to initialize ingress discard map", e);
+         }
+ 
+-        if (isAtLeast25Q2()) {
++        if (supportsLocalNetworkRestrictions()) {
+             if (sLocalNetAccessMap == null) {
+                 sLocalNetAccessMap = getLocalNetAccessMap();
+             }
+@@ -378,9 +391,9 @@ public class BpfNetMaps {
+      * cause any other effects. This method may be called multiple times on any thread.
+      */
+     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+-    private static synchronized void ensureInitialized(final Context context) {
++    private static synchronized void ensureInitialized(final Context context, final INetd netd) {
+         if (sInitialized) return;
+-        initBpfMaps();
++        initBpfMaps(netd);
+         sInitialized = true;
+     }
+ 
+@@ -443,10 +456,14 @@ public class BpfNetMaps {
+     public BpfNetMaps(final Context context, final INetd netd, final Dependencies deps,
+             @NonNull final  InterfaceTracker interfaceTracker) {
+         Objects.requireNonNull(interfaceTracker);
++        // T+ callers deliberately omit netd when using real BPF maps. The
++        // legacy owner-rule backend still needs the platform's netd binder.
++        mNetd = LegacyNetworkPolicy.enabled() && netd == null
++                ? INetd.Stub.asInterface((IBinder) context.getSystemService(Context.NETD_SERVICE))
++                : netd;
+         if (SdkLevel.isAtLeastT()) {
+-            ensureInitialized(context);
++            ensureInitialized(context, mNetd);
+         }
+-        mNetd = netd;
+         mDeps = deps;
+         mInterfaceTracker = interfaceTracker;
+     }
+@@ -464,7 +481,7 @@ public class BpfNetMaps {
+     }
+ 
+     private void throwIfPre25Q2(final String msg) {
+-        if (!isAtLeast25Q2()) {
++        if (!supportsLocalNetworkRestrictions()) {
+             throw new UnsupportedOperationException(msg);
+         }
+     }
+@@ -478,6 +495,11 @@ public class BpfNetMaps {
+                 && "Baklava".equals(Build.VERSION.CODENAME));
+     }
+ 
++    /** Local network privacy requires the eBPF classifier, absent on legacy kernels. */
++    public static boolean supportsLocalNetworkRestrictions() {
++        return isAtLeast25Q2() && !LegacyNetworkPolicy.enabled();
++    }
++
+     private void removeRule(final int uid, final long match, final String caller) {
+         try {
+             synchronized (sUidOwnerMap) {
+@@ -836,6 +858,7 @@ public class BpfNetMaps {
+      */
+     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+     public void swapActiveStatsMap() {
++        if (LegacyNetworkPolicy.enabled()) return; // xt_qtaguid counters are cumulative.
+         throwIfPreT("swapActiveStatsMap is not available on pre-T devices");
+ 
+         try {
+@@ -1107,6 +1130,9 @@ public class BpfNetMaps {
+      */
+     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+     public void setIngressDiscardRule(final InetAddress address, final String iface) {
++        if (LegacyNetworkPolicy.enabled()) {
++            throw new UnsupportedOperationException("VPN address ingress filtering requires eBPF");
++        }
+         throwIfPreT("setIngressDiscardRule is not available on pre-T devices");
+         final int ifIndex = mDeps.getIfIndex(iface);
+         if (ifIndex == 0) {
+@@ -1130,6 +1156,9 @@ public class BpfNetMaps {
+      */
+     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+     public void removeIngressDiscardRule(final InetAddress address) {
++        if (LegacyNetworkPolicy.enabled()) {
++            throw new UnsupportedOperationException("VPN address ingress filtering requires eBPF");
++        }
+         throwIfPreT("removeIngressDiscardRule is not available on pre-T devices");
+         try {
+             sIngressDiscardMap.deleteEntry(new IngressDiscardKey(address));
+@@ -1181,9 +1210,14 @@ public class BpfNetMaps {
+                 sConfigurationMap, sUidOwnerMap, sDataSaverEnabledMap);
+     }
+ 
++    public boolean getLegacyDataSaverEnabled() {
++        return BpfNetMapsUtils.getDataSaverEnabled(sDataSaverEnabledMap);
++    }
++
+     /** Register callback for statsd to pull atom. */
+     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+     public void setPullAtomCallback(final Context context) {
++        if (LegacyNetworkPolicy.enabled()) return; // No kernel BPF maps to report.
+         throwIfPreT("setPullAtomCallback is not available on pre-T devices");
+ 
+         final StatsManager statsManager = context.getSystemService(StatsManager.class);
+@@ -1292,6 +1326,10 @@ public class BpfNetMaps {
+         }
+ 
+         pw.println("TrafficController");  // required by CTS testDumpBpfNetMaps
++        if (LegacyNetworkPolicy.enabled()) {
++            pw.println("Backend: xt_qtaguid accounting / iptables owner filtering");
++            pw.println("Local network privacy and VPN address ingress filtering: unsupported");
++        }
+ 
+         pw.println();
+         if (verbose) {
+diff --git a/service/src/com/android/server/ConnectivityService.java b/service/src/com/android/server/ConnectivityService.java
+index d1c62dce7c0026832c0c1758786569b706921218..252b9ebd996a50d8e0702e7afce5f2c81c9f80c0 100644
+--- a/service/src/com/android/server/ConnectivityService.java
++++ b/service/src/com/android/server/ConnectivityService.java
+@@ -2729,6 +2729,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
+                     (Runnable r) -> r.run(), frozenStateChangedCallback);
+         }
+         mIngressToVpnAddressFiltering = mDeps.isAtLeastT()
++                && !LegacyNetworkPolicy.enabled()
+                 && mDeps.isFeatureNotChickenedOut(mContext, INGRESS_TO_VPN_ADDRESS_FILTERING);
+ 
+         mL2capNetworkProvider = mDeps.makeL2capNetworkProvider(mContext);
+@@ -11020,7 +11021,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
+             @NonNull final LinkProperties oldLp) {
+ 
+         // The maps are available only after 25Q2 release
+-        if (!BpfNetMaps.isAtLeast25Q2()) {
++        if (!BpfNetMaps.supportsLocalNetworkRestrictions()) {
+             return;
+         }
+ 
+@@ -11127,7 +11128,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
+      */
+     private void addLocalAddressesToBpfMap(final String iface, final List<IpPrefix> prefixes,
+                                            @Nullable final LinkProperties lp) {
+-        if (!BpfNetMaps.isAtLeast25Q2()) return;
++        if (!BpfNetMaps.supportsLocalNetworkRestrictions()) return;
+ 
+         for (IpPrefix prefix : prefixes) {
+             // Add local dnses allow rule To BpfMap before adding the block rule for prefix
+@@ -11157,7 +11158,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
+      */
+     private void removeLocalAddressesFromBpfMap(final String iface, final List<IpPrefix> prefixes,
+                                                 @Nullable final LinkProperties lp) {
+-        if (!BpfNetMaps.isAtLeast25Q2()) return;
++        if (!BpfNetMaps.supportsLocalNetworkRestrictions()) return;
+ 
+         for (IpPrefix prefix : prefixes) {
+             // The reasoning for prefix length is explained in addLocalAddressesToBpfMap()
+@@ -11179,7 +11180,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
+      */
+     private void addLocalDnsesToBpfMap(final String iface, IpPrefix prefix,
+             @Nullable final LinkProperties lp) {
+-        if (!BpfNetMaps.isAtLeast25Q2() || lp == null) return;
++        if (!BpfNetMaps.supportsLocalNetworkRestrictions() || lp == null) return;
+ 
+         for (InetAddress dnsServer : lp.getDnsServers()) {
+             // Adds dns allow rule to LocalNetAccessMap for both TCP and UDP protocol at port 53,
+@@ -11203,7 +11204,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
+      */
+     private void removeLocalDnsesFromBpfMap(final String iface, IpPrefix prefix,
+             @Nullable final LinkProperties lp) {
+-        if (!BpfNetMaps.isAtLeast25Q2() || lp == null) return;
++        if (!BpfNetMaps.supportsLocalNetworkRestrictions() || lp == null) return;
+ 
+         for (InetAddress dnsServer : lp.getDnsServers()) {
+             // Removes dns allow rule from LocalNetAccessMap for both TCP and UDP protocol
+@@ -16350,6 +16351,18 @@ public class ConnectivityService extends IConnectivityManager.Stub
+         return mBpfNetMaps.isChainEnabled(chain);
+     }
+ 
++    @Override
++    public boolean getLegacyUidNetworkingBlocked(int uid, boolean isMetered) {
++        enforceNetworkStackOrSettingsPermission();
++        return mBpfNetMaps.isUidNetworkingBlocked(uid, isMetered);
++    }
++
++    @Override
++    public boolean getLegacyDataSaverEnabled() {
++        enforceNetworkStackOrSettingsPermission();
++        return mBpfNetMaps.getLegacyDataSaverEnabled();
++    }
++
+     @Override
+     public void replaceFirewallChain(final int chain, final int[] uids) {
+         enforceNetworkStackOrSettingsPermission();
+diff --git a/service/src/com/android/server/LegacyNetworkPolicy.java b/service/src/com/android/server/LegacyNetworkPolicy.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..cd0c19ff82e520211c5ec4a52d30dae05176878f
+--- /dev/null
++++ b/service/src/com/android/server/LegacyNetworkPolicy.java
+@@ -0,0 +1,163 @@
++/* Copyright (C) 2026 Tab S3 ROM Builder
++ * SPDX-License-Identifier: Apache-2.0
++ */
++package com.android.server;
++
++import static android.net.BpfNetMapsConstants.IIF_MATCH;
++import static android.net.BpfNetMapsConstants.UID_RULES_CONFIGURATION_KEY;
++import static android.net.BpfNetMapsUtils.getMatchByFirewallChain;
++import static android.net.BpfNetMapsUtils.isFirewallAllowList;
++import static android.net.ConnectivityManager.FIREWALL_RULE_ALLOW;
++import static android.net.ConnectivityManager.FIREWALL_RULE_DENY;
++import static android.system.OsConstants.EIO;
++import static android.system.OsConstants.ENODEV;
++
++import android.net.INetd;
++import android.net.UidOwnerValue;
++import android.os.RemoteException;
++import android.os.ServiceSpecificException;
++import android.os.SystemProperties;
++import android.system.ErrnoException;
++import android.system.Os;
++import android.util.Log;
++import com.android.net.module.util.MemoryBpfMap;
++import com.android.net.module.util.Struct.S32;
++import com.android.net.module.util.Struct.U32;
++import com.android.net.module.util.Struct.U8;
++import java.util.ArrayList;
++import java.util.HashMap;
++import java.util.List;
++import java.util.Map;
++import java.util.Objects;
++
++/** Mirrors Android policy to netd's owner match backend before updating userspace state. */
++final class LegacyNetworkPolicy {
++    static boolean enabled() {
++        return !SystemProperties.getBoolean("ro.kernel.ebpf.supported", true);
++    }
++    private final INetd mNetd;
++    private final Map<Integer, String> mIfaces = new HashMap<>();
++    LegacyNetworkPolicy(INetd netd) { mNetd = Objects.requireNonNull(netd); }
++    private interface NetdAction { void run() throws RemoteException; }
++    private void enforce(NetdAction action) throws ErrnoException {
++        try {
++            action.run();
++        } catch (ServiceSpecificException e) {
++            throw new ErrnoException("legacy netd policy", e.errorCode, e);
++        } catch (RemoteException e) {
++            throw new ErrnoException("legacy netd policy", EIO, e);
++        }
++    }
++
++    private static final class Change {
++        final NetdAction apply;
++        final NetdAction undo;
++        Change(NetdAction apply, NetdAction undo) { this.apply = apply; this.undo = undo; }
++    }
++
++    private void enforceChanges(List<Change> changes) throws ErrnoException {
++        int applied = 0;
++        try {
++            for (Change change : changes) {
++                enforce(change.apply);
++                applied++;
++            }
++        } catch (ErrnoException error) {
++            for (int i = applied - 1; i >= 0; i--) {
++                try {
++                    enforce(changes.get(i).undo);
++                } catch (ErrnoException rollbackError) {
++                    error.addSuppressed(rollbackError);
++                    Log.wtf("LegacyNetworkPolicy", "Failed to restore netd policy", rollbackError);
++                }
++            }
++            throw error;
++        }
++    }
++
++    MemoryBpfMap<S32, U32> configurationMap() {
++        return new MemoryBpfMap<>((key, oldValue, newValue) -> {
++            if (!key.equals(UID_RULES_CONFIGURATION_KEY)) return;
++            long oldRules = oldValue == null ? 0 : oldValue.val;
++            long newRules = newValue == null ? 0 : newValue.val;
++            List<Change> changes = new ArrayList<>();
++            for (int chain = 1; chain <= 9; chain++) {
++                long match = getMatchByFirewallChain(chain);
++                if (((oldRules ^ newRules) & match) == 0) continue;
++                final int child = chain;
++                final boolean enable = (newRules & match) != 0;
++                changes.add(new Change(
++                        () -> mNetd.firewallEnableChildChain(child, enable),
++                        () -> mNetd.firewallEnableChildChain(child, !enable)));
++            }
++            enforceChanges(changes);
++        });
++    }
++
++    MemoryBpfMap<S32, UidOwnerValue> ownerMap() {
++        return new MemoryBpfMap<>((key, oldValue, newValue) -> {
++            final int uid = key.val;
++            long oldRules = oldValue == null ? 0 : oldValue.rule;
++            long newRules = newValue == null ? 0 : newValue.rule;
++            List<Change> changes = new ArrayList<>();
++            for (int chain = 1; chain <= 12; chain++) {
++                long match = getMatchByFirewallChain(chain);
++                if (((oldRules ^ newRules) & match) == 0) continue;
++                final int child = chain;
++                boolean present = (newRules & match) != 0;
++                final int rule = present == isFirewallAllowList(chain)
++                        ? FIREWALL_RULE_ALLOW : FIREWALL_RULE_DENY;
++                final boolean wasPresent = (oldRules & match) != 0;
++                final int oldRule = wasPresent == isFirewallAllowList(chain)
++                        ? FIREWALL_RULE_ALLOW : FIREWALL_RULE_DENY;
++                changes.add(new Change(
++                        () -> mNetd.firewallSetUidRule(child, uid, rule),
++                        () -> mNetd.firewallSetUidRule(child, uid, oldRule)));
++            }
++            int oldIif = (oldRules & IIF_MATCH) != 0 ? oldValue.iif : 0;
++            int newIif = (newRules & IIF_MATCH) != 0 ? newValue.iif : 0;
++            String newIface = null;
++            if (oldIif != newIif) {
++                // Keep the previous name for rollback even after its interface disappears.
++                final String oldIface = mIfaces.get(uid);
++                newIface = newIif == 0 ? null : Os.if_indextoname(newIif);
++                if (newIif != 0 && newIface == null) {
++                    throw new ErrnoException("legacy interface", ENODEV);
++                }
++                final String iface = newIface;
++                changes.add(new Change(
++                        () -> setInterface(uid, iface), () -> setInterface(uid, oldIface)));
++            }
++            enforceChanges(changes);
++            if (oldIif != newIif) {
++                if (newIface == null) mIfaces.remove(uid);
++                else mIfaces.put(uid, newIface);
++            }
++            // VPN lockdown uses netd.networkRejectNonSecureVpn routing rules,
++            // which remain enforced independently of the BPF policy mirror.
++        });
++    }
++
++    private void setInterface(int uid, String iface) throws RemoteException {
++        if (iface == null) mNetd.firewallRemoveUidInterfaceRules(new int[] {uid});
++        else mNetd.firewallAddUidInterfaceRules(iface, new int[] {uid});
++    }
++
++    MemoryBpfMap<S32, U8> dataSaverMap() {
++        return new MemoryBpfMap<>((key, oldValue, newValue) -> {
++            final boolean enable = newValue != null && newValue.val != 0;
++            enforce(() -> {
++                if (!mNetd.bandwidthEnableDataSaver(enable)) {
++                    throw new ServiceSpecificException(EIO, "Failed to enforce legacy data saver");
++                }
++            });
++        });
++    }
++
++    MemoryBpfMap<S32, U8> permissionMap() {
++        return new MemoryBpfMap<>((key, oldValue, newValue) -> {
++            final int permission = newValue == null ? 0 : newValue.val;
++            enforce(() -> mNetd.trafficSetNetPermForUids(permission, new int[] {key.val}));
++        });
++    }
++}
+diff --git a/service/src/com/android/server/connectivity/ClatCoordinator.java b/service/src/com/android/server/connectivity/ClatCoordinator.java
+index 8266a87212735cf0b71aacd725936be90d1971e0..c403f693221d2062a930dc2e290c1169345ed888 100644
+--- a/service/src/com/android/server/connectivity/ClatCoordinator.java
++++ b/service/src/com/android/server/connectivity/ClatCoordinator.java
+@@ -34,6 +34,7 @@ import android.os.Build;
+ import android.os.ParcelFileDescriptor;
+ import android.os.RemoteException;
+ import android.os.ServiceSpecificException;
++import android.os.SystemProperties;
+ import android.system.ErrnoException;
+ import android.util.Log;
+ 
+@@ -69,6 +70,10 @@ import java.util.Objects;
+ @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+ public class ClatCoordinator {
+     private static final String TAG = ClatCoordinator.class.getSimpleName();
++    private ParcelFileDescriptor mLegacyTagSocket;
++    private static boolean legacyNetworking() {
++        return !SystemProperties.getBoolean("ro.kernel.ebpf.supported", true);
++    }
+ 
+     // Sync from system/core/libcutils/include/private/android_filesystem_config.h
+     @VisibleForTesting
+@@ -255,6 +260,7 @@ public class ClatCoordinator {
+         /** Get ingress6 BPF map. */
+         @Nullable
+         public IBpfMap<ClatIngress6Key, ClatIngress6Value> getBpfIngress6Map() {
++            if (legacyNetworking()) return null; // Use the existing userspace translator.
+             try {
+                 // written from clatd.c
+                 return new BpfMap<>(CLAT_INGRESS6_MAP_PATH,
+@@ -268,6 +274,7 @@ public class ClatCoordinator {
+         /** Get egress4 BPF map. */
+         @Nullable
+         public IBpfMap<ClatEgress4Key, ClatEgress4Value> getBpfEgress4Map() {
++            if (legacyNetworking()) return null;
+             try {
+                 // written from clatd.c
+                 return new BpfMap<>(CLAT_EGRESS4_MAP_PATH,
+@@ -281,6 +288,7 @@ public class ClatCoordinator {
+         /** Get cookie tag map */
+         @Nullable
+         public IBpfMap<S64, CookieTagMapValue> getBpfCookieTagMap() {
++            if (legacyNetworking()) return null;
+             try {
+                 // also read and written from other locations
+                 return new BpfMap<>(COOKIE_TAG_MAP_PATH,
+@@ -548,6 +556,18 @@ public class ClatCoordinator {
+     }
+ 
+     private void untagSocket(long cookie) throws IOException {
++        if (legacyNetworking()) {
++            ParcelFileDescriptor socket = mLegacyTagSocket;
++            mLegacyTagSocket = null;
++            if (socket != null) {
++                try {
++                    native_tagLegacySocket(socket.getFileDescriptor(), false);
++                } finally {
++                    socket.close();
++                }
++            }
++            return;
++        }
+         if (mCookieTagMap == null) {
+             throw new IOException("Cookie tag map is not initialized");
+         }
+@@ -628,8 +648,13 @@ public class ClatCoordinator {
+             // Start translating packets to the new prefix.
+             mDeps.addAnycastSetsockopt(writeSock6.getFileDescriptor(), v6Str, ifIndex);
+             // Tag socket as AID_CLAT to avoid duplicated CLAT data usage accounting.
+-            cookie = mDeps.getSocketCookie(writeSock6.getFileDescriptor());
+-            tagSocketAsClat(cookie);
++            if (legacyNetworking()) {
++                mLegacyTagSocket = ParcelFileDescriptor.dup(writeSock6.getFileDescriptor());
++                native_tagLegacySocket(mLegacyTagSocket.getFileDescriptor(), true);
++            } else {
++                cookie = mDeps.getSocketCookie(writeSock6.getFileDescriptor());
++                tagSocketAsClat(cookie);
++            }
+             isSocketTagged = true;
+             // Update our packet socket filter to reflect the new 464xlat IP address.
+             mDeps.configurePacketSocket(readSock6.getFileDescriptor(), v6Str, ifIndex);
+@@ -676,7 +701,7 @@ public class ClatCoordinator {
+             return v6Str;
+         } catch (IOException | RemoteException | ServiceSpecificException | ClassCastException
+                  | IllegalArgumentException | NullPointerException e) {
+-            if (isSocketTagged) {
++            if (isSocketTagged || mLegacyTagSocket != null) {
+                 try {
+                     untagSocket(cookie);
+                 } catch (IOException e2) {
+@@ -880,4 +905,6 @@ public class ClatCoordinator {
+             throws IOException;
+     private static native void native_stopClatd(int pid) throws IOException;
+     private static native long native_getSocketCookie(FileDescriptor sock) throws IOException;
++    private static native void native_tagLegacySocket(FileDescriptor sock, boolean tag)
++            throws IOException;
+ }
+diff --git a/service/src/com/android/server/connectivity/PermissionMonitor.java b/service/src/com/android/server/connectivity/PermissionMonitor.java
+index fa301d2d23aaa4fe6c16c565a62226551b4a8470..506be456e3090792bd0e338acdd75fc2b5d38d31 100755
+--- a/service/src/com/android/server/connectivity/PermissionMonitor.java
++++ b/service/src/com/android/server/connectivity/PermissionMonitor.java
+@@ -249,7 +249,7 @@ public class PermissionMonitor {
+ 
+         public boolean shouldEnforceLocalNetRestrictions(int uid) {
+             // TODO(b/394567896): Update compat change checks for enforcement
+-            return BpfNetMaps.isAtLeast25Q2() &&
++            return BpfNetMaps.supportsLocalNetworkRestrictions() &&
+                     CompatChanges.isChangeEnabled(RESTRICT_LOCAL_NETWORK, uid);
+         }
+ 
+@@ -328,7 +328,7 @@ public class PermissionMonitor {
+         mContext = context;
+         mBpfNetMaps = bpfNetMaps;
+         mThread = thread;
+-        if (BpfNetMaps.isAtLeast25Q2()) {
++        if (BpfNetMaps.supportsLocalNetworkRestrictions()) {
+             // Local net restrictions is supported as a developer opt-in starting in Android B.
+             // This listener should finish registration by the time the system has completed
+             // boot setup such that any changes to runtime permissions for local network
+@@ -973,7 +973,7 @@ public class PermissionMonitor {
+         ensureRunningOnHandlerThread();
+         // Update uid permission.
+         updateAppIdTrafficPermission(uid);
+-        if (BpfNetMaps.isAtLeast25Q2()) {
++        if (BpfNetMaps.supportsLocalNetworkRestrictions()) {
+             mBpfNetMaps.removeUidFromLocalNetBlockMap(uid);
+             if (hasSdkSandbox(uid)) mBpfNetMaps.removeUidFromLocalNetBlockMap(
+                     sProcessShim.toSdkSandboxUid(uid));
+diff --git a/staticlibs/device/com/android/net/module/util/MemoryBpfMap.java b/staticlibs/device/com/android/net/module/util/MemoryBpfMap.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..4ad5962072b7c16e242bbd560ebdd46596288db7
+--- /dev/null
++++ b/staticlibs/device/com/android/net/module/util/MemoryBpfMap.java
+@@ -0,0 +1,68 @@
++/* Copyright (C) 2026 Tab S3 ROM Builder
++ * SPDX-License-Identifier: Apache-2.0
++ */
++package com.android.net.module.util;
++
++import android.system.ErrnoException;
++import java.util.ArrayList;
++import java.util.LinkedHashMap;
++import java.util.NoSuchElementException;
++import java.util.Objects;
++
++/** Userspace policy state for legacy netd. A listener enforces updates before they commit. */
++public final class MemoryBpfMap<K extends Struct, V extends Struct> implements IBpfMap<K, V> {
++    public interface UpdateListener<K, V> {
++        void update(K key, V oldValue, V newValue) throws ErrnoException;
++    }
++    private final LinkedHashMap<K, V> mValues = new LinkedHashMap<>();
++    private final UpdateListener<K, V> mListener;
++    public MemoryBpfMap() { this(null); }
++    public MemoryBpfMap(UpdateListener<K, V> listener) { mListener = listener; }
++
++    @Override
++    public synchronized void updateEntry(K key, V value) throws ErrnoException {
++        Objects.requireNonNull(key);
++        Objects.requireNonNull(value);
++        if (mListener != null) mListener.update(key, mValues.get(key), value);
++        mValues.put(key, value);
++    }
++    @Override
++    public synchronized void insertEntry(K key, V value) throws ErrnoException {
++        if (mValues.containsKey(key)) throw new IllegalStateException("Key already exists");
++        updateEntry(key, value);
++    }
++    @Override
++    public synchronized void replaceEntry(K key, V value) throws ErrnoException {
++        if (!mValues.containsKey(key)) throw new NoSuchElementException("Key does not exist");
++        updateEntry(key, value);
++    }
++    @Override
++    public synchronized boolean insertOrReplaceEntry(K key, V value) throws ErrnoException {
++        boolean inserted = !mValues.containsKey(key);
++        updateEntry(key, value);
++        return inserted;
++    }
++    @Override
++    public synchronized boolean deleteEntry(K key) throws ErrnoException {
++        if (!mValues.containsKey(key)) return false;
++        if (mListener != null) mListener.update(key, mValues.get(key), null);
++        mValues.remove(key);
++        return true;
++    }
++    @Override
++    public synchronized K getNextKey(K key) throws ErrnoException {
++        ArrayList<K> keys = new ArrayList<>(mValues.keySet());
++        int index = keys.indexOf(key);
++        return index + 1 < keys.size() ? keys.get(index + 1) : null;
++    }
++    @Override
++    public synchronized K getFirstKey() throws ErrnoException {
++        return mValues.isEmpty() ? null : mValues.keySet().iterator().next();
++    }
++    @Override
++    public synchronized boolean containsKey(K key) throws ErrnoException {
++        return mValues.containsKey(key);
++    }
++    @Override
++    public synchronized V getValue(K key) throws ErrnoException { return mValues.get(key); }
++}

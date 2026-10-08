@@ -1,0 +1,3 @@
+# Unified-diff context and the pinned repo export retain their original bytes.
+patches/*.patch -whitespace
+manifests/base-source-lock.xml -whitespace
