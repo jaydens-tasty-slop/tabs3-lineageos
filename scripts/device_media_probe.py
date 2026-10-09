@@ -60,8 +60,10 @@ def main():
     (directory / "fixture-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     report = {"serial": args.serial, "suite": args.suite, "created_utc": stamp, "apk_sha256": build["apk_sha256"],
               "fixture_manifest_sha256": file_hash(fixtures / "manifest.json"), "results": [], "errors": [],
+              "vendor_inventory_status": "not_run", "vendor_inventory_summary": None,
               "limits": ["Short generated clear clips do not establish secure playback, DRM licenses, HDR display or sustained throughput",
                          "Audio MediaCodec selection does not establish DSP offload or physical speaker output",
+                         "Fixture decode results and expected vendor inventory completeness are reported separately; overall decode/all status still requires every expected non-secure vendor component",
                          "No credentials, personal media or microphone audio are collected"]}
     installed_here = False
     staged = False
@@ -155,11 +157,33 @@ def main():
             report["results"].append({"name": "inventory", "passed": inventory_available,
                                       "status": report["inventory_status"]})
             if not inventory_available:
+                report["vendor_inventory_status"] = "unavailable"
+                report["vendor_inventory_summary"] = {
+                    "expected_component_count": len(manifest["expected_vendor_codecs"]),
+                    "advertised_expected_component_count": None,
+                    "missing_expected_component_count": None,
+                    "missing_nonsecure_component_count": None,
+                    "missing_secure_component_count": None,
+                    "complete": None,
+                }
                 write_report()
                 raise RuntimeError("Codec inventory unavailable; skipping decode/encode selection")
             codecs = inventory["codecs"]
             present = {item["name"] for item in codecs}
-            report["missing_expected_vendor_components"] = [item for item in manifest["expected_vendor_codecs"] if item["name"] not in present]
+            expected = manifest["expected_vendor_codecs"]
+            missing = [item for item in expected if item["name"] not in present]
+            nonsecure_missing = [item for item in missing if not item["secure"]]
+            secure_missing = [item for item in missing if item["secure"]]
+            report["missing_expected_vendor_components"] = missing
+            report["vendor_inventory_status"] = "complete" if not missing else "incomplete"
+            report["vendor_inventory_summary"] = {
+                "expected_component_count": len(expected),
+                "advertised_expected_component_count": len(expected) - len(missing),
+                "missing_expected_component_count": len(missing),
+                "missing_nonsecure_component_count": len(nonsecure_missing),
+                "missing_secure_component_count": len(secure_missing),
+                "complete": not missing,
+            }
         else:
             codecs = []
         if args.suite in ("gpu", "all"):
@@ -269,6 +293,22 @@ def main():
                     print(label + ": " + str(item.get("passed")) + "; selected=" + str(item.get("component")), flush=True)
         report["framework_after"] = device.shell("pidof system_server; cat /proc/sys/kernel/random/boot_id").stdout
         report["framework_unchanged"] = report["framework_after"] == report["framework_before"]
+        if args.suite in ("decode", "all"):
+            fixture_results = [item for item in report["results"] if item.get("command") == "decode"]
+            fixture_passed = bool(fixture_results) and all(item.get("passed") is True for item in fixture_results)
+            report["functional_fixture_results"] = {
+                "status": "passed" if fixture_passed else "failed",
+                "passed": fixture_passed,
+                "selected_result_count": len(fixture_results),
+                "passed_result_count": sum(item.get("passed") is True for item in fixture_results),
+                "failed_or_unavailable_result_count": sum(item.get("passed") is not True for item in fixture_results),
+            }
+        else:
+            report["functional_fixture_results"] = {
+                "status": "not_run", "passed": None,
+                "selected_result_count": 0, "passed_result_count": 0,
+                "failed_or_unavailable_result_count": 0,
+            }
         report["passed"] = bool(report["results"]) and all(item.get("passed") is not False for item in report["results"]) and report["framework_unchanged"]
         if args.suite in ("decode", "all"):
             report["passed"] &= not any(not item["secure"] for item in report.get("missing_expected_vendor_components", []))

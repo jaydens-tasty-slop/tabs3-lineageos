@@ -63,11 +63,19 @@ event-aligned and does not prove the physical behavior is fixed.
 
 After normal unlock, bounded Google package/runtime checks passed, but account
 setup, Play Store certification/downloads, and interactive behavior remain
-unverified. The first foreground batch was inconclusive because the diagnostic
-harness had a staging-path mismatch and inventory/APK-install failures. Its
-separate Vulkan child passed; media, audio-route, WebView, and broader GPU
-qualification did not. The updated harness and rebuilt diagnostic APK have not
-yet been requalified.
+unverified. The first foreground batch was inconclusive because of a staging
+path mismatch and inventory/APK-install failures. A corrected bounded run then
+passed GLES2/3 drawing, ES3.1 compute, WebView JavaScript, and a speaker-route
+audio API check that confirmed sample acceptance, not human audibility. Five
+generated decode fixtures passed individually. Inventory
+found 16 of 21 expected vendor components, so the aggregate media suite remained
+false because five legacy VC-1/DivX components are absent. Chrome 154 passed a
+generated JavaScript/WebGL fixture on Adreno
+530 and completed 20-second AVC/HEVC 1080p60 clips with expected pixel samples.
+AVC reported 12 dropped of 1,200 frames and HEVC 8 of 1,200; the browser
+reported 897 and 892 frame callbacks. These counters do not establish paced
+60 fps or prove hardware decoding for every frame. Broader media and encoder
+stress remain pending until a future normal screen unlock.
 
 An unplugged overnight R4 observation lasted about 12 hours 19 minutes:
 battery 100% to 98%, approximately 98.8% kernel suspend, no reboot. Wi-Fi was
@@ -78,8 +86,9 @@ This does not establish continuously connected standby behavior.
 stutter, browser dropped frames, a clipped Lineage onboarding screen-lock
 heading, and remaining camera quality/long-session checks. R8 includes a new
 kernel #15 and audio/input changes. The first boot and bounded health checks
-passed, but launcher Search, the language key, post-upgrade audio playback,
-foreground media behavior, and broader application checks remain unqualified.
+passed, but launcher Search, a controlled language-key change, owner-confirmed
+post-upgrade audio, broader media/encoder stress, and application behavior
+remain unqualified.
 SELinux is permissive, Data encryption is unsupported, Verified
 Boot is disabled, and kernel/vendor components are old. See [known issues and test
 scope](docs/KNOWN_ISSUES.md).
