@@ -78,7 +78,7 @@
         "github": "https://github.com/awesometic/android_device_samsung_gts3l-common"
       },
       "patch": "device__samsung__gts3l-common.patch",
-      "sha256": "4c3e45044bca063a47866c13f49acca3630f5d00913b0e2fb5d1353b5b7c763d",
+      "sha256": "7c9bae2afb626e4a5900d96b46f98154d5e03dd2f87a37e0d730250fa21a0ff8",
       "untracked_files": [
         "keylayout/Vendor_04e8_Product_a035.kl"
       ]
