@@ -21,6 +21,17 @@ MIMES = {"avc": "video/avc", "hevc": "video/hevc", "mpeg4": "video/mp4v-es",
          "mpeg2": "video/mpeg2", "h263": "video/3gpp", "vp8": "video/x-vnd.on2.vp8",
          "vp9": "video/x-vnd.on2.vp9", "aac": "audio/mp4a-latm", "mp3": "audio/mpeg",
          "flac": "audio/flac", "vorbis": "audio/vorbis", "opus": "audio/opus"}
+INSTALL_OUTPUT_LIMIT = 8192
+
+
+def bounded_process_output(value):
+    if value is None:
+        return "", False
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="replace")
+    if len(value) <= INSTALL_OUTPUT_LIMIT:
+        return value, False
+    return value[:INSTALL_OUTPUT_LIMIT] + "\n...[truncated]", True
 
 
 def main():
@@ -100,14 +111,53 @@ def main():
             require(before == build["apk_sha256"], "Existing diagnostic has different bytes; remove it explicitly before replacing")
             existing_matching_app = True
         else:
-            adb(["install", "--no-streaming", str(apk)], timeout=120)
+            install_args = device.command + ["install", "--no-streaming", str(apk)]
+            try:
+                installed = subprocess.run(install_args, capture_output=True, text=True,
+                                           timeout=120, check=False)
+                stdout, stdout_truncated = bounded_process_output(installed.stdout)
+                stderr, stderr_truncated = bounded_process_output(installed.stderr)
+                report["apk_install_attempt"] = {
+                    "status": "installed" if installed.returncode == 0 else "failed",
+                    "timeout_seconds": 120,
+                    "returncode": installed.returncode,
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "stdout_truncated": stdout_truncated,
+                    "stderr_truncated": stderr_truncated,
+                }
+            except subprocess.TimeoutExpired as error:
+                stdout, stdout_truncated = bounded_process_output(error.stdout)
+                stderr, stderr_truncated = bounded_process_output(error.stderr)
+                report["apk_install_attempt"] = {
+                    "status": "timeout",
+                    "timeout_seconds": 120,
+                    "returncode": None,
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "stdout_truncated": stdout_truncated,
+                    "stderr_truncated": stderr_truncated,
+                }
+            install_attempt = report["apk_install_attempt"]
+            (directory / "apk-install-attempt.json").write_text(
+                json.dumps(install_attempt, indent=2) + "\n")
+            require(install_attempt["status"] == "installed",
+                    "Diagnostic APK install did not complete successfully; see apk_install_attempt")
             installed_here = True
         report["framework_before"] = device.shell("pidof system_server; cat /proc/sys/kernel/random/boot_id", check=True).stdout
         if args.suite in ("inventory", "decode", "encode", "all"):
             inventory = invoke("inventory", "inventory")
             report["inventory"] = inventory
-            report["results"].append({"name": "inventory", "passed": inventory.get("passed") is True})
-            codecs = inventory.get("codecs", [])
+            inventory_available = (inventory.get("passed") is True
+                                  and isinstance(inventory.get("codecs"), list)
+                                  and bool(inventory["codecs"]))
+            report["inventory_status"] = "available" if inventory_available else "unavailable"
+            report["results"].append({"name": "inventory", "passed": inventory_available,
+                                      "status": report["inventory_status"]})
+            if not inventory_available:
+                write_report()
+                raise RuntimeError("Codec inventory unavailable; skipping decode/encode selection")
+            codecs = inventory["codecs"]
             present = {item["name"] for item in codecs}
             report["missing_expected_vendor_components"] = [item for item in manifest["expected_vendor_codecs"] if item["name"] not in present]
         else:

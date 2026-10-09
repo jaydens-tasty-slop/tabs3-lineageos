@@ -40,7 +40,7 @@ public final class MainActivity extends Activity {
                     .putExtra("diagnostic_color_override",args.length==4?args[3]:""));
         else if("encode".equals(command) && args.length==4){
             File target=new File(args[3]);String path=target.getCanonicalPath();
-            if(!path.matches("/data/local/tmp/tabs3-media-[a-f0-9]{8}/encoded/[a-zA-Z0-9_-]+\\.(mp4|webm)"))
+            if(!path.matches("/data/local/tmp/tabs3-media-[a-f0-9]{12}/encoded/[a-zA-Z0-9_-]+\\.(mp4|webm)"))
                 throw new IllegalArgumentException("Encoder startup output must be in its new diagnostic directory");
             encodeToFile(result,new Intent().putExtra("codec",args[1]).putExtra("mime",args[2]),target);
         }
@@ -374,7 +374,7 @@ public final class MainActivity extends Activity {
     private static void decode(JSONObject result,Intent intent) throws Exception {
         String path=intent.getStringExtra("input"), name=intent.getStringExtra("codec");
         File file=new File(path);String canonical=file.getCanonicalPath();
-        if((!canonical.startsWith("/data/local/tmp/tabs3-media/") && !canonical.matches("/data/local/tmp/tabs3-media-[a-f0-9]{8}/[a-zA-Z0-9_.-]+")) || !file.isFile())throw new IllegalArgumentException("Input must be a staged diagnostic fixture");
+        if((!canonical.startsWith("/data/local/tmp/tabs3-media/") && !canonical.matches("/data/local/tmp/tabs3-media-[a-f0-9]{12}/[a-zA-Z0-9_.-]+")) || !file.isFile())throw new IllegalArgumentException("Input must be a staged diagnostic fixture");
         MediaExtractor extractor=new MediaExtractor(); MediaCodec codec=null; VideoSurface video=null;
         try{
             extractor.setDataSource(path); MediaFormat format=null; int track=-1;
@@ -469,7 +469,7 @@ public final class MainActivity extends Activity {
 
     private static void audioOffload(JSONObject result,String path,long referenceFrames) throws Exception {
         File file=new File(path);
-        if(!file.getCanonicalPath().matches("/data/local/tmp/tabs3-media-[a-f0-9]{8}/[a-zA-Z0-9_.-]+") || !file.isFile())
+        if(!file.getCanonicalPath().matches("/data/local/tmp/tabs3-media-[a-f0-9]{12}/[a-zA-Z0-9_.-]+") || !file.isFile())
             throw new IllegalArgumentException("Offload input must be its staged generated fixture");
         MediaExtractor extractor=new MediaExtractor();AudioTrack track=null;
         ExecutorService callbacks=Executors.newSingleThreadExecutor();

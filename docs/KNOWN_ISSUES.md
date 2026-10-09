@@ -13,7 +13,7 @@ Kernel: 3.18.140, with R8 carrying a new #15 image. Last reviewed: October 9,
 | Wi-Fi | R4 enables, scans, connects, transfers LAN traffic with UID accounting, and reconnects while awake. A #13 kernel PNO/direct-scan and saved-network rejoin check passed in a short screen-off poll. R8 uses a distinct #15 kernel. Its Boot-only trial, with the R4 System unchanged, accepted a direct scheduled scan with capacity 16, one SSID and one match set; it stopped cleanly and preserved the existing connection. Android rejoined the same saved network with the display off in 1.1 seconds. Twelve USB-polled samples remained connected during a 60-second screen-off interval. This does not establish deep sleep or overnight behavior or explain the earlier overnight disconnect. |
 | Video and browser | R4 checks covered moving decoder cases including H.264/HEVC 1080p60 and 4K30, HEVC Main10, and five hardware encoders with independent decoding. Chrome 154 passed a generated local JavaScript/WebGL fixture with Adreno 530. Separate generated 1080p60 clips reported 27 AVC and 6 HEVC dropped frames. Those counters do not establish paced 60 fps or prove every frame used hardware decode. |
 | Audio | R4 PCM speaker, microphone and DSP playback checks passed. A temporary audio-policy runtime candidate preserved the primary speaker route across two physical headphone cycles; the owner confirmed website audio through headphones and speakers after unplug. R8's changed library passed exact post-install file checks, but owner playback after the R8 boot remains pending. |
-| Graphics and input | R4 bounded GLES/Vulkan compute, sensor delivery and local WebView checks passed. The owner verified touch, buttons, haptics, S-Pen and flashlight. R8's synthetic SW_FLIP filter test passed with cleanup and stable core identities; physical cover reconnection and key behavior remain unqualified. Foreground GPU/media checks remain pending. |
+| Graphics and input | R4 bounded GLES/Vulkan compute, sensor delivery and local WebView checks passed. The owner verified touch, buttons, haptics, S-Pen and flashlight. R8's synthetic SW_FLIP filter test passed with cleanup and stable core identities. The owner later reported multiple physical cover reconnects and Search working in Chrome, while launcher Search was inert and Lang had no visible effect. A read-only check confirmed the selected System keylayout. The reconnect capture was not event-aligned, so it does not prove that every physical transition followed the corrected path. The optional language action, launcher Search, and physical cover behavior remain partly unqualified. |
 | Bluetooth and standby | Owner verified Bluetooth pairing. One unplugged overnight interval lasted about 12 h 19 min, battery 100% to 98%, approximately 98.8% kernel suspend, and no reboot. Wi-Fi was disconnected for about 4 h 53 min and rejoined when the display woke. |
 
 ## R8 offline package review
@@ -71,16 +71,23 @@ behavior or broad application use.
   isolated keylayout trial. A keyboard reconnection later coincided with a
   system-server crash on Samsung `gpio_keys` switch code 21 (`SW_FLIP`). R8 adds
   a narrow EventHub filter and a common keylayout. A synthetic filter regression
-  passed on R8, but physical cover reconnection and keylayout behavior have not
-  been tested. The captured show/hide scan code 706 and language switching
-  remain unqualified.
+  passed on R8. The owner later reported several reconnects and Chrome Search
+  working; launcher Search remained inert and Lang showed no visible effect. A
+  read-only snapshot after reconnect showed the selected System keylayout, the
+  same boot/core identities as the synthetic test, and an empty crash buffer,
+  but was not an event-aligned capture. The code-706 show/hide key and physical
+  reconnect path remain unqualified.
 - **Setup layout:** the Choose screen lock heading/subtitle can be clipped in
   Lineage onboarding. The ordinary Settings lock picker was observed without
   the clipping; the onboarding issue remains open.
 - **Stutter and memory:** occasional app-switch jank and browser dropped frames
   remain. The measured available memory did not establish severe sustained
-  exhaustion or a cause for the jank. Foreground media/GPU checks on R8 remain
-  pending.
+  exhaustion or a cause for the jank. The first R8 foreground batch was
+  inconclusive: the media fixture staging path did not match the validator,
+  inventory timed out, and later APK installs failed. Its separate Vulkan child
+  passed, but media decode, audio-route, WebView, and broader GPU checks did not
+  run. The staging regex and install/inventory reporting have been updated, and
+  a diagnostic APK was rebuilt; the correction has not been requalified.
 - **Camera quality/endurance:** colors, green-bar behavior, long sessions,
   repeated cold boots and wider third-party use remain unqualified. The original
   maintainer reported webcam color problems; do not assume they are fixed.
@@ -97,10 +104,9 @@ failures before user unlock. Account setup, Play Store downloads/certification
 and broad Google Apps compatibility remain unqualified. Google Apps are not
 included in the ROM ZIP. The R8 dirty upgrade retained the separate add-on
 without reinstalling it, and read-only post-install checks matched all three
-core APKs and the add-on script. The bounded R8 runtime collector found only
-that user 0 was still locked and recorded no crash indicators; account setup,
-Play Store certification/downloads, and interactive Google Apps behavior remain
-unverified.
+core APKs and the add-on script. After normal unlock, bounded package/runtime
+checks passed. They do not establish account setup, Play Store
+certification/downloads, or interactive Google Apps behavior.
 
 SELinux is permissive, Data encryption is unsupported and Android Verified Boot
 is disabled. Samsung/Qualcomm kernel and vendor components remain old; the

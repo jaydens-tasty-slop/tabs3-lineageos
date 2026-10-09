@@ -55,9 +55,19 @@ R8's targeted post-install verifier passed all 27 changed System content,
 module, and metadata checks, plus exact checks of the three separate Google
 core APKs and add-on script. The first Android 16 boot completed, and basic
 boot/service/APEX/package/crash-buffer smoke checks passed. A synthetic input
-event test also exercised the Samsung cover-switch filter. Physical cover
-reconnection, post-upgrade audio playback, foreground media/GPU work, and
-post-unlock Google Apps checks remain pending.
+event test exercised the Samsung cover-switch filter. The owner later reported
+multiple cover reconnects and working Search in Chrome; Search was inert in the
+launcher, and the language key had no visible effect. A read-only check
+confirmed the selected System keylayout, but the reconnect capture was not
+event-aligned and does not prove the physical behavior is fixed.
+
+After normal unlock, bounded Google package/runtime checks passed, but account
+setup, Play Store certification/downloads, and interactive behavior remain
+unverified. The first foreground batch was inconclusive because the diagnostic
+harness had a staging-path mismatch and inventory/APK-install failures. Its
+separate Vulkan child passed; media, audio-route, WebView, and broader GPU
+qualification did not. The updated harness and rebuilt diagnostic APK have not
+yet been requalified.
 
 An unplugged overnight R4 observation lasted about 12 hours 19 minutes:
 battery 100% to 98%, approximately 98.8% kernel suspend, no reboot. Wi-Fi was
@@ -68,8 +78,8 @@ This does not establish continuously connected standby behavior.
 stutter, browser dropped frames, a clipped Lineage onboarding screen-lock
 heading, and remaining camera quality/long-session checks. R8 includes a new
 kernel #15 and audio/input changes. The first boot and bounded health checks
-passed, but physical cover/audio behavior and broader application checks remain
-unqualified.
+passed, but launcher Search, the language key, post-upgrade audio playback,
+foreground media behavior, and broader application checks remain unqualified.
 SELinux is permissive, Data encryption is unsupported, Verified
 Boot is disabled, and kernel/vendor components are old. See [known issues and test
 scope](docs/KNOWN_ISSUES.md).
@@ -77,8 +87,8 @@ scope](docs/KNOWN_ISSUES.md).
 R4 uses development signing keys. A clean R4 install followed by the separate
 MindTheGapps Android 16 ARM64 add-on booted. Google Apps remain incompletely
 qualified: Speech Services and Digital Wellbeing had Direct Boot failures
-before the first user unlock. R8's bounded package/runtime check found user 0
-still locked; it did not establish Google setup, sign-in, Play Store
+before the first user unlock. R8's bounded package/runtime check after normal
+unlock passed, but did not establish Google account setup, sign-in, Play Store
 certification, downloads, or interactive functionality. Release signing and
 qualification of the final signed package remain pending. Google
 Apps are not included in the ROM build. No public download or OTA service is
