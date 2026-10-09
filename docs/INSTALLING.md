@@ -13,6 +13,11 @@ ZIP and checksum file that can be reached from TWRP.
 
 ## R8 dirty upgrade
 
+The instructions in this section describe the earlier tested R8 ZIP. The
+replacement build `23.2-20261009_103849-UNOFFICIAL-gts3lwifi` passed the offline
+ADB/source/OTA release gate, but has not been installed or booted. Do not treat
+the earlier R8 upgrade result as qualification of that replacement build.
+
 The tested R8 path upgraded the already installed HARDWARE-R4 Android 16 build
 through TWRP 3.7.0_9-0. This does not qualify an upgrade from another Android
 16 ROM, an older Android version, or a clean installation. A clean R8

@@ -59,6 +59,36 @@ their prepared branch trees match the frozen R8 project trees. Shared Android
 changes are supplied as patches. The manifest and patch index are the canonical
 reconstruction path; see [the source map](SOURCES.md).
 
+The build uses the standard Lineage version ID from `ro.lineage.version`: UTC
+date, with the upstream optional time-of-day suffix when enabled. The current
+replacement build is `23.2-20261009_103849-UNOFFICIAL-gts3lwifi`; it passed the
+offline release gate but has not been installed or booted. Earlier R8 runtime
+results apply only to the earlier tested package.
+
+## Offline release gate
+
+Both `make build` and `make package` finish with the same release gate after
+`otapackage` and the required host image tools are available. The gate checks
+source configuration, the unpacked target-files System tree, the System image,
+Boot image and full OTA ZIP. It rejects the temporary device-specific forced
+USB ADB rule, embedded ADB authorization keys and insecure ADB settings. It
+also verifies Boot against the OTA, confirms every System transfer range
+matches the built System image, and matches the packaged Lineage version,
+incremental and UTC timestamp to the OTA metadata.
+
+Hashes for the patch index, target-files tree, System image, Boot image and OTA
+are recorded before and after the check. A unique private report is written
+under ignored `state/release-adb-audit.*`. Only after the audit passes does the
+finalizer refresh `system.img` and create the standard
+`lineage-<ro.lineage.version>.zip` alias and checksum. This is a package/source
+integrity check; it does not install or boot Android. The new replacement
+package has not been booted, so earlier R8 runtime results do not transfer.
+
+The audit imports `scripts/verify_system_payload.py` and `scripts/verify_ota.py`;
+all three audit scripts are included in the curated source root. It reads
+`debugfs_static`, `simg2img` and the repository-pinned Brotli decoder from the
+Android build tools. It does not mount the System image.
+
 ## Basic device smoke check
 
 Build the optional ADB tools image and start its container once:

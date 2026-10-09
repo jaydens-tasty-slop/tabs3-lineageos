@@ -18,6 +18,12 @@ Android 16; its first boot completed in about 121 seconds, followed by a
 for the tested R8 dirty-upgrade procedure and clean-install limits. These
 bounded checks do not establish full application or accessory qualification.
 
+The replacement build `23.2-20261009_103849-UNOFFICIAL-gts3lwifi` removes the
+temporary device-specific USB ADB activation rule and passed the offline
+release ADB/source/OTA gate. It has not been installed or booted. All R8
+installation and runtime results below refer to the earlier tested R8 package,
+not this replacement build.
+
 ## Build
 
 Clone this build-root repository into a directory on a Linux filesystem, then:
@@ -34,8 +40,8 @@ The host needs Make, Podman and a POSIX shell; host `adb` is optional for device
 checks. Android build dependencies are installed in the container. The setup,
 build, package, shell and source-check targets build the image if it is missing.
 See [the build guide](docs/BUILDING.md) for resources, layout, incremental
-builds, artifact locations, the read-only device smoke check, optional media/GPU
-smoke, and unplugged sleep-study targets.
+builds, the offline ADB release gate, artifact locations, the read-only device
+smoke check, optional media/GPU smoke, and unplugged sleep-study targets.
 
 The checkout is reconstructed with **Android `repo`, a pinned manifest and
 versioned patches**. There are no Git submodules. The device, kernel and vendor
@@ -59,9 +65,12 @@ core APKs and add-on script. The first Android 16 boot completed, and basic
 boot/service/APEX/package/crash-buffer smoke checks passed. A synthetic input
 event test exercised the Samsung cover-switch filter. The owner later reported
 multiple cover reconnects and working Search in Chrome; Search was inert in the
-launcher, and the language key had no visible effect. A read-only check
-confirmed the selected System keylayout, but the reconnect capture was not
-event-aligned and does not prove the physical behavior is fixed.
+launcher. The a035 keylayout maps Lang to LANGUAGE_SWITCH. The owner reported
+Shift+2 produced a double quote and pressing Lang again restored @, though
+there is no clear visual indication. No synchronized IME subtype/KCM readback
+confirmed the selected layouts. A read-only check confirmed the selected
+System keylayout, but the reconnect capture was not event-aligned and does not
+prove the physical behavior is fixed; key 706 show/hide remains unmapped.
 
 After normal unlock, bounded Google package/runtime checks passed, but account
 setup, Play Store certification/downloads and interactive behavior remain

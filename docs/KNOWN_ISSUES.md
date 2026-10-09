@@ -13,10 +13,16 @@ Kernel: 3.18.140, with R8 carrying a new #15 image. Last reviewed: October 9,
 | Wi-Fi | R4 enables, scans, connects, transfers LAN traffic with UID accounting, and reconnects while awake. A #13 kernel PNO/direct-scan and saved-network rejoin check passed in a short screen-off poll. R8 uses a distinct #15 kernel. Its Boot-only trial, with the R4 System unchanged, accepted a direct scheduled scan with capacity 16, one SSID and one match set; it stopped cleanly and preserved the existing connection. Android rejoined the same saved network with the display off in 1.1 seconds. Twelve USB-polled samples remained connected during a 60-second screen-off interval. This does not establish deep sleep or overnight behavior or explain the earlier overnight disconnect. |
 | Video and browser | R4 checks covered moving decoder cases including H.264/HEVC 1080p60 and 4K30, HEVC Main10, and five hardware encoders with independent decoding. R8 passed 32 generated decoder executions across 19 cases, including Qualcomm AVC/HEVC, Main10 and software audio. Nine moving 20-second AVC/HEVC clips at 1080p60 and 4K30, plus HEVC Main10, completed with expected output frames. Qualcomm AVC and HEVC encoder outputs each produced 30 frames verified by independent host decode and reference-pixel comparison. The strict inventory remains incomplete: 16 of 21 expected vendor components are advertised; four nonsecure and one secure legacy VC-1/DivX components are absent. Chrome 154 passed a generated local JavaScript/WebGL fixture on Adreno 530 and completed 20-second AVC/HEVC 1080p60 clips with expected pixel samples. AVC reported 12/1,200 and HEVC 8/1,200 dropped frames, with 897/892 callbacks. These checks do not establish secure playback, DRM/HDR, sustained performance, paced 60 fps, or hardware decode of every frame. |
 | Audio | R4 PCM speaker, microphone and DSP playback checks passed. A temporary audio-policy runtime candidate preserved the primary speaker route across two physical headphone cycles; the owner confirmed website audio through headphones and speakers after unplug. R8's changed library passed exact post-install file checks. A bounded foreground audio-route check reported the HAL accepted 96,000 samples on the speaker route, but owner confirmation of audibility after the R8 boot remains pending. |
-| Graphics and input | R4 bounded GLES/Vulkan compute, sensor delivery and local WebView checks passed. The owner verified touch, buttons, haptics, S-Pen and flashlight. R8's synthetic SW_FLIP filter test passed with cleanup and stable core identities. The owner later reported multiple physical cover reconnects and Search working in Chrome, while launcher Search was inert and Lang had no visible effect. A read-only check confirmed the selected System keylayout. The reconnect capture was not event-aligned, so it does not prove that every physical transition followed the corrected path. A later metadata snapshot showed Spanish (US) current, English and Spanish eligible, and seven handled language-switch gestures; it did not compare before/after subtype, so a controlled key result remains unknown. The optional language action, launcher Search, and physical cover behavior remain partly unqualified. |
+| Graphics and input | R4 bounded GLES/Vulkan compute, sensor delivery and local WebView checks passed. The owner verified touch, buttons, haptics, S-Pen and flashlight. R8's synthetic SW_FLIP filter test passed with cleanup and stable core identities. The owner later reported multiple physical cover reconnects and Search working in Chrome, while launcher Search was inert. R8's a035 keylayout maps the physical Lang key to LANGUAGE_SWITCH. The owner later reported that Shift+2 showed a double quote and pressing Lang again restored @; there is no clear visual indication. This confirms the physical key changes the character layout in the owner's workflow, but no synchronized IME subtype/KCM readback was captured, so the exact selected layouts and cause are unverified. A read-only check confirmed the selected System keylayout. The reconnect capture was not event-aligned, so it does not prove that every physical transition followed the corrected path. A later metadata snapshot showed Spanish (US) current, English and Spanish eligible, and seven handled language-switch gestures; it did not compare before/after subtype. Launcher Search remains inert, key 706 show/hide remains unmapped, and the physical reconnect path remains partly unqualified. |
 | Bluetooth and standby | Owner verified Bluetooth pairing. One unplugged overnight interval lasted about 12 h 19 min, battery 100% to 98%, approximately 98.8% kernel suspend, and no reboot. Wi-Fi was disconnected for about 4 h 53 min and rejoined when the display woke. |
 
-## R8 offline package review
+## Replacement build offline package review
+
+The replacement build `23.2-20261009_103849-UNOFFICIAL-gts3lwifi` removes the
+temporary device-specific USB ADB activation rule and passed the offline
+source/image/OTA ADB guard. It has not been installed or booted. The R8
+installation, smoke and runtime results above refer to the earlier tested R8
+ZIP and do not qualify this replacement artifact.
 
 The frozen R8 ZIP passed package/provenance checks, a complete R4-to-R8 raw
 System path/content/metadata comparison, a direct Boot/kernel/ramdisk binding,
@@ -72,8 +78,11 @@ behavior or broad application use.
   system-server crash on Samsung `gpio_keys` switch code 21 (`SW_FLIP`). R8 adds
   a narrow EventHub filter and a common keylayout. A synthetic filter regression
   passed on R8. The owner later reported several reconnects and Chrome Search
-  working; launcher Search remained inert and Lang showed no visible effect. A
-  read-only snapshot after reconnect showed the selected System keylayout, the
+  working; launcher Search remained inert. The a035 keylayout maps Lang to
+  LANGUAGE_SWITCH. The owner reported Shift+2 produced a double quote and
+  pressing Lang again restored @, though there is no clear visual indication.
+  No synchronized IME subtype/KCM readback confirmed which layouts were active.
+  A read-only snapshot after reconnect showed the selected System keylayout, the
   same boot/core identities as the synthetic test, and an empty crash buffer,
   but was not an event-aligned capture. The code-706 show/hide key and physical
   reconnect path remain unqualified.
@@ -97,6 +106,9 @@ behavior or broad application use.
 - **Camera quality/endurance:** colors, green-bar behavior, long sessions,
   repeated cold boots and wider third-party use remain unqualified. The original
   maintainer reported webcam color problems; do not assume they are fixed.
+- **Android Linux Terminal:** unsupported. The port kernel does not enable
+  `CONFIG_VIRTUALIZATION`; the Android Linux Terminal/Android Virtualization
+  feature was not enabled or tested.
 - Five expected legacy VC-1/DivX components remain unadvertised: four nonsecure
   and one secure. GPS fix, Widevine level, protected streaming, HDR output, USB
   OTG, powered-off charging and voice/video calls are not fully qualified.

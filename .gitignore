@@ -61,3 +61,7 @@
 /device-validation/native/*
 !/device-validation/native/vulkan_compute.c
 !/device-validation/native/vulkan_compute.comp
+!/scripts/finalize_rom.sh
+!/scripts/audit_release_adb.py
+!/scripts/verify_system_payload.py
+!/scripts/verify_ota.py
