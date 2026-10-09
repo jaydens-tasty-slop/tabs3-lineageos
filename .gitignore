@@ -12,6 +12,7 @@
 !/docs/BUILDING.md
 !/docs/KNOWN_ISSUES.md
 !/docs/SOURCES.md
+!/docs/INSTALLING.md
 !/container/
 /container/*
 !/container/Containerfile
@@ -37,6 +38,7 @@
 !/scripts/device_media_probe.py
 !/scripts/device_vulkan_probe.py
 !/scripts/device_smoke_common.py
+!/scripts/device_sleep_study.py
 !/scripts/adb_device.py
 !/scripts/build_media_payload.py
 !/scripts/generate_media_fixtures.py

@@ -1,8 +1,10 @@
 .DEFAULT_GOAL := help
 .PHONY: help image setup build package status logs shell source-check smoke smoke-payloads smoke-hardware \
-	device-image device-start devices ensure-image ensure-device-image ensure-smoke-image
+	device-image device-start devices ensure-image ensure-device-image ensure-smoke-image \
+	sleep-study-start sleep-study-finish
 .NOTPARALLEL:
 export SERIAL
+TAB_S3_SLEEP_HOURS ?= 12
 
 help:
 	@printf '%s\n' \
@@ -20,7 +22,9 @@ help:
 	  '  make devices      Start ADB tools and list connected devices' \
 	  '  make smoke        Run read-only basic SM-T820 platform checks' \
 	  '  make smoke-payloads Generate local media/GPU smoke payloads in Podman' \
-	  '  make smoke-hardware Run opt-in unlocked app-level media/GPU/audio/WebView smoke'
+	  '  make smoke-hardware Run opt-in unlocked app-level media/GPU/audio/WebView smoke' \
+	  '  make sleep-study-start  Start a private unplugged sleep study' \
+	  '  make sleep-study-finish Collect and analyze the active sleep study'
 
 ensure-image:
 	sh scripts/podman.sh ensure-image
@@ -80,3 +84,20 @@ smoke-payloads: ensure-smoke-image
 
 smoke-hardware: smoke-payloads device-start
 	sh scripts/device_smoke_hardware.sh
+
+sleep-study-start: device-start
+	@task_serial=$${SERIAL:-}; \
+	if [ -z "$$task_serial" ]; then \
+	  task_serials=$$(sh scripts/device.sh adb devices | awk 'NR > 1 && $$2 == "device" { print $$1 }'); \
+	  set -- $$task_serials; \
+	  if [ "$$#" -ne 1 ]; then \
+	    printf '%s\n' 'Connect exactly one authorized device or select one with SERIAL=<adb-serial>.' >&2; \
+	    exit 2; \
+	  fi; \
+	  task_serial=$$1; \
+	fi; \
+	sh scripts/device.sh exec python3 scripts/device_sleep_study.py start \
+	  --serial "$$task_serial" --hours "$(TAB_S3_SLEEP_HOURS)"
+
+sleep-study-finish: device-start
+	sh scripts/device.sh exec python3 scripts/device_sleep_study.py finish

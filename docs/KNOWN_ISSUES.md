@@ -4,14 +4,14 @@ Device: SM-T820 (`gts3lwifi`). Framework: LineageOS 23.2 / Android 16.
 Kernel: 3.18.140, with R8 carrying a new #15 image. Last reviewed: October 9,
 2026.
 
-## Tested R4 operations
+## Tested operations and current limits
 
 | Area | Evidence and limits |
 | --- | --- |
-| Boot and installation | Exact R4 TWRP ZIP boots; installed System file contents and Boot match the package. Recovery was preserved. A separate clean R4 install plus MindTheGapps Android 16 ARM64 booted. The R8 dirty upgrade completed through TWRP command-line and GUI success barriers. Read-only checks then passed for 27 changed System content/module/metadata entries and the three separate Google core APKs/add-on script. Android 16 first boot completed in about 121 seconds and remained stable for a 30-second monitor interval. Basic boot/service/APEX/package/crash-buffer smoke passed. This is one bounded installation and boot, not broad application qualification. |
+| Boot and installation | A clean R4 install plus the separate MindTheGapps Android 16 ARM64 add-on booted using the maintainer's TWRP 3.7.0_9-0 without-encryption build. The R8 dirty upgrade from that R4 Android 16 state completed through TWRP command-line and GUI success barriers; read-only checks passed for 27 changed System content/module/metadata entries and the three separate Google core APKs/add-on script. Android 16 first boot completed in about 121 seconds and remained stable for a 30-second monitor interval. Basic boot/service/APEX/package/crash-buffer smoke passed. The R8 clean-install path is not qualified. This is one bounded installation and boot, not broad application qualification. |
 | Camera | Bounded R4+GApps review covered Camera2 full-size JPEGs on both cameras, Camera1 JPEGs, short AVC/HEVC video and two-cycle front/rear WebView camera streams. Colors, green-bar behavior, endurance and repeated cold boots remain open. |
 | Wi-Fi | R4 enables, scans, connects, transfers LAN traffic with UID accounting, and reconnects while awake. A #13 kernel PNO/direct-scan and saved-network rejoin check passed in a short screen-off poll. R8 uses a distinct #15 kernel. Its Boot-only trial, with the R4 System unchanged, accepted a direct scheduled scan with capacity 16, one SSID and one match set; it stopped cleanly and preserved the existing connection. Android rejoined the same saved network with the display off in 1.1 seconds. Twelve USB-polled samples remained connected during a 60-second screen-off interval. This does not establish deep sleep or overnight behavior or explain the earlier overnight disconnect. |
-| Video and browser | R4 checks covered moving decoder cases including H.264/HEVC 1080p60 and 4K30, HEVC Main10, and five hardware encoders with independent decoding. R8's corrected bounded run passed five generated decoder fixtures individually. Inventory found 16 of 21 expected vendor components, leaving four nonsecure and one secure legacy VC-1/DivX component absent, so strict aggregate inventory remained false. Chrome 154 passed a generated local JavaScript/WebGL fixture on Adreno 530 and completed moving AVC/HEVC 1080p60 clips for 20 seconds with expected pixel samples. AVC reported 12/1,200 and HEVC 8/1,200 dropped frames, with 897/892 callbacks. These counters do not establish paced 60 fps or prove every frame used hardware decode. Broader media and encoder stress remain pending. |
+| Video and browser | R4 checks covered moving decoder cases including H.264/HEVC 1080p60 and 4K30, HEVC Main10, and five hardware encoders with independent decoding. R8 passed 32 generated decoder executions across 19 cases, including Qualcomm AVC/HEVC, Main10 and software audio. Nine moving 20-second AVC/HEVC clips at 1080p60 and 4K30, plus HEVC Main10, completed with expected output frames. Qualcomm AVC and HEVC encoder outputs each produced 30 frames verified by independent host decode and reference-pixel comparison. The strict inventory remains incomplete: 16 of 21 expected vendor components are advertised; four nonsecure and one secure legacy VC-1/DivX components are absent. Chrome 154 passed a generated local JavaScript/WebGL fixture on Adreno 530 and completed 20-second AVC/HEVC 1080p60 clips with expected pixel samples. AVC reported 12/1,200 and HEVC 8/1,200 dropped frames, with 897/892 callbacks. These checks do not establish secure playback, DRM/HDR, sustained performance, paced 60 fps, or hardware decode of every frame. |
 | Audio | R4 PCM speaker, microphone and DSP playback checks passed. A temporary audio-policy runtime candidate preserved the primary speaker route across two physical headphone cycles; the owner confirmed website audio through headphones and speakers after unplug. R8's changed library passed exact post-install file checks. A bounded foreground audio-route check reported the HAL accepted 96,000 samples on the speaker route, but owner confirmation of audibility after the R8 boot remains pending. |
 | Graphics and input | R4 bounded GLES/Vulkan compute, sensor delivery and local WebView checks passed. The owner verified touch, buttons, haptics, S-Pen and flashlight. R8's synthetic SW_FLIP filter test passed with cleanup and stable core identities. The owner later reported multiple physical cover reconnects and Search working in Chrome, while launcher Search was inert and Lang had no visible effect. A read-only check confirmed the selected System keylayout. The reconnect capture was not event-aligned, so it does not prove that every physical transition followed the corrected path. A later metadata snapshot showed Spanish (US) current, English and Spanish eligible, and seven handled language-switch gestures; it did not compare before/after subtype, so a controlled key result remains unknown. The optional language action, launcher Search, and physical cover behavior remain partly unqualified. |
 | Bluetooth and standby | Owner verified Bluetooth pairing. One unplugged overnight interval lasted about 12 h 19 min, battery 100% to 98%, approximately 98.8% kernel suspend, and no reboot. Wi-Fi was disconnected for about 4 h 53 min and rejoined when the display woke. |
@@ -86,35 +86,36 @@ behavior or broad application use.
   inconclusive because of fixture staging and inventory/APK-install failures.
   A later corrected run passed GLES2/3 drawing, ES3.1 compute, WebView
   JavaScript, and a speaker-route API check, which confirms sample acceptance
-  rather than human audibility. The five generated decode
-  fixtures passed individually, but aggregate strict inventory remains false
-  for the inherited five VC-1/DivX gaps. Chrome's 20-second generated clips and
-  frame counters do not establish paced 60 fps or per-frame hardware decode.
-  Broader media and encoder stress remain pending until a future normal screen
-  unlock.
+  rather than human audibility. R8 passed 32 decoder executions across 19
+  generated cases and all nine additional moving 20-second AVC/HEVC clips at
+  1080p60/4K30 and HEVC Main10. Both Qualcomm video encoders produced outputs
+  with 30 frames each verified by independent host decode. The strict suite
+  remains false because five expected legacy VC-1/DivX components are not
+  advertised. These bounded fixtures do not qualify secure playback, DRM/HDR,
+  sustained performance, paced 60 fps or every-frame hardware decode. Browser
+  drop counters and callbacks have the same timing limits.
 - **Camera quality/endurance:** colors, green-bar behavior, long sessions,
   repeated cold boots and wider third-party use remain unqualified. The original
   maintainer reported webcam color problems; do not assume they are fixed.
-- Four advertised legacy VC-1/DivX components remain unavailable. GPS fix,
-  Widevine level, protected streaming, HDR output, USB OTG, powered-off charging
-  and voice/video calls are not fully qualified.
+- Five expected legacy VC-1/DivX components remain unadvertised: four nonsecure
+  and one secure. GPS fix, Widevine level, protected streaming, HDR output, USB
+  OTG, powered-off charging and voice/video calls are not fully qualified.
 
 ## Google Apps and inherited limits
 
 A clean R4 install plus MindTheGapps Android 16 ARM64 20260915 booted. The three
 core Google APKs and add-on restoration script were checked against the separate
-package before OTA. Speech Services and Digital Wellbeing had Direct Boot
-failures before user unlock. Account setup, Play Store downloads/certification
-and broad Google Apps compatibility remain unqualified. Google Apps are not
-included in the ROM ZIP. The R8 dirty upgrade retained the separate add-on
-without reinstalling it, and read-only post-install checks matched all three
-core APKs and the add-on script. After normal unlock, bounded package/runtime
-checks passed. They do not establish account setup, Play Store
-certification/downloads, or interactive Google Apps behavior.
+package before OTA. Some Google extras logged startup failures before the first
+user unlock. After normal unlock on R8, bounded package/runtime, APEX, WebView,
+process-stability and crash-indicator checks passed. The R8 dirty upgrade
+retained the separate add-on without reinstalling it, and read-only post-install
+checks matched all three core APKs and the add-on script. These checks do not
+establish Google account setup, sign-in, Play Store certification/downloads, or
+interactive Google Apps behavior. Google Apps are not included in the ROM ZIP.
 
 SELinux is permissive, Data encryption is unsupported and Android Verified Boot
 is disabled. Samsung/Qualcomm kernel and vendor components remain old; the
 vendor security baseline is March 2020. R4 and R8 artifacts use development
-signing. Tests cover one tablet and bounded sessions. Final release signing and
-qualification of a signed package remain pending. There is no SM-T825/LTE
-support claim.
+signing. Tests cover one tablet and bounded sessions. A long-term public
+signing-key choice and qualification of that exact signed artifact remain
+release follow-ups. There is no SM-T825/LTE support claim.

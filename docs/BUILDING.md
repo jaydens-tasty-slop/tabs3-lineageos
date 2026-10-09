@@ -54,8 +54,10 @@ workspace; the build commands do not disable host SELinux.
 
 No submodules are needed. Android's `repo` owns the large source checkout; the
 small outer repository owns the manifest, port patches and build instructions.
-The four device/kernel/vendor forks preserve upstream ancestry and each add one
-descriptive R4 port commit. Shared Android changes are supplied as patches.
+The four device/kernel/vendor convenience forks preserve upstream ancestry and
+their prepared branch trees match the frozen R8 project trees. Shared Android
+changes are supplied as patches. The manifest and patch index are the canonical
+reconstruction path; see [the source map](SOURCES.md).
 
 ## Basic device smoke check
 
@@ -119,6 +121,67 @@ they do not qualify long playback, DSP offload, audible speaker quality, DRM,
 Vulkan presentation, WebView internet access, performance or endurance. The
 existing `make smoke` remains the basic read-only platform check.
 
+## Unplugged sleep and Wi-Fi observation
+
+After foreground tests and any USB stay-awake keeper have stopped, confirm the
+keeper report says it is inactive and restored its original value of `0`. If
+a keeper is still active, write the exact `stop\n` marker to the marker path it
+printed, then wait for its final report to confirm restoration. Do not kill
+the keeper process or change the setting by hand. The sleep-study collector
+refuses to start unless USB stay-awake is `0` or unset and wireless ADB is
+disabled.
+
+Start an approximately twelve-hour study with:
+
+```sh
+make sleep-study-start
+```
+
+To select one tablet when more than one authorized device is connected, or to
+choose another duration from 1 to 48 hours, use:
+
+```sh
+make sleep-study-start SERIAL=<adb-serial> TAB_S3_SLEEP_HOURS=12
+```
+
+`SERIAL` is optional when exactly one authorized tablet is connected. The
+target starts the existing ADB tools container and runs
+`scripts/device_sleep_study.py`; it does not build the ROM. Wait for “Study
+ready”, unplug USB, turn the screen off normally, and leave the tablet unused
+on its usual saved Wi-Fi and normal physical setup for the selected interval.
+Keep wireless ADB off. Do not poll the tablet, connect USB, charge, reboot,
+toggle Wi-Fi, or change its saved network during the interval. No host process
+needs to remain running.
+
+Reconnect USB and collect the finish snapshot before using the tablet:
+
+```sh
+make sleep-study-finish
+```
+
+The start and finish snapshots preserve Android battery history and capture
+battery, power, Wi-Fi, suspend, RPM, wakeup-source and boot/core identity data.
+The collector temporarily uses root ADB at each endpoint for kernel counters,
+then restores the incoming ADB identity and stay-awake setting. It does not
+run an on-device logger during the unplugged interval. The active study path is
+stored in ignored `state/active-sleep-study.json`; reports remain under ignored
+`diagnostics/`.
+
+Treat the raw reports as private: Wi-Fi status and battery history can contain
+local network identifiers, and snapshots contain the device serial. Keep raw
+copies only in owner-controlled private storage; do not commit or publish them.
+The generated analysis uses battery history to review the real unplugged
+interval, charging and screen events, plus connection/disconnection events.
+Endpoint clocks include the brief USB observations, battery percentages are
+coarse, and suspend counters do not prove the deepest Qualcomm power state.
+
+The earlier R4 overnight observation was on a different build and had a Wi-Fi
+disconnect whose cause was not determined. R8's separate kernel #15 scheduled
+scan and short screen-off rejoin checks do not establish overnight behavior.
+Until a valid R8 unplugged study is reviewed, R8 overnight Wi-Fi behavior stays
+unqualified; a single study also cannot show that PNO caused or fixed the older
+disconnect.
+
 ## Incremental work
 
 ```sh
@@ -156,6 +219,11 @@ installer is the generated `lineage-*.zip`; copy the selected release and its
 checksum into a distribution directory. Do not confuse a kernel `boot.img` with
 the complete ROM installer.
 
+LineageOS names the public ZIP `lineage-23.2-YYYYMMDD-UNOFFICIAL-gts3lwifi.zip`
+using the UTC build date. Its optional time-of-day setting adds
+`_HHMMSS` to the version. Keep experiment labels such as R4 and R8 in release
+notes and qualification records, not in the public ZIP basename.
+
 ## Source checks and maintenance
 
 ```sh
@@ -173,19 +241,23 @@ source snapshot does not pin every Ubuntu package or promise bit-identical ZIPs.
 
 ## Recovery and Google Apps
 
-The tested installation path is the original maintainer's TWRP 3.7.0 without
-encryption on the Wi-Fi SM-T820. Back up device partitions and internal storage
-before changing an installation. The ROM installer writes Boot and System;
-it does not install the required Samsung firmware or replace recovery.
+The tested installation path uses the maintainer's TWRP 3.7.0_9-0
+without-encryption recovery build on the Wi-Fi SM-T820; encrypted Data is
+unsupported. Back up device partitions and internal storage before changing an
+installation. The ROM installer writes Boot and System;
+it does not install Samsung firmware or replace recovery.
 
 An Android-major-version upgrade needs a reviewed clean-install procedure. Do
 not assume Android 14 Data can be retained. Google Apps, when used, must match
 Android 16/ARM64 and be installed separately in recovery immediately after the
 ROM, before its first Android boot. Installing Google Apps onto an already booted
 installation requires a factory reset. A clean R4 install followed by the
-separate MindTheGapps Android 16 ARM64 add-on has booted. Google Apps
-qualification is in progress: Speech Services and Digital Wellbeing crashed
-before the first user unlock and need follow-up checks.
+separate MindTheGapps Android 16 ARM64 add-on has booted. The R8 dirty upgrade
+retained the separate add-on and passed bounded package/runtime checks after
+normal unlock. Account setup, Play Store certification/downloads, and broader
+Google Apps behavior remain unqualified. Google Apps are not part of the ROM
+ZIP. See [the installation guide](INSTALLING.md) for the tested R8 dirty-upgrade
+scope and clean-install limits.
 
-Final public release signing and the resulting installation path are still being
-qualified. The development ZIP is an experimental maintainer build.
+The R8 dirty-upgrade procedure is documented; a clean R8 installation is not
+qualified. The development-signed ZIP remains an experimental maintainer build.
