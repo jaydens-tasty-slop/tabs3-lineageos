@@ -11,6 +11,18 @@ index 545b9c30c71a5c8bc7e11cecefa652d5b69b029a..935ea2aa0730289a6de653aa28a53a41
  	.show = queue_ra_show,
  	.store = queue_ra_store,
  };
+diff --git a/drivers/staging/qcacld-2.0/CORE/HDD/src/wlan_hdd_cfg80211.c b/drivers/staging/qcacld-2.0/CORE/HDD/src/wlan_hdd_cfg80211.c
+index 6d1090c4d901cb163fc2cc8a094ae0be86198a89..e2ffbd59ba171686db3ff5bb5505eb367c733772 100644
+--- a/drivers/staging/qcacld-2.0/CORE/HDD/src/wlan_hdd_cfg80211.c
++++ b/drivers/staging/qcacld-2.0/CORE/HDD/src/wlan_hdd_cfg80211.c
+@@ -16487,6 +16487,7 @@ int wlan_hdd_cfg80211_init(struct device *dev,
+     if (pCfg->configPNOScanSupport)
+     {
+         hdd_wiphy_set_max_sched_scans(wiphy, 1);
++        wiphy->max_sched_scan_ssids = SIR_PNO_MAX_SUPP_NETWORKS;
+         wiphy->max_match_sets       = SIR_PNO_MAX_SUPP_NETWORKS;
+         wiphy->max_sched_scan_ie_len = SIR_MAC_MAX_IE_LENGTH;
+     }
 diff --git a/link-vmlinux-preparation.sh b/link-vmlinux-preparation.sh
 index bfbdc67d7e322f85b34c1b51dcb37cc72dcda597..a7df2c143de0cf6d9a55d2f84703433f50653345 100755
 --- a/link-vmlinux-preparation.sh

@@ -78,8 +78,10 @@
         "github": "https://github.com/awesometic/android_device_samsung_gts3l-common"
       },
       "patch": "device__samsung__gts3l-common.patch",
-      "sha256": "be517f92666363e5fa584ad6c5fbe2bbd411f1bc2c966c43d216bb98087214bf",
-      "untracked_files": []
+      "sha256": "4c3e45044bca063a47866c13f49acca3630f5d00913b0e2fb5d1353b5b7c763d",
+      "untracked_files": [
+        "keylayout/Vendor_04e8_Product_a035.kl"
+      ]
     },
     {
       "path": "device/samsung/gts3lwifi",
@@ -118,6 +120,19 @@
       },
       "patch": "frameworks__av.patch",
       "sha256": "b543cf46e87b49ed2df79b1c62b1fe7ca804287c058248fbcf11beff341d422b",
+      "untracked_files": []
+    },
+    {
+      "path": "frameworks/native",
+      "upstream_name": "LineageOS/android_frameworks_native",
+      "base": "9568531f9be7ae65f260699811f32ec4e461de6e",
+      "head": "9568531f9be7ae65f260699811f32ec4e461de6e",
+      "branch": null,
+      "remotes": {
+        "github": "https://github.com/LineageOS/android_frameworks_native"
+      },
+      "patch": "frameworks__native.patch",
+      "sha256": "a2b6868182eac3cc4af40eaa5b92ef67d186d94278b9ff2761caa25834c2a43f",
       "untracked_files": []
     },
     {
@@ -182,7 +197,7 @@
         "github": "https://github.com/awesometic/android_kernel_samsung_msm8996"
       },
       "patch": "kernel__samsung__msm8996.patch",
-      "sha256": "4ff6136f9d6406a4eb5eb9fab88446c41201beb912bb6e87a5d641da221d16af",
+      "sha256": "d6b1b1a1c4269d64dc71dbfd16a52901390f6e8906512c909fff19b5a3a755a4",
       "untracked_files": []
     },
     {
@@ -299,7 +314,7 @@
         "github": "https://github.com/LineageOS/android_vendor_lineage"
       },
       "patch": "vendor__lineage.patch",
-      "sha256": "12ab3ed265b568a04ec0528fee71f1ec0f131ec813fd6aee96336407e98e5033",
+      "sha256": "c10ab4e8359ce220d35cc3af3541eca0049cf0437e482e05dab8c051194a289c",
       "untracked_files": []
     },
     {
