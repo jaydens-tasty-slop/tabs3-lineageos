@@ -1,29 +1,33 @@
 # Source distribution
 
-The complete source reconstruction uses `manifests/base-source-lock.xml` and all
-23 patches in `patches/index.json`. All base revisions and patch hashes are
-pinned. The default bootstrap therefore works independently of fork publication.
+The complete source reconstruction uses `manifests/base-source-lock.xml` and
+all 24 patches in `patches/index.json`. Base revisions and patch hashes are
+pinned. The default bootstrap therefore works independently of source-fork
+publication.
 
-Four source forks are prepared under `jaydens-tasty-slop`, with the common branch
-`tabs3/lineage-23.2`. Publication is performed by the maintainer's publishing
-script; availability must be confirmed before announcing these links.
+Four source branch tips are prepared for the `tabs3/lineage-23.2` branch. Their
+repository URLs are listed for review; verify availability and branch hashes
+before relying on them. The build-root's patch series is the reproducible source
+path.
 
-| Android path | Fork | R4 port commit |
+| Android path | Prepared repository | Prepared branch commit |
 | --- | --- | --- |
 | `device/samsung/gts3l-common` | [Device common](https://github.com/jaydens-tasty-slop/tabs3-android_device_samsung_gts3l-common) | `01639c14a44741ca621841ecd13e9e49df89d188` |
-| `device/samsung/gts3lwifi` | [Wi-Fi device](https://github.com/jaydens-tasty-slop/tabs3-android_device_samsung_gts3lwifi) | `b43e5a9bff8e06ccd34ce8dbdffeb241bd093701` |
+| `device/samsung/gts3lwifi` | [Wi-Fi device](https://github.com/jaydens-tasty-slop/tabs3-android_device_samsung_gts3lwifi) | `7be944f10b8667e8b223304fdb46415f1194b79f` |
 | `kernel/samsung/msm8996` | [Kernel](https://github.com/jaydens-tasty-slop/tabs3-android_kernel_samsung_msm8996) | `07fc6642e946697492d57e78f821055c3eea0ac7` |
 | `vendor/samsung` | [Vendor](https://github.com/jaydens-tasty-slop/tabs3-proprietary_vendor_samsung) | `b8ed0f096fd02a1e0c886ff5c7bb03326395049a` |
 
-Each fork preserves upstream history and adds one descriptive commit whose tree
-matches the tested R4 source tree. Exploratory local commit history is not part
-of those published branches. Other Android changes are patches rather than
-nineteen additional forks.
+The common, kernel and vendor fork tips retain their R4 source trees. The Wi-Fi
+device tip preserves its R4 port commit and adds one descriptive R5 audio-route
+property commit. That commit's tree matches the updated Wi-Fi source patch; it
+does not establish a full R5 ROM qualification. The other 20 changed Android
+projects are versioned patches rather than forks.
 
-The source lock includes the upstream repository for every Android project;
-`patches/index.json` identifies all changed projects and their base revisions.
-Patches include build/framework, graphics/media, networking and legacy hardware
-compatibility changes. Their original source licenses remain applicable.
+`system/sepolicy` is one of those shared Android project patches. It carries the
+exact boolean property context for the Wi-Fi product integration; it does not
+require a separate public source fork. `patches/index.json` records the three
+R5 source deltas: the Wi-Fi product patch and frameworks/av patch are updated,
+and a system/sepolicy patch is added. The 1,174-project base lock is unchanged.
 
 ## Modified inherited audio binary
 

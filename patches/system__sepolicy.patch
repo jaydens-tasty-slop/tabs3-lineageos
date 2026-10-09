@@ -1,0 +1,12 @@
+diff --git a/private/property_contexts b/private/property_contexts
+index b325c2ff025bfc65de36cfa1366c581046736fc1..94d91ff26aef13e2ee0fc895c2467fd4c927d026 100644
+--- a/private/property_contexts
++++ b/private/property_contexts
+@@ -452,6 +452,7 @@ ro.audio.flinger_standbytime_ms  u:object_r:audio_config_prop:s0 exact int
+ 
+ audio.camerasound.force         u:object_r:audio_config_prop:s0 exact bool
+ audio.deep_buffer.media         u:object_r:audio_config_prop:s0 exact bool
++audio.legacy_restore_idle_primary u:object_r:audio_config_prop:s0 exact bool
+ audio.offload.video             u:object_r:audio_config_prop:s0 exact bool
+ audio.offload.min.duration.secs u:object_r:audio_config_prop:s0 exact int
+ 

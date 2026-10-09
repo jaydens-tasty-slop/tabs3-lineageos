@@ -248,3 +248,73 @@ index 0000000000000000000000000000000000000000..5a68e7a51b6d5b364a27e14314e51009
 +    memcpy(&position, positions->data(), sizeof(position));
 +    EXPECT_EQ(position, 0u);
 +}
+diff --git a/services/audiopolicy/managerdefault/AudioPolicyManager.cpp b/services/audiopolicy/managerdefault/AudioPolicyManager.cpp
+index abf765547032d7a1df60bcc87e3ae5cebf389952..46a02f209421bd02880475f9930b89e21729b60e 100644
+--- a/services/audiopolicy/managerdefault/AudioPolicyManager.cpp
++++ b/services/audiopolicy/managerdefault/AudioPolicyManager.cpp
+@@ -46,6 +46,7 @@
+ #include <android_media_audiopolicy.h>
+ #include <com_android_media_audioserver.h>
+ #include <cutils/bitops.h>
++#include <cutils/properties.h>
+ #include <error/expected_utils.h>
+ #include <media/AudioParameter.h>
+ #include <policy.h>
+@@ -337,6 +338,7 @@ status_t AudioPolicyManager::setDeviceConnectionStateInt(const sp<DeviceDescript
+             }
+         }
+ 
++        bool closedDirectOutputProbe = false;
+         auto checkCloseOutputs = [&]() {
+             // outputs must be closed after checkOutputForAllStrategies() is executed
+             if (!outputs.empty()) {
+@@ -350,6 +352,10 @@ status_t AudioPolicyManager::setDeviceConnectionStateInt(const sp<DeviceDescript
+                                 (desc->mDirectOpenCount == 0))
+                             || (((desc->mFlags & AUDIO_OUTPUT_FLAG_SPATIALIZER) != 0) &&
+                                 !isOutputOnlyAvailableRouteToSomeDevice(desc))) {
++                        if ((desc->mFlags & AUDIO_OUTPUT_FLAG_DIRECT) != 0 &&
++                                desc->mDirectOpenCount == 0) {
++                            closedDirectOutputProbe = true;
++                        }
+                         clearAudioSourcesForOutput(output);
+                         closeOutput(output);
+                     }
+@@ -414,6 +420,38 @@ status_t AudioPolicyManager::setDeviceConnectionStateInt(const sp<DeviceDescript
+             reopenOutputsWithDevices(outputsToReopenWithDevices);
+         }
+ 
++        // Legacy HALs emulate output patches through stream routing parameters. A direct
++        // output opened and closed above to probe a newly connected device can therefore
++        // disturb shared HAL routing even though the primary output is idle. Wired-headset
++        // disconnects also need to repair any stale HAL route after output teardown. Reassert
++        // only the primary route already selected by policy; do not ask the engine for a route
++        // here because it can return an empty vector while no strategy is active.
++        const bool isWiredHeadsetRouteEvent =
++                device->type() == AUDIO_DEVICE_OUT_WIRED_HEADPHONE ||
++                device->type() == AUDIO_DEVICE_OUT_WIRED_HEADSET;
++        if (!deviceSwitch &&
++                (closedDirectOutputProbe || isWiredHeadsetRouteEvent) &&
++                mPrimaryOutput != nullptr &&
++                !mPrimaryOutput->isDuplicated() &&
++                mPrimaryOutput->mPreferredAttrInfo == nullptr &&
++                !mPrimaryOutput->isActive() &&
++                mEngine->getPhoneState() == AUDIO_MODE_NORMAL &&
++                property_get_bool("audio.legacy_restore_idle_primary", false)) {
++            const DeviceVector primaryDevices = mPrimaryOutput->devices();
++            if (!primaryDevices.isEmpty() &&
++                    mAvailableOutputDevices.filter(primaryDevices).size() ==
++                            primaryDevices.size()) {
++                ALOGI("%s reasserting idle primary route %s after device route check",
++                      __func__, primaryDevices.toString().c_str());
++                setOutputDevices(__func__, mPrimaryOutput, primaryDevices,
++                                 true /*force*/, 0 /*delayMs*/);
++            } else {
++                ALOGW("%s skipping idle primary route restore: current policy route %s "
++                      "is empty or unavailable",
++                      __func__, primaryDevices.toString().c_str());
++            }
++        }
++
+         if (state == AUDIO_POLICY_DEVICE_STATE_UNAVAILABLE) {
+             cleanUpForDevice(device);
+         }

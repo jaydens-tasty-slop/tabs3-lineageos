@@ -91,7 +91,7 @@
         "github": "https://github.com/awesometic/android_device_samsung_gts3lwifi"
       },
       "patch": "device__samsung__gts3lwifi.patch",
-      "sha256": "c814dd2f0e59572e2b220762066fe04aae5bfac3f6c01ad95b327bcb1f87af7a",
+      "sha256": "20434f3c2621bdaaf06b3cdd1e991d9d432d51aa653695e341127d97938c148f",
       "untracked_files": []
     },
     {
@@ -117,7 +117,7 @@
         "github": "https://github.com/LineageOS/android_frameworks_av"
       },
       "patch": "frameworks__av.patch",
-      "sha256": "6fbb07b2323bf874c4d54ce02267c326bea03c5ebec84c187585f34891b5a31d",
+      "sha256": "b543cf46e87b49ed2df79b1c62b1fe7ca804287c058248fbcf11beff341d422b",
       "untracked_files": []
     },
     {
@@ -261,6 +261,19 @@
       },
       "patch": "system__netd.patch",
       "sha256": "adc10e6eae89602c5c6ce570931850eb5c8247add38e86adeda2bb4f6d04aedf",
+      "untracked_files": []
+    },
+    {
+      "path": "system/sepolicy",
+      "upstream_name": "LineageOS/android_system_sepolicy",
+      "base": "885cc500f6078a766d1f6def5ce4c06c55841773",
+      "head": "885cc500f6078a766d1f6def5ce4c06c55841773",
+      "branch": null,
+      "remotes": {
+        "github": "https://github.com/LineageOS/android_system_sepolicy"
+      },
+      "patch": "system__sepolicy.patch",
+      "sha256": "e4bd63ebc2a8757e5bf77b1b9d32721ebcae6c8378bfcf224e16e7321d6096ad",
       "untracked_files": []
     },
     {
