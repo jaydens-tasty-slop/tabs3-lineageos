@@ -8,10 +8,13 @@ and R8. The base lock is unchanged.
 
 The build does not depend on public source forks. Android `repo` checks out the
 pinned base projects, then the indexed patches reconstruct the port. The table
-below records four prepared source-fork branch tips for convenience. They are
-not a substitute for the complete R8 manifest and patch pins; confirm remote
-availability and exact branch heads before relying on a link. Fork publication
-is separate from this source snapshot.
+below records four prepared source-fork branch tips for convenience. Their
+clean branch commits have been checked against the exact R8 project trees; the
+commit IDs differ from the source snapshot heads because the forks preserve a
+descriptive port history. They are not a substitute for the complete R8
+manifest and patch pins. Confirm remote availability and exact branch heads
+before relying on a link. Fork publication is separate from this source
+snapshot.
 
 | Android path | Prepared repository | Prepared branch commit |
 | --- | --- | --- |
