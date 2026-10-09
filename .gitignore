@@ -13,6 +13,7 @@
 !/docs/KNOWN_ISSUES.md
 !/docs/SOURCES.md
 !/docs/INSTALLING.md
+!/docs/SIGNING.md
 !/container/
 /container/*
 !/container/Containerfile
@@ -65,3 +66,20 @@
 !/scripts/audit_release_adb.py
 !/scripts/verify_system_payload.py
 !/scripts/verify_ota.py
+
+# Local release identities and signing credentials must never enter source Git.
+/state/release-signing/
+/release-signing/
+/signing-keys/
+/keys/
+*.pk8
+*.priv
+*.key
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.private.pem
+*.pem
+*.password
+*.passwords

@@ -1,3 +1,16 @@
+diff --git a/arch/arm64/configs/gts3lwifi_defconfig b/arch/arm64/configs/gts3lwifi_defconfig
+index 5583c5c7c3eaabce7c5e240376ecd0b29ca9104a..215a8317100a37d71f70aba065598e43e0a20bbe 100644
+--- a/arch/arm64/configs/gts3lwifi_defconfig
++++ b/arch/arm64/configs/gts3lwifi_defconfig
+@@ -43,7 +43,7 @@ CONFIG_BUILDTIME_EXTABLE_SORT=y
+ CONFIG_INIT_ENV_ARG_LIMIT=32
+ CONFIG_CROSS_COMPILE=""
+ # CONFIG_COMPILE_TEST is not set
+-CONFIG_LOCALVERSION="-awesometic-kernel-v0.13"
++CONFIG_LOCALVERSION="-jaydenmilne-tabs3-v1"
+ # CONFIG_LOCALVERSION_AUTO is not set
+ CONFIG_DEFAULT_HOSTNAME="(none)"
+ CONFIG_SWAP=y
 diff --git a/block/blk-sysfs.c b/block/blk-sysfs.c
 index 545b9c30c71a5c8bc7e11cecefa652d5b69b029a..935ea2aa0730289a6de653aa28a53a4132ef5368 100644
 --- a/block/blk-sysfs.c

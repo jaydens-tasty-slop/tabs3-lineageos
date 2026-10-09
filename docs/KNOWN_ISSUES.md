@@ -1,8 +1,8 @@
-# R4 qualification and R8 installation review
+# Qualification and known issues
 
 Device: SM-T820 (`gts3lwifi`). Framework: LineageOS 23.2 / Android 16.
-Kernel: 3.18.140, with R8 carrying a new #15 image. Last reviewed: October 9,
-2026.
+Current signed candidate kernel: `3.18.140-jaydenmilne-tabs3-v1+`, #17.
+Last reviewed: October 9, 2026. The historical R8 package below used kernel #15.
 
 ## Tested operations and current limits
 
@@ -16,13 +16,31 @@ Kernel: 3.18.140, with R8 carrying a new #15 image. Last reviewed: October 9,
 | Graphics and input | R4 bounded GLES/Vulkan compute, sensor delivery and local WebView checks passed. The owner verified touch, buttons, haptics, S-Pen and flashlight. R8's synthetic SW_FLIP filter test passed with cleanup and stable core identities. The owner later reported multiple physical cover reconnects and Search working in Chrome, while launcher Search was inert. R8's a035 keylayout maps the physical Lang key to LANGUAGE_SWITCH. The owner later reported that Shift+2 showed a double quote and pressing Lang again restored @; there is no clear visual indication. This confirms the physical key changes the character layout in the owner's workflow, but no synchronized IME subtype/KCM readback was captured, so the exact selected layouts and cause are unverified. A read-only check confirmed the selected System keylayout. The reconnect capture was not event-aligned, so it does not prove that every physical transition followed the corrected path. A later metadata snapshot showed Spanish (US) current, English and Spanish eligible, and seven handled language-switch gestures; it did not compare before/after subtype. Launcher Search remains inert, key 706 show/hide remains unmapped, and the physical reconnect path remains partly unqualified. |
 | Bluetooth and standby | Owner verified Bluetooth pairing. One unplugged overnight interval lasted about 12 h 19 min, battery 100% to 98%, approximately 98.8% kernel suspend, and no reboot. Wi-Fi was disconnected for about 4 h 53 min and rejoined when the display woke. |
 
-## Replacement build offline package review
+## Privately signed candidate
 
-The replacement build `23.2-20261009_103849-UNOFFICIAL-gts3lwifi` removes the
-temporary device-specific USB ADB activation rule and passed the offline
-source/image/OTA ADB guard. It has not been installed or booted. The R8
-installation, smoke and runtime results above refer to the earlier tested R8
-ZIP and do not qualify this replacement artifact.
+`23.2-20261009_140353-UNOFFICIAL-gts3lwifi` uses persistent private signing
+keys and the standard `release-keys` tag. Offline checks verified 161 APK
+certificates, 34 APEX container certificates/public keys and payload AVB
+signatures, the whole-file OTA signature and OTA trust, and the exact
+source/System/Boot/OTA ADB cleanup gate. No embedded authorization keys or
+forced ADB activation are included.
+
+Its clean TWRP install with separate MindTheGapps completed. Every reset and
+install step reported CLI and GUI success, Boot readback matched the ZIP, and
+Recovery stayed unchanged. Android boot and runtime checks remain pending;
+older qualification results are not transferred. Settings Build number now
+shows the Android platform ID without `test-keys`; the LineageOS version carries
+the build date.
+
+The earlier `103849` cleanup build booted and passed bounded read-only secure
+ADB/GApps/process checks. Further testing of that development-signed package
+was canceled to prepare the privately signed replacement.
+
+Double-tap-to-wake is disabled by inherited
+`config_supportDoubleTapWake=false`. The shared touchscreen driver contains
+some gesture support, but actual Tab S3 firmware support has not been established.
+
+## Historical R8 package review
 
 The frozen R8 ZIP passed package/provenance checks, a complete R4-to-R8 raw
 System path/content/metadata comparison, a direct Boot/kernel/ramdisk binding,
@@ -128,6 +146,5 @@ interactive Google Apps behavior. Google Apps are not included in the ROM ZIP.
 SELinux is permissive, Data encryption is unsupported and Android Verified Boot
 is disabled. Samsung/Qualcomm kernel and vendor components remain old; the
 vendor security baseline is March 2020. R4 and R8 artifacts use development
-signing. Tests cover one tablet and bounded sessions. A long-term public
-signing-key choice and qualification of that exact signed artifact remain
-release follow-ups. There is no SM-T825/LTE support claim.
+signing. Tests cover one tablet and bounded sessions. Persistent private signing keys
+are now prepared; qualification of the exact signed candidate remains pending. There is no SM-T825/LTE support claim.

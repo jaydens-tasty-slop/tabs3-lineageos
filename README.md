@@ -18,11 +18,14 @@ Android 16; its first boot completed in about 121 seconds, followed by a
 for the tested R8 dirty-upgrade procedure and clean-install limits. These
 bounded checks do not establish full application or accessory qualification.
 
-The replacement build `23.2-20261009_103849-UNOFFICIAL-gts3lwifi` removes the
-temporary device-specific USB ADB activation rule and passed the offline
-release ADB/source/OTA gate. It has not been installed or booted. All R8
-installation and runtime results below refer to the earlier tested R8 package,
-not this replacement build.
+The privately signed candidate `23.2-20261009_140353-UNOFFICIAL-gts3lwifi`
+uses a persistent `jaydenmilne` signing identity and kernel
+`3.18.140-jaydenmilne-tabs3-v1+`. Its offline checks passed for APK/APEX
+signatures, APEX payload AVB signatures, OTA trust and signature, and the
+source/System/Boot/OTA ADB cleanup gate. A clean install with separate
+MindTheGapps completed through TWRP; Android boot and runtime checks of this
+exact signed ZIP remain pending. Historical qualification below applies to the named older
+packages. Double-tap-to-wake is disabled in the inherited device configuration.
 
 ## Build
 
@@ -51,7 +54,7 @@ the later cleanup export. The complete 25-project patch snapshot and 1,174
 pinned base revisions are the canonical reconstruction path. All Android
 projects are Git clones.
 
-## Current qualification
+## Historical qualification
 
 The exact R4 ZIP booted on an SM-T820 and passed bounded camera, Wi-Fi,
 microphone, sensor, GLES/Vulkan, WebView, hardware video decoder/encoder and DSP
@@ -114,14 +117,21 @@ SELinux is permissive, Data encryption is unsupported, Verified
 Boot is disabled, and kernel/vendor components are old. See [known issues and test
 scope](docs/KNOWN_ISSUES.md).
 
-The ROM artifacts use development signing keys. A clean R4 install followed by
+Earlier ROM artifacts used development signing keys. The new candidate uses
+our persistent private signing keys, with the standard Android `release-keys`
+tag. Settings Build number shows Android's platform ID `BP4A.251205.006`; the
+LineageOS version contains the build date. A clean reset is required for this
+transition from development keys. Future updates must retain the same signing
+identity. The ordinary build targets still produce development-signed output;
+see [signing](docs/SIGNING.md) before distributing your own builds.
+
+A clean R4 install followed by
 the separate MindTheGapps Android 16 ARM64 add-on booted. Some Google extras
 logged startup failures before the first user unlock; bounded package/runtime
 checks after normal unlock passed. They do not establish Google account setup,
 sign-in, Play Store certification, downloads or interactive functionality.
-Google Apps are not included in the ROM ZIP. A long-term public signing-key
-choice and qualification of that exact signed artifact remain release
-follow-ups. No public download or OTA service is configured by this repository.
+Google Apps are not included in the ROM ZIP. Persistent signing keys have been generated and backed up privately;
+qualification of the exact signed candidate remains pending. No public download or OTA service is configured by this repository.
 
 ## Source snapshot
 

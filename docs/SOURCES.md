@@ -2,7 +2,7 @@
 
 The build root reconstructs Android from `manifests/base-source-lock.xml` and
 the 25 patch entries in `patches/index.json`. The 1,174 base project revisions
-and patch hashes are pinned. The final R8 source export passed 25 patch
+and patch hashes are pinned. The signed candidate source export passed 25 patch
 application/reversal checks. Seven project snapshots differ between frozen R4
 and R8. The base lock is unchanged.
 
@@ -10,7 +10,8 @@ The build does not depend on public source forks. Android `repo` checks out the
 pinned base projects, then the indexed patches reconstruct the port. The table
 below records four prepared source-fork branch tips for convenience. Their
 clean branch commits preserve the R8 repairs; the common-device branch also
-contains the later cleanup that removes the temporary forced-ADB rule. The
+contains the later cleanup that removes the temporary forced-ADB rule, and
+the kernel branch identifies the maintained `jaydenmilne-tabs3-v1` release. The
 commit IDs differ from source snapshot heads because the forks preserve a
 descriptive port history. They are not a substitute for the 25-project patch
 index and 1,174 pinned base revisions. Confirm remote availability and exact
@@ -21,7 +22,7 @@ source snapshot.
 | --- | --- | --- | --- |
 | `device/samsung/gts3l-common` | [Device common](https://github.com/jaydens-tasty-slop/tabs3-android_device_samsung_gts3l-common) | `tabs3/lineage-23.2` | `b850dc2a6a50a2ef38b4729738ac5aa6a12cf02a` |
 | `device/samsung/gts3lwifi` | [Wi-Fi device](https://github.com/jaydens-tasty-slop/tabs3-android_device_samsung_gts3lwifi) | `tabs3/lineage-23.2` | `7be944f10b8667e8b223304fdb46415f1194b79f` |
-| `kernel/samsung/msm8996` | [Kernel](https://github.com/jaydens-tasty-slop/tabs3-android_kernel_samsung_msm8996) | `tabs3/lineage-23.2` | `6267bd50cfaf18dbf113ebe6d5731c12065cbb7e` |
+| `kernel/samsung/msm8996` | [Kernel](https://github.com/jaydens-tasty-slop/tabs3-android_kernel_samsung_msm8996) | `tabs3/lineage-23.2` | `eaec8b15319ff05ceb17954db229ce1963d3d8bb` |
 | `vendor/samsung` | [Vendor](https://github.com/jaydens-tasty-slop/tabs3-proprietary_vendor_samsung) | `tabs3/lineage-23.2` | `b8ed0f096fd02a1e0c886ff5c7bb03326395049a` |
 
 R8's seven-project source delta includes the common device and Wi-Fi product,

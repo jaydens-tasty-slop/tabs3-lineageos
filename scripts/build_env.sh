@@ -17,5 +17,9 @@ export GOMEMLIMIT=24GiB
 export JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=8
 export NINJA_HIGHMEM_NUM_JOBS=1
 export OUT_DIR=out
+# Preserve the host-tool compatibility flags used for the maintained 3.18
+# kernel. Keep these in each kernel recipe rather than depending on host PATH.
+TAB_S3_KERNEL_MAKE_FLAGS=${TAB_S3_KERNEL_MAKE_FLAGS:-'-j8 HOSTCC="/usr/bin/gcc -B/usr/bin/" HOSTCXX="/usr/bin/g++ -B/usr/bin/" HOSTAR=/usr/bin/ar HOSTLD=/usr/bin/ld HOSTCFLAGS="-O2 -std=gnu89" HOSTLDFLAGS="" KBUILD_BUILD_USER=rom-builder KBUILD_BUILD_HOST=podman LOCALVERSION=+'}
+export LINEAGE_VERSION_APPEND_TIME_OF_DAY=${LINEAGE_VERSION_APPEND_TIME_OF_DAY:-true}
 source build/envsetup.sh
 lunch lineage_gts3lwifi-bp4a-userdebug

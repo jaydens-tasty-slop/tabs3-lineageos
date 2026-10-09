@@ -60,10 +60,23 @@ that removes the temporary forced-ADB rule. The 25-project patch snapshot and
 1,174 pinned base revisions are canonical; see [the source map](SOURCES.md).
 
 The build uses the standard Lineage version ID from `ro.lineage.version`: UTC
-date, with the upstream optional time-of-day suffix when enabled. The current
-replacement build is `23.2-20261009_103849-UNOFFICIAL-gts3lwifi`; it passed the
-offline release gate but has not been installed or booted. Earlier R8 runtime
-results apply only to the earlier tested package.
+date, with the upstream optional time-of-day suffix enabled by default. The
+current signed candidate is `23.2-20261009_140353-UNOFFICIAL-gts3lwifi`; its
+offline signing and image checks passed and TWRP installation completed.
+Android boot checks remain pending. Earlier R8 runtime results apply only to
+the named earlier package. Settings Build number uses Android's platform build
+ID, while the LineageOS version includes the date.
+
+The build and package targets pass the established legacy kernel host-tool
+flags through `TARGET_KERNEL_ADDITIONAL_FLAGS`: Ubuntu GCC/G++, binutils,
+GNU89 host C, an eight-job kernel limit, and stable builder/host names. Override
+`TAB_S3_KERNEL_MAKE_FLAGS` to review a different kernel tool profile. These are
+the flags used for the signed candidate; a second fresh build has not been run
+to qualify reconstruction. No cache clean is needed for ordinary iterations.
+
+The ordinary targets produce development-signed output. See [signing](SIGNING.md)
+for the additional target-files, package/APEX and OTA signing steps before
+public distribution. Private keys remain local and are reused across updates.
 
 ## Offline release gate
 
@@ -81,8 +94,8 @@ are recorded before and after the check. A unique private report is written
 under ignored `state/release-adb-audit.*`. Only after the audit passes does the
 finalizer refresh `system.img` and create the standard
 `lineage-<ro.lineage.version>.zip` alias and checksum. This is a package/source
-integrity check; it does not install or boot Android. The new replacement
-package has not been booted, so earlier R8 runtime results do not transfer.
+integrity check; it does not install or boot Android. The signed candidate has not yet completed Android boot checks; earlier R8
+runtime results do not transfer.
 
 The audit imports `scripts/verify_system_payload.py` and `scripts/verify_ota.py`;
 all three audit scripts are included in the curated source root. It reads
