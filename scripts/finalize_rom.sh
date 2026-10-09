@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Source after build_env.sh and after the OTA/tools targets have completed.
-set -euo pipefail
+set -eo pipefail
 
 finalize_rom_release() {
     umask 077

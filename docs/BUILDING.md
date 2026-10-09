@@ -55,9 +55,9 @@ workspace; the build commands do not disable host SELinux.
 No submodules are needed. Android's `repo` owns the large source checkout; the
 small outer repository owns the manifest, port patches and build instructions.
 The four device/kernel/vendor convenience forks preserve upstream ancestry and
-their prepared branch trees match the frozen R8 project trees. Shared Android
-changes are supplied as patches. The manifest and patch index are the canonical
-reconstruction path; see [the source map](SOURCES.md).
+the R8 repairs. The common-device branch also includes the later source cleanup
+that removes the temporary forced-ADB rule. The 25-project patch snapshot and
+1,174 pinned base revisions are canonical; see [the source map](SOURCES.md).
 
 The build uses the standard Lineage version ID from `ro.lineage.version`: UTC
 date, with the upstream optional time-of-day suffix when enabled. The current

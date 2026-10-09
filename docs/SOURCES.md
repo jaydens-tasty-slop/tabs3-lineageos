@@ -9,12 +9,13 @@ and R8. The base lock is unchanged.
 The build does not depend on public source forks. Android `repo` checks out the
 pinned base projects, then the indexed patches reconstruct the port. The table
 below records four prepared source-fork branch tips for convenience. Their
-clean branch commits have been checked against the exact R8 project trees; the
-commit IDs differ from the source snapshot heads because the forks preserve a
-descriptive port history. They are not a substitute for the complete R8
-manifest and patch pins. Confirm remote availability and exact branch heads
-before relying on a link. Fork publication is separate from this source
-snapshot.
+clean branch commits preserve the R8 repairs; the common-device branch also
+contains the later cleanup that removes the temporary forced-ADB rule. The
+commit IDs differ from source snapshot heads because the forks preserve a
+descriptive port history. They are not a substitute for the 25-project patch
+index and 1,174 pinned base revisions. Confirm remote availability and exact
+branch heads before relying on a link. Fork publication is separate from this
+source snapshot.
 
 | Android path | Prepared repository | Branch | Prepared commit |
 | --- | --- | --- | --- |

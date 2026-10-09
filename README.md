@@ -45,9 +45,11 @@ smoke check, optional media/GPU smoke, and unplugged sleep-study targets.
 
 The checkout is reconstructed with **Android `repo`, a pinned manifest and
 versioned patches**. There are no Git submodules. The device, kernel and vendor
-forks provide convenient source review; their prepared branch trees match the
-frozen R8 projects. The complete patch snapshot reconstructs the port from
-pinned upstream bases. All Android projects are Git clones.
+forks provide convenient source review. Their prepared tips preserve the R8
+repairs; the common-device tip also removes the temporary forced-ADB rule from
+the later cleanup export. The complete 25-project patch snapshot and 1,174
+pinned base revisions are the canonical reconstruction path. All Android
+projects are Git clones.
 
 ## Current qualification
 
@@ -104,8 +106,10 @@ clipped Lineage onboarding screen-lock heading, and camera quality/long-session
 checks. R8 includes a new kernel #15 and audio/input changes. Its bounded media
 fixtures passed, but secure playback, DRM/HDR, sustained performance, paced
 60 fps, and hardware decoding of every frame remain unqualified. Launcher
-Search, a controlled language-key change, owner-confirmed post-upgrade audio,
-and broader application behavior also remain open.
+Search, exact language-subtype selection, owner-confirmed post-upgrade audio,
+and broader application behavior also remain open. The owner reported that
+Lang restored `@` after Shift+2 produced a quote, but no synchronized IME
+subtype/KCM readback was captured.
 SELinux is permissive, Data encryption is unsupported, Verified
 Boot is disabled, and kernel/vendor components are old. See [known issues and test
 scope](docs/KNOWN_ISSUES.md).
@@ -125,8 +129,9 @@ follow-ups. No public download or OTA service is configured by this repository.
 - Port snapshot: `patches/index.json`, 25 changed projects. Seven source
   projects changed between frozen R4 and R8; the final source export passed 25
   patch round-trip checks.
-- Source forks: [the source map](docs/SOURCES.md); convenience branch trees
-  match the frozen R8 project trees.
+- Source forks: [the source map](docs/SOURCES.md); convenience tips preserve the
+  R8 repairs, with the common-device tip also carrying the later forced-ADB
+  cleanup export.
 - R4 clean-install-tested ZIP SHA-256:
   `ad7115e2548aa765ca4e1373ad448aa8f273268df364b6c0e1aab538c1277cfa`.
 - R8 dirty-upgrade-tested ZIP SHA-256:
