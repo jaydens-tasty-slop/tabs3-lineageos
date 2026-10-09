@@ -16,12 +16,12 @@ manifest and patch pins. Confirm remote availability and exact branch heads
 before relying on a link. Fork publication is separate from this source
 snapshot.
 
-| Android path | Prepared repository | Prepared branch commit |
-| --- | --- | --- |
-| `device/samsung/gts3l-common` | [Device common](https://github.com/jaydens-tasty-slop/tabs3-android_device_samsung_gts3l-common) | `30e5a4c8c24598c4e617cce8b6cdab1909a54226` |
-| `device/samsung/gts3lwifi` | [Wi-Fi device](https://github.com/jaydens-tasty-slop/tabs3-android_device_samsung_gts3lwifi) | `7be944f10b8667e8b223304fdb46415f1194b79f` |
-| `kernel/samsung/msm8996` | [Kernel](https://github.com/jaydens-tasty-slop/tabs3-android_kernel_samsung_msm8996) | `6267bd50cfaf18dbf113ebe6d5731c12065cbb7e` |
-| `vendor/samsung` | [Vendor](https://github.com/jaydens-tasty-slop/tabs3-proprietary_vendor_samsung) | `b8ed0f096fd02a1e0c886ff5c7bb03326395049a` |
+| Android path | Prepared repository | Branch | Prepared commit |
+| --- | --- | --- | --- |
+| `device/samsung/gts3l-common` | [Device common](https://github.com/jaydens-tasty-slop/tabs3-android_device_samsung_gts3l-common) | `tabs3/lineage-23.2` | `30e5a4c8c24598c4e617cce8b6cdab1909a54226` |
+| `device/samsung/gts3lwifi` | [Wi-Fi device](https://github.com/jaydens-tasty-slop/tabs3-android_device_samsung_gts3lwifi) | `tabs3/lineage-23.2` | `7be944f10b8667e8b223304fdb46415f1194b79f` |
+| `kernel/samsung/msm8996` | [Kernel](https://github.com/jaydens-tasty-slop/tabs3-android_kernel_samsung_msm8996) | `tabs3/lineage-23.2` | `6267bd50cfaf18dbf113ebe6d5731c12065cbb7e` |
+| `vendor/samsung` | [Vendor](https://github.com/jaydens-tasty-slop/tabs3-proprietary_vendor_samsung) | `tabs3/lineage-23.2` | `b8ed0f096fd02a1e0c886ff5c7bb03326395049a` |
 
 R8's seven-project source delta includes the common device and Wi-Fi product,
 `frameworks/av`, `frameworks/native`, the Samsung kernel, `system/sepolicy` and
