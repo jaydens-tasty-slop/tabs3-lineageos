@@ -54,8 +54,26 @@ Initial clean-boot timing and wider Google Apps behavior remain unqualified.
 
 The previous signed `140353` ZIP passed a clean TWRP installation with separate
 MindTheGapps. This new ZIP's clean-install path remains unqualified. The old
-sleep-study baseline was canceled before unplugging for crash troubleshooting;
-a fresh twelve-hour unplugged Wi-Fi/GApps baseline and results are required.
+sleep-study baseline was canceled before unplugging for crash troubleshooting.
+A fresh overnight study on the exact current ZIP with separate GApps lasted
+11 hours 48 minutes unplugged, battery 100% to 98%, with no intervening charge
+or screen use until the tablet was picked up just before reconnecting USB.
+Boot and core-process identities were unchanged and the crash buffer was empty.
+Wi-Fi recorded one AP-initiated inactivity disassociation (reason 4), then
+automatically rejoined the same saved network with the screen off: IP
+configuration recovered in 683 ms and internet validation in 993 ms. The
+earlier multi-hour outage was not reproduced; a single study does not establish
+that the PNO changes caused this improvement.
+
+Endpoint capture followed about 26 minutes of USB recharging. Retained battery
+history supplies the real precharge readings; the raw endpoint was already
+back at 100%. Kernel clocks measured 11 hours 39 minutes of suspend, or 95.1%
+of their entire 12 hours 15 minutes bracket including USB. That percentage is
+not the exact fraction of the unplugged interval. Kernel counters recorded
+500 successful and 124 failed suspend attempts, no failed resumes, and 1,654
+RPM vmin entries with about 11 hours 39 minutes accumulated in vmin. These
+observations do not qualify every driver transition or the deepest power mode.
+
 Historical hardware results are not transferred to this ZIP. Settings Build
 number shows the platform ID without `test-keys`; the LineageOS version carries
 the build date. Temporary USB stay-awake was restored to its original value.
@@ -110,11 +128,12 @@ behavior or broad application use.
 
 ## Open issues
 
-- **Deep-sleep Wi-Fi:** the short #13 screen-off poll does not establish deep
-  sleep or overnight behavior. Kernel #15 passed bounded direct-scan and
-  screen-off saved-network rejoin checks, including a 60-second USB-polled
-  interval. Deep-sleep and overnight behavior remain unqualified; the cause of
-  the earlier overnight disconnect remains unknown.
+- **Deep-sleep Wi-Fi:** the current signed ZIP and #17 kernel passed one
+  reviewed 11h48m unplugged overnight observation with separate GApps. A brief
+  AP-initiated disconnect recovered automatically with the screen off; the
+  older multi-hour outage was not reproduced. Its cause remains unknown, and
+  one interval does not qualify all access points, longer standby or every
+  suspend transition. The earlier #13/#15 USB-polled checks remain separate.
 - **Audio routing:** the temporary candidate recovered ordinary headphone and
   speaker playback after two physical plug/unplug cycles. The cause has not been
   isolated. Owner confirmation of audio playback after the R8 boot remains
@@ -176,5 +195,5 @@ is disabled. Samsung/Qualcomm kernel and vendor components remain old; the
 vendor security baseline is March 2020. R4 and R8 artifacts use development
 signing. Tests cover one tablet and bounded sessions. Persistent private signing keys
 are in use; the current signed ZIP passed the scoped checks above. Its clean
-installation and overnight study remain pending. There is no SM-T825/LTE
-support claim.
+installation remains pending; one scoped overnight observation passed. There
+is no SM-T825/LTE support claim.

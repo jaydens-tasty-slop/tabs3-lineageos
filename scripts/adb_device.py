@@ -10,7 +10,7 @@ class AdbDeviceNotReady(ValueError):
 
 class AdbDevice:
     def __init__(self, serial=None):
-        listing = subprocess.check_output(["adb", "devices"], text=True)
+        listing = subprocess.check_output(["adb", "devices"], text=True, timeout=10)
         states = dict(row.split()[:2] for row in listing.splitlines()[1:]
                       if len(row.split()) >= 2)
         devices = [name for name, state in states.items() if state in ("device", "recovery")]

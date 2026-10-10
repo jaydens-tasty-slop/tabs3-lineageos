@@ -7,6 +7,7 @@ import os
 import pathlib
 import re
 import subprocess
+import sys
 import time
 import uuid
 
@@ -57,14 +58,23 @@ def save_json(path, value):
     path.write_text(json.dumps(value, indent=2) + "\n")
 
 
+def progress(message):
+    print(message, file=sys.stderr, flush=True)
+
+
 def ready(serial):
+    progress("Checking USB/ADB readiness...")
     deadline = time.monotonic() + 45
+    waiting_reported = False
     while True:
         try:
             return AdbDevice(serial)
         except (AdbDeviceNotReady, subprocess.SubprocessError, OSError):
             if time.monotonic() >= deadline:
                 raise
+            if not waiting_reported:
+                progress("Waiting for the selected ADB device; reconnect USB and authorize this computer if prompted.")
+                waiting_reported = True
             time.sleep(0.5)
 
 
@@ -200,8 +210,10 @@ def capture(serial, output, final_anchor, clock_helper=None):
             report["clock_payload_sha256"] = helper_hash
         report["collection_adb_uid"] = device.shell("id -u", check=True).stdout.strip()
         if not final_anchor:
+            progress("Capturing endpoint clock before diagnostic probes...")
             report["clock"] = capture_clock(device, output, remote_clock)
-        for name, command in PROBES.items():
+        for index, (name, command) in enumerate(PROBES.items(), 1):
+            progress(f"[{index}/{len(PROBES)}] Collecting {name} (45-second command timeout)...")
             try:
                 result = device.shell(command, timeout=45)
                 path = output / (name + ".txt")
@@ -225,6 +237,7 @@ def capture(serial, output, final_anchor, clock_helper=None):
         try:
             device = ready(serial)
             if remote_directory is not None:
+                progress("Removing the temporary clock payload...")
                 device.shell("rm -f " + remote_directory + "/sleep-clock; rmdir " + remote_directory,
                              check=True, timeout=15)
                 report["clock_payload_removed"] = device.shell(
@@ -299,7 +312,11 @@ def main():
     require(manifest_path.is_relative_to(ROOT / "diagnostics") and manifest_path.name == "manifest.json",
             "Use a workspace sleep-study manifest")
     manifest = json.loads(manifest_path.read_text())
-    require(manifest.get("complete") is False, "Study already finished")
+    if manifest.get("complete") is True:
+        print("Study already finished; existing evidence: " + str(manifest_path.parent.relative_to(ROOT)))
+        print("Review analysis.json and battery history; no new endpoint collected.")
+        return
+    require(manifest.get("complete") is False, "Invalid study completion state")
     baseline = json.loads((ROOT / manifest["start_snapshot"]).read_text())
     end_dir = private_directory(manifest_path.parent / ("finish-" + uuid.uuid4().hex[:8]))
     helper = (clock_payload(ROOT / manifest["clock_helper"], manifest["clock_payload_sha256"])
@@ -352,4 +369,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except AdbDeviceNotReady as error:
+        progress(f"ADB is not ready: {error}. Reconnect USB, check 'make devices', and retry; existing study evidence is retained.")
+        sys.exit(2)
+    except subprocess.TimeoutExpired as error:
+        progress(f"ADB command timed out after {error.timeout} seconds. Check USB/ADB and retry; existing evidence is retained.")
+        sys.exit(2)

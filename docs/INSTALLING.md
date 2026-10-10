@@ -19,8 +19,11 @@ from the signed `140353` candidate completed, preserving separate MindTheGapps.
 Boot and both new bitmap libraries matched the release; Recovery stayed
 unchanged. The exact ZIP booted in about 111 seconds and passed a 35-second
 secure ordinary-ADB/core-process check, bitmap regression, Settings → Users,
-Digital Wellbeing and offline Google TTS checks. Its unplugged Wi-Fi/GApps
-study remains deferred and requires a fresh baseline.
+Digital Wellbeing and offline Google TTS checks. A reviewed overnight study
+with separate GApps lasted 11 hours 48 minutes unplugged, battery 100% to 98%,
+with unchanged boot/core processes and an empty crash buffer. One brief Wi-Fi
+disconnect recovered automatically with the screen off in about one second.
+This single observation does not qualify every network or suspend transition.
 
 The prior signed `140353` candidate passed the clean-install sequence below
 with separate MindTheGapps. The new ZIP's clean installation has not been

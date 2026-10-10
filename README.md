@@ -32,8 +32,12 @@ internet access, and the final crash buffer was clear.
 Its sole added source patch fixes bitmap Parcel transport on the legacy
 kernel; the kernel and Boot payload are unchanged from the prior signed ZIP.
 The previous `140353` candidate passed a clean TWRP install with separate
-GApps. The new ZIP's clean-install path and twelve-hour unplugged Wi-Fi/GApps
-study remain pending. Historical results below apply to their named packages.
+GApps. The new ZIP's clean-install path remains pending. An unplugged overnight
+study with separate GApps lasted 11 hours 48 minutes, with battery 100% to 98%,
+unchanged boot/core processes and an empty crash buffer. One AP-initiated Wi-Fi
+disconnect recovered automatically in about one second with the screen off;
+the older multi-hour outage was not reproduced. This is one tablet and one
+overnight interval. Historical results below apply to their named packages.
 Double-tap-to-wake is disabled in the inherited device configuration.
 
 ## Build

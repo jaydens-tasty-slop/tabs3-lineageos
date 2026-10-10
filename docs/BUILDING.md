@@ -205,6 +205,11 @@ Reconnect USB and collect the finish snapshot before using the tablet:
 make sleep-study-finish
 ```
 
+The collector prints USB/ADB readiness and progress for each probe. If the
+tablet is absent or unauthorized, reconnect USB and accept its normal debugging
+prompt if needed, then retry after checking `make devices`. Individual probes
+have timeouts; a repeated finish keeps the existing completed evidence.
+
 The start and finish snapshots preserve Android battery history and capture
 battery, power, Wi-Fi, connectivity, GApps packages/jobs, memory, suspend, RPM,
 wakeup-source and boot/core identity data. Unreadable counters are marked
@@ -222,17 +227,27 @@ stored in ignored `state/active-sleep-study.json`; reports remain under ignored
 Treat the raw reports as private: Wi-Fi status and battery history can contain
 local network identifiers, and snapshots contain the device serial. Keep raw
 copies only in owner-controlled private storage; do not commit or publish them.
-The generated analysis uses battery history to review the real unplugged
-interval, charging and screen events, plus connection/disconnection events.
+The generated analysis requires a separate review of battery history for the
+real unplugged interval, charging and screen events, plus Wi-Fi connection and
+disconnection events. It does not automatically replace raw endpoint battery
+readings with precharge readings. If USB recharging precedes capture, inspect
+the history before reporting drain; a full battery at the endpoint does not
+mean standby used no energy. Charged aggregate statistics can reset after
+recharging while the retained event history remains useful.
 Endpoint clocks include the brief USB observations, battery percentages are
 coarse, and suspend counters do not prove the deepest Qualcomm power state.
 
 The earlier R4 overnight observation was on a different build and had a Wi-Fi
 disconnect whose cause was not determined. R8's separate kernel #15 scheduled
 scan and short screen-off rejoin checks do not establish overnight behavior.
-Until a valid R8 unplugged study is reviewed, R8 overnight Wi-Fi behavior stays
-unqualified; a single study also cannot show that PNO caused or fixed the older
-disconnect.
+The current signed `003605` ZIP and #17 kernel have a reviewed 11h48m unplugged
+overnight observation with separate GApps: battery 100% to 98%, unchanged
+boot/core identities, and one brief Wi-Fi disconnect that recovered with the
+screen off in about one second. The earlier multi-hour outage was not
+reproduced. This qualifies that one observation; it does not show that PNO
+caused or fixed the older disconnect or transfer qualification to R8's #15
+kernel. Keep a sanitized summary separate from frozen build provenance;
+retain raw evidence privately.
 
 ## Incremental work
 
