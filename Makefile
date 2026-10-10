@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 .PHONY: help image setup build package status logs shell source-check smoke smoke-payloads smoke-hardware \
 	device-image device-start devices ensure-image ensure-device-image ensure-smoke-image \
-	sleep-study-start sleep-study-finish
+	sleep-study-payload sleep-study-start sleep-study-finish
 .NOTPARALLEL:
 export SERIAL
 TAB_S3_SLEEP_HOURS ?= 12
@@ -85,7 +85,10 @@ smoke-payloads: ensure-smoke-image
 smoke-hardware: smoke-payloads device-start
 	sh scripts/device_smoke_hardware.sh
 
-sleep-study-start: device-start
+sleep-study-payload: ensure-image
+	sh scripts/podman.sh exec python3 scripts/build_sleep_clock.py
+
+sleep-study-start: sleep-study-payload device-start
 	@task_serial=$${SERIAL:-}; \
 	if [ -z "$$task_serial" ]; then \
 	  task_serials=$$(sh scripts/device.sh adb devices | awk 'NR > 1 && $$2 == "device" { print $$1 }'); \
@@ -97,7 +100,8 @@ sleep-study-start: device-start
 	  task_serial=$$1; \
 	fi; \
 	sh scripts/device.sh exec python3 scripts/device_sleep_study.py start \
-	  --serial "$$task_serial" --hours "$(TAB_S3_SLEEP_HOURS)"
+	  --serial "$$task_serial" --hours "$(TAB_S3_SLEEP_HOURS)" \
+	  --clock-helper artifacts/device-sleep-clock/sleep-clock
 
 sleep-study-finish: device-start
 	sh scripts/device.sh exec python3 scripts/device_sleep_study.py finish

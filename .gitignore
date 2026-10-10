@@ -40,6 +40,7 @@
 !/scripts/device_vulkan_probe.py
 !/scripts/device_smoke_common.py
 !/scripts/device_sleep_study.py
+!/scripts/build_sleep_clock.py
 !/scripts/adb_device.py
 !/scripts/build_media_payload.py
 !/scripts/generate_media_fixtures.py
@@ -52,6 +53,10 @@
 !/scripts/build_env.sh
 !/scripts/build_rom.sh
 !/scripts/package_rom.sh
+!/scripts/finalize_rom.sh
+!/scripts/audit_release_adb.py
+!/scripts/verify_system_payload.py
+!/scripts/verify_ota.py
 !/scripts/export_port.py
 !/scripts/verify_source_export.py
 !/device-validation/
@@ -62,10 +67,7 @@
 /device-validation/native/*
 !/device-validation/native/vulkan_compute.c
 !/device-validation/native/vulkan_compute.comp
-!/scripts/finalize_rom.sh
-!/scripts/audit_release_adb.py
-!/scripts/verify_system_payload.py
-!/scripts/verify_ota.py
+!/device-validation/native/sleep_clock.c
 
 # Local release identities and signing credentials must never enter source Git.
 /state/release-signing/

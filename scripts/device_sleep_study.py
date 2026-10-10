@@ -27,6 +27,15 @@ PROBES = {
     "alarm": "dumpsys alarm",
     "jobs": "dumpsys jobscheduler",
     "wifi": "cmd wifi status",
+    "wifi-details": "dumpsys wifi",
+    "connectivity": "dumpsys connectivity",
+    "suspend-service": "dumpsys suspend_control_internal",
+    "memory": "dumpsys meminfo",
+    "vmstats": "cat /proc/meminfo; cat /proc/vmstat",
+    "apex-packages": "pm list packages --apex-only --show-versioncode",
+    "gapps-packages": ("for p in com.google.android.gms com.google.android.gsf com.android.vending; do "
+                       "dumpsys package \"$p\"; done"),
+    "crashes": "logcat -b crash -d -v threadtime",
     "kernel-log": "dmesg",
     "last-kernel-log": "cat /proc/last_kmsg",
     "interrupts": "cat /proc/interrupts",
@@ -73,7 +82,43 @@ def parse_clock(text):
     match = re.search(r"^now at (\d+) nsecs$", text, re.M)
     return {"unix_seconds": int(rows[0]), "boot_id": rows[1],
             "boottime_seconds": float(rows[2].split()[0]),
-            "monotonic_ns": int(match[1]) if match else None}
+            "monotonic_ns": int(match[1]) if match else None,
+            "source": "/proc/uptime and optional /proc/timer_list"}
+
+
+def clock_payload(path, expected_hash=None):
+    path = path.resolve()
+    require(path.is_relative_to(ROOT / "artifacts") and path.is_file(),
+            "Use a generated clock payload under artifacts/")
+    digest = file_hash(path)
+    if expected_hash is not None:
+        require(digest == expected_hash, "Clock payload changed since the study started")
+    record = json.loads(path.with_name("build.json").read_text())
+    require(record["sha256"] == digest, "Clock payload checksum differs from its build record")
+    source = ROOT / "device-validation/native/sleep_clock.c"
+    require(record["inputs"].get(str(source.relative_to(ROOT))) == file_hash(source),
+            "Clock payload does not match the reviewed source")
+    return path, digest
+
+
+def capture_clock(device, output, remote_clock):
+    if remote_clock is None:
+        result = device.shell(CLOCK_COMMAND, timeout=15)
+        (output / "clock-anchor.txt").write_text(result.stdout + result.stderr)
+        return parse_clock(result.stdout)
+    result = device.shell(remote_clock + "; cat /proc/sys/kernel/random/boot_id", check=True,
+                          timeout=15)
+    (output / "clock-anchor.txt").write_text(result.stdout + result.stderr)
+    rows = result.stdout.strip().splitlines()
+    require(len(rows) == 2 and re.fullmatch(r"[0-9a-f-]{36}", rows[1]), "Clock payload failed")
+    data = json.loads(rows[0])
+    require(all(type(data.get(key)) is int and data[key] > 0 for key in
+                ("monotonic_ns", "boottime_ns", "unix_ns")), "Incomplete native clocks")
+    require(data["boottime_ns"] >= data["monotonic_ns"], "Invalid native clock ordering")
+    return {"unix_seconds": data["unix_ns"] / 1e9, "boot_id": rows[1],
+            "boottime_seconds": data["boottime_ns"] / 1e9,
+            "monotonic_ns": data["monotonic_ns"],
+            "source": "One-shot arm64 CLOCK_BOOTTIME and CLOCK_MONOTONIC, UID 2000"}
 
 
 def parse_battery(text):
@@ -117,7 +162,7 @@ def wakeup_deltas(start_directory, finish_directory):
             "limits": "Driver changes can add/remove wake sources; endpoint USB activity is included"}
 
 
-def capture(serial, output, final_anchor):
+def capture(serial, output, final_anchor, clock_helper=None):
     device = ready(serial)
     require(not device.recovery and device.props.get("ro.build.version.sdk") == "36"
             and device.props.get("sys.boot_completed") == "1", "Booted Android 16 required")
@@ -128,40 +173,50 @@ def capture(serial, output, final_anchor):
     report = {"complete": False, "serial": serial, "original_adb_uid": original_uid,
               "stay_awake": stay, "initial_identity": identity(device), "probes": {},
               "build_date_utc": device.props.get("ro.build.date.utc"), "root_requested": False,
-              "scope": "Read-only endpoint observations; temporary root ADB for kernel counters only"}
+              "build_identity": {name: device.props.get(name) for name in
+                                 ("ro.lineage.version", "ro.build.version.incremental", "ro.build.tags")},
+              "kernel_banner": device.shell("cat /proc/version", check=True).stdout.strip(),
+              "scope": "Endpoint observations with incoming ADB identity; unique temporary clock payload removed; no root request or resident logger"}
     report_path = output / "snapshot.json"
     battery = device.shell("dumpsys battery", check=True).stdout
     (output / "battery-at-connection.txt").write_text(battery)
     require("USB powered: true" in battery and "UPDATES STOPPED" not in battery.upper(),
             "Connect USB with the real battery service enabled")
     report["battery_at_connection"] = parse_battery(battery)
+    remote_directory = None
+    remote_clock = None
     try:
-        if original_uid == "2000":
-            report["root_requested"] = True
-            request = subprocess.run(device.command + ["root"], capture_output=True, text=True, timeout=10)
-            (output / "adb-root-request.txt").write_text(request.stdout + request.stderr)
-            device = ready(serial)
+        if clock_helper is not None:
+            require(original_uid == "2000", "Use ordinary shell UID 2000 for the native clock")
+            helper_path, helper_hash = clock_payload(clock_helper)
+            remote_directory = "/data/local/tmp/tabs3-sleep-clock-" + uuid.uuid4().hex
+            device.shell("mkdir " + remote_directory, check=True, timeout=15)
+            remote_clock = remote_directory + "/sleep-clock"
+            subprocess.run(device.command + ["push", str(helper_path), remote_clock],
+                           check=True, capture_output=True, text=True, timeout=30)
+            device.shell("chmod 700 " + remote_clock, check=True, timeout=15)
+            require(device.shell("sha256sum " + remote_clock, check=True).stdout.split()[0]
+                    == helper_hash, "Device clock payload checksum mismatch")
+            report["clock_payload_sha256"] = helper_hash
         report["collection_adb_uid"] = device.shell("id -u", check=True).stdout.strip()
         if not final_anchor:
-            clock = device.shell(CLOCK_COMMAND, timeout=15)
-            (output / "clock-anchor.txt").write_text(clock.stdout + clock.stderr)
-            report["clock"] = parse_clock(clock.stdout)
+            report["clock"] = capture_clock(device, output, remote_clock)
         for name, command in PROBES.items():
             try:
                 result = device.shell(command, timeout=45)
                 path = output / (name + ".txt")
                 path.write_text(result.stdout + "\nSTDERR:\n" + result.stderr)
                 report["probes"][name] = {"returncode": result.returncode,
-                    "available": result.returncode == 0 and bool(result.stdout.strip()),
+                    "available": result.returncode == 0 and bool(result.stdout.strip())
+                    and not re.search(r"DUMP TIMEOUT|Can't find service:|Error dumping service|Permission Denial:",
+                                      result.stdout),
                     "sha256": file_hash(path), "command": command}
             except (subprocess.SubprocessError, OSError) as error:
                 report["probes"][name] = {"available": False, "error": str(error)}
         if final_anchor:
             # Take the start clock/battery after other probes, and the finish
             # clock before probes, to reduce USB observation in the interval.
-            clock = device.shell(CLOCK_COMMAND, timeout=15)
-            (output / "clock-anchor.txt").write_text(clock.stdout + clock.stderr)
-            report["clock"] = parse_clock(clock.stdout)
+            report["clock"] = capture_clock(device, output, remote_clock)
             report["battery_at_anchor"] = parse_battery(device.shell("dumpsys battery", check=True).stdout)
         report["final_identity"] = identity(device)
         require(report["final_identity"] == report["initial_identity"], "Core processes changed during capture")
@@ -169,16 +224,19 @@ def capture(serial, output, final_anchor):
     finally:
         try:
             device = ready(serial)
-            if original_uid == "2000" and device.shell("id -u", check=True).stdout.strip() == "0":
-                subprocess.run(device.command + ["unroot"], check=True, capture_output=True, timeout=10)
-                device = ready(serial)
+            if remote_directory is not None:
+                device.shell("rm -f " + remote_directory + "/sleep-clock; rmdir " + remote_directory,
+                             check=True, timeout=15)
+                report["clock_payload_removed"] = device.shell(
+                    "test ! -e " + remote_directory, timeout=15).returncode == 0
             report["adb_uid_restored"] = device.shell("id -u", check=True).stdout.strip() == original_uid
             report["stay_awake_unchanged"] = device.shell(
                 "settings get global stay_on_while_plugged_in", check=True).stdout.strip() == stay
         except (ValueError, subprocess.SubprocessError, OSError) as error:
             report["restore_error"] = str(error)
             report["adb_uid_restored"] = False
-        if not report.get("adb_uid_restored") or not report.get("stay_awake_unchanged"):
+        if (not report.get("adb_uid_restored") or not report.get("stay_awake_unchanged")
+                or (remote_directory is not None and not report.get("clock_payload_removed"))):
             report["complete"] = False
         save_json(report_path, report)
     require(report["complete"], "Endpoint capture/ADB restoration failed; inspect snapshot.json")
@@ -192,6 +250,8 @@ def main():
     start = sub.add_parser("start")
     start.add_argument("--serial", required=True)
     start.add_argument("--hours", type=float, default=12)
+    start.add_argument("--clock-helper", type=pathlib.Path,
+                       help="Generated arm64 clock payload; recommended for signed/rootless ROMs")
     finish = sub.add_parser("finish")
     finish.add_argument("--study", type=pathlib.Path,
                         help="Study manifest; defaults to state/active-sleep-study.json")
@@ -209,15 +269,23 @@ def main():
                 and all(device.props.get(name, "") in ("", "-1", "0") for name in
                         ("service.adb.tcp.port", "persist.adb.tcp.port")),
                 "Disable wireless/network ADB before the standby study")
+        wifi = device.shell("cmd wifi status", check=True).stdout
+        require("Wifi is enabled" in wifi and re.search(r"^Wifi is connected to .+", wifi, re.M),
+                "Connect to the usual Wi-Fi network before starting")
         stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         output = private_directory(ROOT / "diagnostics" / (stamp + "-sleep-study-" + uuid.uuid4().hex[:8]))
         (output / "device_sleep_study.py").write_bytes(pathlib.Path(__file__).read_bytes())
         begin = private_directory(output / "start")
-        baseline = capture(args.serial, begin, final_anchor=True)
+        helper = clock_payload(args.clock_helper) if args.clock_helper else None
+        baseline = capture(args.serial, begin, final_anchor=True,
+                           clock_helper=helper[0] if helper else None)
         manifest = output / "manifest.json"
         save_json(manifest, {"complete": False, "serial": args.serial, "requested_hours": args.hours,
             "start_snapshot": str((begin / "snapshot.json").relative_to(ROOT)),
             "build_date_utc": baseline["build_date_utc"], "created_utc": stamp,
+            "build_identity": baseline["build_identity"], "kernel_banner": baseline["kernel_banner"],
+            "clock_helper": str(helper[0].relative_to(ROOT)) if helper else None,
+            "clock_payload_sha256": helper[1] if helper else None,
             "on_device_logger": False, "wireless_adb_enabled": False,
             "instructions": "Unplug USB, turn the screen off, leave on usual Wi-Fi for the study; reconnect USB and finish before using/charging/rebooting"})
         save_json(ACTIVE, {"manifest": str(manifest.relative_to(ROOT))})
@@ -234,7 +302,10 @@ def main():
     require(manifest.get("complete") is False, "Study already finished")
     baseline = json.loads((ROOT / manifest["start_snapshot"]).read_text())
     end_dir = private_directory(manifest_path.parent / ("finish-" + uuid.uuid4().hex[:8]))
-    end = capture(manifest["serial"], end_dir, final_anchor=False)
+    helper = (clock_payload(ROOT / manifest["clock_helper"], manifest["clock_payload_sha256"])
+              if manifest.get("clock_helper") else None)
+    end = capture(manifest["serial"], end_dir, final_anchor=False,
+                  clock_helper=helper[0] if helper else None)
     a, b = baseline["clock"], end["clock"]
     same_boot = a["boot_id"] == b["boot_id"]
     elapsed = b["boottime_seconds"] - a["boottime_seconds"] if same_boot else None
@@ -245,7 +316,10 @@ def main():
     levels_available = all(value["level"] is not None and value["scale"] == 100
                            for value in (start_battery, end_battery))
     drain = start_battery["level"] - end_battery["level"] if levels_available else None
-    analysis = {"same_boot": same_boot, "same_build": baseline["build_date_utc"] == end["build_date_utc"],
+    analysis = {"same_boot": same_boot, "same_build":
+        baseline["build_date_utc"] == end["build_date_utc"]
+        and baseline.get("build_identity") == end.get("build_identity")
+        and baseline.get("kernel_banner") == end.get("kernel_banner"),
         "requested_hours": manifest["requested_hours"],
         "elapsed_hours_including_USB_brackets": elapsed / 3600 if elapsed and elapsed > 0 else None,
         "kernel_awake_seconds": awake,
@@ -257,7 +331,7 @@ def main():
         "core_processes_unchanged": baseline["initial_identity"] == end["initial_identity"],
         "requires_history_review": True,
         "limits": ["Battery history determines the actual unplugged interval, screen-on use and intervening charge events",
-                   "Endpoint clocks include brief USB/root-ADB observation and unplug/reconnect delays",
+                   "Endpoint clocks include brief USB observation and unplug/reconnect delays",
                    "Kernel suspend time does not prove the deepest Qualcomm power state; inspect RPM counters",
                    "Percentage readings are coarse; vendor charge/current readings need separate qualification",
                    "No pass/fail battery-drain threshold or general battery-health claim is inferred"]}

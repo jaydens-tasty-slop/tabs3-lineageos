@@ -27,10 +27,27 @@ forced ADB activation are included.
 
 Its clean TWRP install with separate MindTheGapps completed. Every reset and
 install step reported CLI and GUI success, Boot readback matched the ZIP, and
-Recovery stayed unchanged. Android boot and runtime checks remain pending;
-older qualification results are not transferred. Settings Build number now
+Recovery stayed unchanged. The exact signed ZIP booted and passed a 35-second
+read-only build/kernel, secure ordinary-ADB, Google core-package and core-process
+stability check. All 34 APEX modules are active, and Wi-Fi has validated internet
+connectivity. A twelve-hour unplugged study with this signed kernel and separate
+GApps is armed; battery drain, suspend and overnight Wi-Fi results remain
+pending. Older qualification results are not transferred. Settings Build number now
 shows the Android platform ID without `test-keys`; the LineageOS version carries
 the build date.
+
+The pre-study crash history contains Google TTS and Digital Wellbeing startup
+failures reporting access to credential-protected data before unlock, plus
+Settings failures copying a profile photo (`Could not copy bitmap to parcel
+blob`). These entries were captured before the unplugged interval; their cause
+and recurrence after unlock remain unverified. They require review before broad
+GApps/application reliability is claimed. Older development-signed clean-build
+logs contain both crash patterns. Their Google credential-data errors precede
+the recorded `USER_UNLOCKED` event; no later occurrence of that message was
+found in those logs. Bitmap source review identifies an enabled memfd path that
+requests `F_SEAL_FUTURE_WRITE`, absent from the 3.18 kernel. A compatibility
+candidate and focused diagnostics are prepared separately; no fix is included
+in this signed ZIP and runtime confirmation remains pending.
 
 The earlier `103849` cleanup build booted and passed bounded read-only secure
 ADB/GApps/process checks. Further testing of that development-signed package

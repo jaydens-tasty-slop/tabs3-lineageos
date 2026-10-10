@@ -203,10 +203,16 @@ make sleep-study-finish
 ```
 
 The start and finish snapshots preserve Android battery history and capture
-battery, power, Wi-Fi, suspend, RPM, wakeup-source and boot/core identity data.
-The collector temporarily uses root ADB at each endpoint for kernel counters,
-then restores the incoming ADB identity and stay-awake setting. It does not
-run an on-device logger during the unplugged interval. The active study path is
+battery, power, Wi-Fi, connectivity, GApps packages/jobs, memory, suspend, RPM,
+wakeup-source and boot/core identity data. Unreadable counters are marked
+unavailable. The collector uses the incoming ADB identity and never requests
+root. A tiny arm64 clock payload reads CLOCK_BOOTTIME and CLOCK_MONOTONIC once
+at each endpoint; it is staged in a unique temporary directory and removed
+before capture completes. Their difference measures kernel suspend time even
+when `/proc/timer_list` is inaccessible to ordinary ADB. `make` builds this
+payload in Podman from existing Android compiler/libc outputs, without starting
+a ROM build. It does not run an on-device logger during the unplugged interval.
+The active study path is
 stored in ignored `state/active-sleep-study.json`; reports remain under ignored
 `diagnostics/`.
 

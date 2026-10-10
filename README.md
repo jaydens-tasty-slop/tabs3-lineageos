@@ -23,9 +23,13 @@ uses a persistent `jaydenmilne` signing identity and kernel
 `3.18.140-jaydenmilne-tabs3-v1+`. Its offline checks passed for APK/APEX
 signatures, APEX payload AVB signatures, OTA trust and signature, and the
 source/System/Boot/OTA ADB cleanup gate. A clean install with separate
-MindTheGapps completed through TWRP; Android boot and runtime checks of this
-exact signed ZIP remain pending. Historical qualification below applies to the named older
-packages. Double-tap-to-wake is disabled in the inherited device configuration.
+MindTheGapps completed through TWRP. The exact signed ZIP booted and passed a
+35-second read-only check of build/kernel identity, ordinary secure ADB, Google
+core packages and stable core processes. All 34 APEX modules are active, and
+Wi-Fi has validated internet connectivity. A twelve-hour unplugged Wi-Fi/GApps
+study is armed; its result remains pending. Historical qualification below
+applies to the named older packages. Double-tap-to-wake is disabled in the
+inherited device configuration.
 
 ## Build
 

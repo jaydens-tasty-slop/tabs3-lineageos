@@ -16,7 +16,10 @@ The current privately signed candidate is
 
 Its offline signature and source/image checks passed. A clean TWRP install
 with separate MindTheGapps completed, including Boot image readback and
-verification that Recovery was unchanged. Android boot checks remain pending.
+verification that Recovery was unchanged. The exact signed ZIP booted and passed
+a bounded read-only build/kernel, secure ordinary-ADB, GApps core-package and
+35-second core-process stability check. Its unplugged Wi-Fi/GApps study is
+armed; overnight results remain pending.
 Historical R4/R8 results do not qualify this exact signed ZIP.
 
 ## Clean installation
