@@ -1,6 +1,6 @@
-.DEFAULT_GOAL := help
+.DEFAULT_GOAL := build
 .PHONY: help image setup build package status logs shell source-check smoke smoke-payloads smoke-hardware \
-	device-image device-start devices ensure-image ensure-device-image ensure-smoke-image \
+	device-image device-start devices ensure-image ensure-sources ensure-device-image ensure-smoke-image \
 	sleep-study-payload sleep-study-start sleep-study-finish
 .NOTPARALLEL:
 export SERIAL
@@ -9,6 +9,7 @@ TAB_S3_SLEEP_HOURS ?= 12
 help:
 	@printf '%s\n' \
 	  'Targets:' \
+	  '  make              Set up a fresh checkout if needed and build the ROM' \
 	  '  make image        Build the Android build image' \
 	  '  make setup        Fetch upstream sources and apply the pinned port' \
 	  '  make build        Build the ROM using the persistent workspace' \
@@ -35,7 +36,18 @@ image:
 setup: ensure-image
 	sh scripts/podman.sh fetch bash scripts/setup_checkout.sh
 
-build: ensure-image
+ensure-sources: ensure-image
+	@if [ -d android/.repo ]; then \
+	  if [ ! -f android/build/envsetup.sh ]; then \
+	    printf '%s\n' 'Android checkout is incomplete. Resume source sync as described in docs/BUILDING.md.' >&2; \
+	    exit 1; \
+	  fi; \
+	  printf '%s\n' 'Reusing the existing Android checkout and build output.'; \
+	else \
+	  sh scripts/podman.sh fetch bash scripts/setup_checkout.sh; \
+	fi
+
+build: ensure-sources
 	sh scripts/podman.sh build
 
 package: ensure-image

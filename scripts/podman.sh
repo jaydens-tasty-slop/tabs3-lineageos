@@ -89,6 +89,7 @@ case "$task_action" in
             --userns=keep-id --user "$(id -u):$(id -g)" \
             --security-opt=no-new-privileges --cap-drop=ALL \
             --env PYTHONDONTWRITEBYTECODE=1 \
+            --env TAB_S3_GIT_NAME --env TAB_S3_GIT_EMAIL \
             --volume "$task_workspace:/workspace" --workdir /workspace "$task_image" "$@"
         ;;
     *)

@@ -4,7 +4,7 @@
 ROMs use private APK, APEX container, APEX payload and OTA keys. A ZIP signature
 alone does not replace the package signatures inside the ROM.
 
-The maintainer's current candidate uses a persistent private `jaydenmilne`
+The maintainer's current release uses a persistent private `jaydenmilne`
 identity and the standard Android `release-keys` build tag. Private keys are
 kept outside Git in `state/release-signing/`, excluded from the container build
 context, and backed up in an encrypted archive. The passphrase is stored
@@ -18,7 +18,7 @@ using the host tools compiled inside Podman:
 2. Generate your own persistent APK certificates and APEX signing keys. Inspect
    `META/apkcerts.txt` and `META/apexkeys.txt` in the actual target-files ZIP to
    obtain the required signing roles; map module APK certificates too. This
-   candidate required 53 distinct key pairs, including 34 APEX identities.
+   release required 53 distinct key pairs, including 34 APEX identities.
 3. Run `sign_target_files_apks` with the APK certificate mappings, APEX
    container mappings and APEX payload keys, and `-o` to replace OTA trust.
    Preserve explicitly presigned APKs, including the CTS shim packages.

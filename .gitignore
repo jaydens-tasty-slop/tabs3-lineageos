@@ -59,6 +59,7 @@
 !/scripts/verify_ota.py
 !/scripts/export_port.py
 !/scripts/verify_source_export.py
+!/scripts/publish_source_forks.sh
 !/device-validation/
 /device-validation/*
 !/device-validation/media/
@@ -85,3 +86,14 @@
 *.pem
 *.password
 *.passwords
+
+# Private progress and device evidence stay outside the public source tree.
+BUGS.md
+CAMERA_HANDOFF.txt
+DEVICE_WORKFLOW.md
+USB_SESSION_*.md
+KERNEL_SMOKE_*.md
+PUBLIC_RELEASE.txt
+*.log
+*.logcat
+*.tombstone

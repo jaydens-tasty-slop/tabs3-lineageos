@@ -8,8 +8,8 @@ if [ -d android/.repo ]; then
 fi
 mkdir -p upstream android state logs research artifacts
 export GIT_CONFIG_GLOBAL=/workspace/state/gitconfig
-git config --global user.name 'Tab S3 ROM Builder'
-git config --global user.email 'rom-builder@localhost'
+git config --global user.name "${TAB_S3_GIT_NAME:-jaydens-tasty-slop}"
+git config --global user.email "${TAB_S3_GIT_EMAIL:-325336397+jaydens-tasty-slop@users.noreply.github.com}"
 if [ ! -d upstream/git-repo/.git ]; then
     git clone --branch v2.68.1 https://gerrit.googlesource.com/git-repo upstream/git-repo
 fi

@@ -1,4 +1,4 @@
-# Installing the experimental Tab S3 build
+# Installing the Tab S3 release
 
 ## Device and recovery
 
@@ -7,7 +7,7 @@ maintainer's **TWRP 3.7.0_9-0 without encryption**. SM-T825/LTE and encrypted Da
 are unsupported. The ROM ZIP writes Boot and System; Recovery and Samsung
 firmware are retained.
 
-The current privately signed candidate is
+The current privately signed release is
 `lineage-23.2-20261010_003605-UNOFFICIAL-gts3lwifi.zip`, SHA-256:
 
 ```text
@@ -27,7 +27,7 @@ This single observation does not qualify every network or suspend transition.
 
 The prior signed `140353` candidate passed the clean-install sequence below
 with separate MindTheGapps. The new ZIP's clean installation has not been
-qualified. Historical R4/R8 results do not qualify this exact signed ZIP.
+qualified. Earlier hardware results do not qualify this exact signed ZIP.
 
 ## Clean installation
 

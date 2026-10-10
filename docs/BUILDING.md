@@ -2,7 +2,8 @@
 
 ## Host requirements
 
-Use Make, a POSIX shell and rootless Podman on Linux. Host `adb` is optional;
+Use Git to clone the build root, then Make, a POSIX shell and rootless Podman
+on Linux. Host `adb` is optional;
 without it, the device tools image can access one USB-connected tablet. Keep the
 source checkout and build output on a filesystem that supports Unix ownership,
 permissions, symlinks and hard links. A removable NTFS/exFAT disk is useful for
@@ -15,21 +16,43 @@ requirements. Fetches require Internet access; compilation runs without network.
 
 ## Fresh checkout
 
-Clone the build-root repository into an empty workspace. From that directory:
+Clone the build-root repository into an empty workspace:
 
 ```sh
-make help
-make image
-make setup
-make build
+git clone https://github.com/jaydens-tasty-slop/tabs3-lineageos.git lineage-os
+cd lineage-os
+make
 ```
 
 `setup_checkout.sh` clones the requested device repositories, initializes Android
 `repo` at the pinned Lineage manifest, synchronizes the 1,174 revisions in
 `manifests/base-source-lock.xml`, and applies every patch in `patches/index.json`.
-It refuses to replace an existing Android checkout. Patch checksums and base
-revisions are verified before application. Keep the pinned manifest and patch
+Plain `make` reuses an existing checkout; explicit `make setup` refuses to
+replace one. `make image`, `make setup` and `make build` are also available
+separately. Patch checksums and base revisions are verified before application. Keep the pinned manifest and patch
 index together; arbitrary upstream updates require reviewing the port again.
+
+Fresh setup configures the port Git identity. Set `TAB_S3_GIT_NAME` and
+`TAB_S3_GIT_EMAIL` in the host environment before setup to use your own identity.
+GitHub CLI and the maintainer's SSH key are unnecessary for building.
+
+If a fetch is interrupted after Android `repo` initialization, resume it
+without replacing the checkout or caches:
+
+```sh
+sh scripts/podman.sh fetch bash -c '
+  set -e
+  export GIT_CONFIG_GLOBAL=/workspace/state/gitconfig
+  cd /workspace/android
+  python3 /workspace/upstream/git-repo/repo sync -c --no-tags --optimized-fetch --fail-fast -j6
+  python3 /workspace/scripts/apply_port.py
+'
+make
+```
+
+This assumes `.repo` already contains the pinned manifest configured by setup.
+If initialization itself failed, inspect its error and complete that step first.
+The setup entry point deliberately does not overwrite partial checkouts.
 
 On hosts enforcing SELinux, the workspace bind mount may need an appropriate
 container label. Apply your host's normal Podman volume-labeling policy to this
@@ -54,27 +77,28 @@ workspace; the build commands do not disable host SELinux.
 
 No submodules are needed. Android's `repo` owns the large source checkout; the
 small outer repository owns the manifest, port patches and build instructions.
-The four device/kernel/vendor convenience forks preserve upstream ancestry and
-the R8 repairs. The common-device branch also includes the later source cleanup
-that removes the temporary forced-ADB rule. The 26-project patch snapshot and
+The four published device/kernel/vendor forks preserve upstream ancestry and
+the port repairs, including removal of the temporary forced-ADB rule.
+The 26-project patch snapshot and
 1,174 pinned base revisions are canonical; see [the source map](SOURCES.md).
 
 The build uses the standard Lineage version ID from `ro.lineage.version`: UTC
 date, with the upstream optional time-of-day suffix enabled by default. The
-current signed candidate is `23.2-20261010_003605-UNOFFICIAL-gts3lwifi`. Its
+current signed release is `23.2-20261010_003605-UNOFFICIAL-gts3lwifi`. Its
 offline signing/image audits and same-key TWRP dirty upgrade passed, preserving
 separate GApps. The exact ZIP booted and passed bounded secure ordinary-ADB,
 core-process, bitmap, Settings/Wellbeing UI and offline TTS checks. The previous
-`140353` candidate passed a clean installation; the new ZIP's clean-install
-path and unplugged study remain pending. Earlier R8 runtime results apply to
-the named earlier package. Settings Build number uses Android's platform build
+`140353` build passed a clean installation; the new ZIP's clean-install
+path is untested. An unplugged 11h48m study with separate GApps used 2% battery
+and recovered one brief Wi-Fi disconnect automatically. Earlier hardware
+results apply to their named packages. Settings Build number uses Android's platform build
 ID, while the LineageOS version includes the date.
 
 The build and package targets pass the established legacy kernel host-tool
 flags through `TARGET_KERNEL_ADDITIONAL_FLAGS`: Ubuntu GCC/G++, binutils,
 GNU89 host C, an eight-job kernel limit, and stable builder/host names. Override
 `TAB_S3_KERNEL_MAKE_FLAGS` to review a different kernel tool profile. These are
-the flags used for the signed candidate; a second fresh build has not been run
+the flags used for the signed release; a second fresh build has not been run
 to qualify reconstruction. No cache clean is needed for ordinary iterations.
 
 The ordinary targets produce development-signed output. See [signing](SIGNING.md)
@@ -97,8 +121,8 @@ are recorded before and after the check. A unique private report is written
 under ignored `state/release-adb-audit.*`. Only after the audit passes does the
 finalizer refresh `system.img` and create the standard
 `lineage-<ro.lineage.version>.zip` alias and checksum. This is a package/source
-integrity check; it does not install or boot Android. The signed candidate has not yet completed Android boot checks; earlier R8
-runtime results do not transfer.
+integrity check; it does not install or boot Android. Runtime coverage of the
+current release is recorded separately in [test scope](KNOWN_ISSUES.md).
 
 The audit imports `scripts/verify_system_payload.py` and `scripts/verify_ota.py`;
 all three audit scripts are included in the curated source root. It reads
@@ -237,16 +261,13 @@ recharging while the retained event history remains useful.
 Endpoint clocks include the brief USB observations, battery percentages are
 coarse, and suspend counters do not prove the deepest Qualcomm power state.
 
-The earlier R4 overnight observation was on a different build and had a Wi-Fi
-disconnect whose cause was not determined. R8's separate kernel #15 scheduled
-scan and short screen-off rejoin checks do not establish overnight behavior.
 The current signed `003605` ZIP and #17 kernel have a reviewed 11h48m unplugged
 overnight observation with separate GApps: battery 100% to 98%, unchanged
 boot/core identities, and one brief Wi-Fi disconnect that recovered with the
 screen off in about one second. The earlier multi-hour outage was not
 reproduced. This qualifies that one observation; it does not show that PNO
-caused or fixed the older disconnect or transfer qualification to R8's #15
-kernel. Keep a sanitized summary separate from frozen build provenance;
+caused or fixed the older disconnect. Keep a sanitized summary separate from
+frozen build provenance;
 retain raw evidence privately.
 
 ## Incremental work
@@ -288,7 +309,7 @@ the complete ROM installer.
 
 LineageOS names the public ZIP `lineage-23.2-YYYYMMDD-UNOFFICIAL-gts3lwifi.zip`
 using the UTC build date. Its optional time-of-day setting adds
-`_HHMMSS` to the version. Keep experiment labels such as R4 and R8 in release
+`_HHMMSS` to the version. Keep experiment labels in release
 notes and qualification records, not in the public ZIP basename.
 
 ## Source checks and maintenance
@@ -314,17 +335,12 @@ unsupported. Back up device partitions and internal storage before changing an
 installation. The ROM installer writes Boot and System;
 it does not install Samsung firmware or replace recovery.
 
-An Android-major-version upgrade needs a reviewed clean-install procedure. Do
-not assume Android 14 Data can be retained. Google Apps, when used, must match
-Android 16/ARM64 and be installed separately in recovery immediately after the
-ROM, before its first Android boot. Installing Google Apps onto an already booted
-installation requires a factory reset. A clean R4 install followed by the
-separate MindTheGapps Android 16 ARM64 add-on has booted. The R8 dirty upgrade
-retained the separate add-on and passed bounded package/runtime checks after
-normal unlock. Account setup, Play Store certification/downloads, and broader
-Google Apps behavior remain unqualified. Google Apps are not part of the ROM
-ZIP. See [the installation guide](INSTALLING.md) for the tested R8 dirty-upgrade
-scope and clean-install limits.
-
-The R8 dirty-upgrade procedure is documented; a clean R8 installation is not
-qualified. The development-signed ZIP remains an experimental maintainer build.
+An Android-major-version or signing-identity change needs a clean-install
+procedure. Do not assume Android 14 Data can be retained. Optional Google Apps
+must match Android 16/ARM64 and be installed separately in recovery immediately
+after the ROM, before the first Android boot. Adding them to an already booted
+installation requires a factory reset. The previous signed clean install and
+the current same-key dirty update both booted with separate MindTheGapps.
+Account setup, Play Store certification/downloads and broader Google Apps
+behavior remain unqualified. See [installation](INSTALLING.md) for the tested
+update path and the exact ZIP's clean-install limit.

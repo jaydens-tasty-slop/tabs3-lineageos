@@ -1,183 +1,91 @@
 # LineageOS 23.2 for Samsung Galaxy Tab S3
 
-Podman build instructions and source changes for **Android 16 on SM-T820
-(`gts3lwifi`)**. This is an unofficial experimental port based on awesometic's
-Tab S3 sources. SM-T825/LTE is not qualified.
-
-The **HARDWARE-R4** clean-install path and the **HARDWARE-R8** full-ZIP dirty
-upgrade have both booted on an SM-T820 through the maintainer's **TWRP
-3.7.0_9-0 without-encryption** recovery build. Encrypted Data is unsupported.
-A clean R8 installation has not been qualified.
-R8 passed offline source, image-delta and module reviews. Its #15 kernel passed
-a bounded Boot/PNO/rejoin trial: the screen-off saved-network rejoin took 1.1
-seconds, and twelve samples over 60 seconds stayed connected with the display
-off. That USB-polled trial does not establish deep-sleep or overnight behavior.
-The R8 dirty upgrade passed targeted read-only post-install checks and booted
-Android 16; its first boot completed in about 121 seconds, followed by a
-30-second stable monitor interval. See [the installation guide](docs/INSTALLING.md)
-for the tested R8 dirty-upgrade procedure and clean-install limits. These
-bounded checks do not establish full application or accessory qualification.
-
-The current privately signed candidate is
-`23.2-20261010_003605-UNOFFICIAL-gts3lwifi`, using persistent `jaydenmilne`
-keys and kernel `3.18.140-jaydenmilne-tabs3-v1+`, #17. All offline APK/APEX,
-APEX payload, OTA signature/trust and ADB-cleanup audits passed. A same-key
-TWRP dirty upgrade preserved the separate MindTheGapps add-on and booted in
-about 111 seconds. The exact ZIP passed a 35-second secure ordinary-ADB and
-core-process check, all 20 arm32/arm64 bitmap roundtrips, ten ordinary-app
-bitmap cases, Settings → Users and Digital Wellbeing UI checks, and offline
-Google TTS synthesis. All 34 APEX modules are active, Wi-Fi has validated
-internet access, and the final crash buffer was clear.
-
-Its sole added source patch fixes bitmap Parcel transport on the legacy
-kernel; the kernel and Boot payload are unchanged from the prior signed ZIP.
-The previous `140353` candidate passed a clean TWRP install with separate
-GApps. The new ZIP's clean-install path remains pending. An unplugged overnight
-study with separate GApps lasted 11 hours 48 minutes, with battery 100% to 98%,
-unchanged boot/core processes and an empty crash buffer. One AP-initiated Wi-Fi
-disconnect recovered automatically in about one second with the screen off;
-the older multi-hour outage was not reproduced. This is one tablet and one
-overnight interval. Historical results below apply to their named packages.
-Double-tap-to-wake is disabled in the inherited device configuration.
+Build **Android 16 for the Wi-Fi SM-T820 (`gts3lwifi`)** in Podman. This
+unofficial port builds on awesometic's Tab S3 device, kernel and vendor work.
+SM-T825/LTE is unsupported by this release.
 
 ## Build
 
-Clone this build-root repository into a directory on a Linux filesystem, then:
+On Linux, install Git, Make and rootless Podman, then:
 
 ```sh
+git clone https://github.com/jaydens-tasty-slop/tabs3-lineageos.git lineage-os
 cd lineage-os
-make help
-make image
-make setup
-make build
+make
 ```
 
-The host needs Make, Podman and a POSIX shell; host `adb` is optional for device
-checks. Android build dependencies are installed in the container. The setup,
-build, package, shell and source-check targets build the image if it is missing.
-See [the build guide](docs/BUILDING.md) for resources, layout, incremental
-builds, the offline ADB release gate, artifact locations, the read-only device
-smoke check, optional media/GPU smoke, and unplugged sleep-study targets.
+`make` prepares the container image, fetches the pinned sources when the
+checkout is absent, applies the port, and builds a TWRP-flashable ZIP. Android
+build dependencies live in the container. Later runs reuse the checkout,
+`android/out` and `state/ccache`; no clean is performed. Allow several hundred
+GiB of storage on a Linux filesystem. See [the build guide](docs/BUILDING.md)
+for the resource profile, interrupted fetches and incremental builds.
 
-The checkout is reconstructed with **Android `repo`, a pinned manifest and
-versioned patches**. There are no Git submodules. The device, kernel and vendor
-forks provide convenient source review. Their prepared tips preserve the R8
-repairs; the common-device tip also removes the temporary forced-ADB rule from
-the later cleanup export. The complete 26-project patch snapshot and 1,174
-pinned base revisions are the canonical reconstruction path. All Android
-projects are Git clones.
+Output is under `android/out/target/product/gts3lwifi/lineage-*.zip`, with a
+checksum alongside it. Ordinary builds use development signing keys; the
+maintainer's private release keys are excluded. See [signing](docs/SIGNING.md)
+before distributing your own build.
 
-## Historical qualification
+Useful targets:
 
-The exact R4 ZIP booted on an SM-T820 and passed bounded camera, Wi-Fi,
-microphone, sensor, GLES/Vulkan, WebView, hardware video decoder/encoder and DSP
-audio checks. Chrome 154 passed a generated local JavaScript/WebGL fixture using
-Adreno 530. Separate generated 20-second 1080p60 clips reported 27 AVC and 6
-HEVC dropped frames; these counters do not establish paced 60 fps. The owner
-verified Bluetooth pairing and wired headphones. These results cover specific
-operations, not complete application or daily-use reliability.
+```sh
+make help           # All targets
+make status         # Build container status
+make logs           # Follow build output
+make source-check   # Check the source patch snapshot without building
+make smoke          # Read-only checks on an authorized USB-connected tablet
+```
 
-R8's targeted post-install verifier passed all 27 changed System content,
-module, and metadata checks, plus exact checks of the three separate Google
-core APKs and add-on script. The first Android 16 boot completed, and basic
-boot/service/APEX/package/crash-buffer smoke checks passed. A synthetic input
-event test exercised the Samsung cover-switch filter. The owner later reported
-multiple cover reconnects and working Search in Chrome; Search was inert in the
-launcher. The a035 keylayout maps Lang to LANGUAGE_SWITCH. The owner reported
-Shift+2 produced a double quote and pressing Lang again restored @, though
-there is no clear visual indication. No synchronized IME subtype/KCM readback
-confirmed the selected layouts. A read-only check confirmed the selected
-System keylayout, but the reconnect capture was not event-aligned and does not
-prove the physical behavior is fixed; key 706 show/hide remains unmapped.
+## Release
 
-After normal unlock, bounded Google package/runtime checks passed, but account
-setup, Play Store certification/downloads and interactive behavior remain
-unverified. The first foreground batch was inconclusive because of a staging
-path mismatch and inventory/APK-install failures. Corrected R8 checks passed
-GLES2/3 drawing, ES3.1 compute, WebView JavaScript, and 32 generated decoder
-executions across 19 cases. Nine additional moving AVC/HEVC clips ran for 20
-seconds each, including 1080p60, 4K30 and HEVC Main10; all nine completed with
-expected output frames. Qualcomm AVC and HEVC encoder outputs each contained
-30 frames that independent host decoding checked against reference pixels.
+The qualified release artifact is:
 
-The strict media inventory remains incomplete: 16 of 21 expected vendor
-components are advertised, with four nonsecure and one secure legacy VC-1/DivX
-component absent. Fixture success does not establish secure playback, DRM, HDR,
-sustained performance, paced 60 fps, or hardware decoding of every frame.
-Chrome 154 passed a generated JavaScript/WebGL fixture on Adreno 530 and
-completed 20-second AVC/HEVC 1080p60 clips with expected pixel samples. AVC
-reported 12 dropped of 1,200 frames and HEVC 8 of 1,200, with 897 and 892 frame
-callbacks. These counters do not establish paced 60 fps or prove hardware
-decoding for every frame. The audio API check confirmed sample acceptance on
-the speaker route, not human audibility after the R8 boot.
+```text
+lineage-23.2-20261010_003605-UNOFFICIAL-gts3lwifi.zip
+SHA256: 65aea8e4ea822238492021b7d3c8a33ba4ffbf68815a64d99b9a9b701b858172
+```
 
-An unplugged overnight R4 observation lasted about 12 hours 19 minutes:
-battery 100% to 98%, approximately 98.8% kernel suspend, no reboot. Wi-Fi was
-disconnected for about 4 hours 53 minutes and rejoined when the screen woke.
-This does not establish continuously connected standby behavior.
+It uses persistent private `jaydenmilne` signing keys, the Android
+`release-keys` tag and kernel `3.18.140-jaydenmilne-tabs3-v1+`, #17. Install
+through the original maintainer's **TWRP 3.7.0_9-0 without encryption**.
+Google Apps are optional and must be flashed separately. USB debugging and
+computer authorization are enabled normally by the owner; the release embeds
+no host ADB keys or forced ADB activation.
 
-**Open issues:** deep-sleep and overnight Wi-Fi behavior, occasional app-switch
-stutter, five missing legacy media components, residual browser frame drops, a
-clipped Lineage onboarding screen-lock heading, and camera quality/long-session
-checks. R8 includes a new kernel #15 and audio/input changes. Its bounded media
-fixtures passed, but secure playback, DRM/HDR, sustained performance, paced
-60 fps, and hardware decoding of every frame remain unqualified. Launcher
-Search, exact language-subtype selection, owner-confirmed post-upgrade audio,
-and broader application behavior also remain open. The owner reported that
-Lang restored `@` after Shift+2 produced a quote, but no synchronized IME
-subtype/KCM readback was captured.
-SELinux is permissive, Data encryption is unsupported, Verified
-Boot is disabled, and kernel/vendor components are old. See [known issues and test
-scope](docs/KNOWN_ISSUES.md).
+This exact ZIP passed signing and image audits, a same-key TWRP update, boot,
+bitmap regression, Settings/Digital Wellbeing and offline Google TTS checks.
+An unplugged observation with separate GApps lasted **11h48m, battery 100%
+to 98%**. A brief Wi-Fi disconnect recovered automatically with the screen
+off in about one second. There was no recorded reboot or fatal crash.
 
-Earlier ROM artifacts used development signing keys. The new candidate uses
-our persistent private signing keys, with the standard Android `release-keys`
-tag. Settings Build number shows Android's platform ID `BP4A.251205.006`; the
-LineageOS version contains the build date. A clean reset is required for this
-transition from development keys. Future updates must retain the same signing
-identity. The ordinary build targets still produce development-signed output;
-see [signing](docs/SIGNING.md) before distributing your own builds.
+The prior signed build passed a clean installation; a clean installation of
+this exact ZIP has not been tested. Earlier builds received broader hardware
+and media checks. These results cover one tablet and bounded sessions. See
+[installation](docs/INSTALLING.md) and [test scope and known issues](docs/KNOWN_ISSUES.md).
 
-A clean R4 install followed by
-the separate MindTheGapps Android 16 ARM64 add-on booted. Some Google extras
-logged startup failures before the first user unlock; bounded package/runtime
-checks after normal unlock passed. They do not establish Google account setup,
-sign-in, Play Store certification, downloads or interactive functionality.
-Google Apps are not included in the ROM ZIP. Persistent signing keys have been generated and backed up privately;
-qualification of the exact signed candidate remains pending. No public download or OTA service is configured by this repository.
+SELinux is permissive, Data encryption is unsupported and Verified Boot is
+disabled. Occasional stutter, the onboarding lock-screen layout and camera
+quality/endurance remain open. Double-tap-to-wake and Android Linux Terminal
+are unavailable. The kernel and proprietary vendor components remain old.
 
-## Source snapshot
+## Sources
 
-- Base lock: `manifests/base-source-lock.xml`, 1,174 pinned projects.
-- Port snapshot: `patches/index.json`, 26 changed projects. Seven source
-  projects changed between frozen R4 and R8; the current source export passed 26
-  patch round-trip checks, including the HWUI bitmap compatibility fallback.
-- Source forks: [the source map](docs/SOURCES.md); convenience tips preserve the
-  R8 repairs, with the common-device tip also carrying the later forced-ADB
-  cleanup export.
-- R4 clean-install-tested ZIP SHA-256:
-  `ad7115e2548aa765ca4e1373ad448aa8f273268df364b6c0e1aab538c1277cfa`.
-- R8 dirty-upgrade-tested ZIP SHA-256:
-  `87798ad7a2c0b1e8f9b56d6af73c970fb6ddb00232cd36b7eaff723f5b434336`.
+Android **`repo` + a pinned manifest + 26 versioned patches** reconstruct the
+complete port across 1,174 base projects. No Git submodules are needed. Four
+published GitHub forks preserve upstream ancestry and the device, kernel and
+vendor changes; see [the source map](docs/SOURCES.md).
 
-The R8 source patches round-tripped against pinned project trees. The isolated
-#15 Boot trial passed a direct scheduled-scan check (capacity 16, one SSID and
-one match set) and a screen-off saved-network rejoin in 1.1 seconds. Twelve
-USB-polled samples remained connected over 60 seconds. It does not establish
-deep-sleep or overnight behavior or explain the earlier overnight disconnect.
-The subsequent R8 install, targeted file checks, and first Android boot passed,
-but do not replace physical accessory or broad application testing. A full
-build from a second fresh checkout and byte-for-byte reproducibility have
-not been performed. Build dates,
-signing and packaging may change artifact hashes.
+The outer repository contains build setup, patches, documentation and portable
+smoke tools. Source clones, build output, caches, keys, device logs, backups
+and private progress notes stay outside Git. Rebuilding does not promise an
+identical ZIP hash: build times, signing and container packages can differ.
+A second build from a fresh checkout has not been run to qualify reconstruction.
 
 ## Credits and licenses
 
-Thanks to awesometic for the original device, kernel, vendor and recovery work;
-to LineageOS, AOSP, Samsung, Qualcomm and other upstream contributors.
+Thanks to awesometic, LineageOS, AOSP, Samsung, Qualcomm and other upstream
+contributors. [Original Tab S3 ROM thread](https://xdaforums.com/t/rom-unofficial-14-eas-ota-sm-t820-sm-t825-2024-3-9-lineageos-21-for-galaxy-tab-s3.4660924/).
 
-[Original Tab S3 ROM thread](https://xdaforums.com/t/rom-unofficial-14-eas-ota-sm-t820-sm-t825-2024-3-9-lineageos-21-for-galaxy-tab-s3.4660924/).
-
-Build-root orchestration and documentation are licensed under Apache-2.0.
-Patched upstream code retains its own licenses. The kernel is GPLv2; vendor
-binaries retain their existing distribution terms. See [NOTICE](NOTICE).
+Build orchestration and documentation are Apache-2.0. Patched upstream code
+retains its licenses; the kernel is GPLv2 and vendor binaries retain their
+existing distribution terms. See [NOTICE](NOTICE).
