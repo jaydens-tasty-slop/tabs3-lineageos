@@ -1,0 +1,32 @@
+diff --git a/libs/hwui/jni/Bitmap.cpp b/libs/hwui/jni/Bitmap.cpp
+index 1d4576156d51fe47154bca56e8f9d369627894ea..194993706902f67f2e6840c0e76dcebf4884da11 100644
+--- a/libs/hwui/jni/Bitmap.cpp
++++ b/libs/hwui/jni/Bitmap.cpp
+@@ -761,6 +761,18 @@ static constexpr bool shouldUseAshmem(AParcel* parcel, int32_t size) {
+     return size > BLOB_INPLACE_LIMIT && AParcel_getAllowFds(parcel);
+ }
+ 
++// The release flag may be enabled on devices whose kernel predates these seals.
++// Keep the existing ashmem transport when the native memfd requirements are absent.
++static bool supportsBitmapMemfd() {
++    static const bool supported = [] {
++        base::unique_fd fd(syscall(__NR_memfd_create, "Bitmap transport probe",
++                                  MFD_CLOEXEC | MFD_ALLOW_SEALING));
++        return fd.ok() && fcntl(fd.get(), F_ADD_SEALS,
++                               F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_FUTURE_WRITE) == 0;
++    }();
++    return supported;
++}
++
+ static binder_status_t writeBlobFromFd(AParcel* parcel, int32_t size, int fd) {
+     binder_status_t error = STATUS_OK;
+     ON_ERROR_RETURN(AParcel_writeInt32(parcel, static_cast<int32_t>(BlobType::ASHMEM)));
+@@ -784,7 +796,7 @@ static binder_status_t writeBlob(AParcel* parcel, uint64_t bitmapId, const SkBit
+                                             bitmap.width(), bitmap.height(), size);
+         base::unique_fd fd;
+ 
+-        if (com::android::graphics::hwui::flags::bitmap_use_memfd()) {
++        if (com::android::graphics::hwui::flags::bitmap_use_memfd() && supportsBitmapMemfd()) {
+             fd.reset(syscall(__NR_memfd_create, ashmemId.c_str(), MFD_CLOEXEC | MFD_ALLOW_SEALING));
+             if (fd.get() < 0) {
+                 return STATUS_NO_MEMORY;

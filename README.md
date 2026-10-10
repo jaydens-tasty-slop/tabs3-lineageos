@@ -18,18 +18,23 @@ Android 16; its first boot completed in about 121 seconds, followed by a
 for the tested R8 dirty-upgrade procedure and clean-install limits. These
 bounded checks do not establish full application or accessory qualification.
 
-The privately signed candidate `23.2-20261009_140353-UNOFFICIAL-gts3lwifi`
-uses a persistent `jaydenmilne` signing identity and kernel
-`3.18.140-jaydenmilne-tabs3-v1+`. Its offline checks passed for APK/APEX
-signatures, APEX payload AVB signatures, OTA trust and signature, and the
-source/System/Boot/OTA ADB cleanup gate. A clean install with separate
-MindTheGapps completed through TWRP. The exact signed ZIP booted and passed a
-35-second read-only check of build/kernel identity, ordinary secure ADB, Google
-core packages and stable core processes. All 34 APEX modules are active, and
-Wi-Fi has validated internet connectivity. A twelve-hour unplugged Wi-Fi/GApps
-study is armed; its result remains pending. Historical qualification below
-applies to the named older packages. Double-tap-to-wake is disabled in the
-inherited device configuration.
+The current privately signed candidate is
+`23.2-20261010_003605-UNOFFICIAL-gts3lwifi`, using persistent `jaydenmilne`
+keys and kernel `3.18.140-jaydenmilne-tabs3-v1+`, #17. All offline APK/APEX,
+APEX payload, OTA signature/trust and ADB-cleanup audits passed. A same-key
+TWRP dirty upgrade preserved the separate MindTheGapps add-on and booted in
+about 111 seconds. The exact ZIP passed a 35-second secure ordinary-ADB and
+core-process check, all 20 arm32/arm64 bitmap roundtrips, ten ordinary-app
+bitmap cases, Settings → Users and Digital Wellbeing UI checks, and offline
+Google TTS synthesis. All 34 APEX modules are active, Wi-Fi has validated
+internet access, and the final crash buffer was clear.
+
+Its sole added source patch fixes bitmap Parcel transport on the legacy
+kernel; the kernel and Boot payload are unchanged from the prior signed ZIP.
+The previous `140353` candidate passed a clean TWRP install with separate
+GApps. The new ZIP's clean-install path and twelve-hour unplugged Wi-Fi/GApps
+study remain pending. Historical results below apply to their named packages.
+Double-tap-to-wake is disabled in the inherited device configuration.
 
 ## Build
 
@@ -54,7 +59,7 @@ The checkout is reconstructed with **Android `repo`, a pinned manifest and
 versioned patches**. There are no Git submodules. The device, kernel and vendor
 forks provide convenient source review. Their prepared tips preserve the R8
 repairs; the common-device tip also removes the temporary forced-ADB rule from
-the later cleanup export. The complete 25-project patch snapshot and 1,174
+the later cleanup export. The complete 26-project patch snapshot and 1,174
 pinned base revisions are the canonical reconstruction path. All Android
 projects are Git clones.
 
@@ -140,9 +145,9 @@ qualification of the exact signed candidate remains pending. No public download 
 ## Source snapshot
 
 - Base lock: `manifests/base-source-lock.xml`, 1,174 pinned projects.
-- Port snapshot: `patches/index.json`, 25 changed projects. Seven source
-  projects changed between frozen R4 and R8; the final source export passed 25
-  patch round-trip checks.
+- Port snapshot: `patches/index.json`, 26 changed projects. Seven source
+  projects changed between frozen R4 and R8; the current source export passed 26
+  patch round-trip checks, including the HWUI bitmap compatibility fallback.
 - Source forks: [the source map](docs/SOURCES.md); convenience tips preserve the
   R8 repairs, with the common-device tip also carrying the later forced-ADB
   cleanup export.

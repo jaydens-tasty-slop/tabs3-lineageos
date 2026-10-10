@@ -123,6 +123,19 @@
       "untracked_files": []
     },
     {
+      "path": "frameworks/base",
+      "upstream_name": "LineageOS/android_frameworks_base",
+      "base": "1c45e31a86be95f51a94ffd1a5014c3fb2019112",
+      "head": "1c45e31a86be95f51a94ffd1a5014c3fb2019112",
+      "branch": null,
+      "remotes": {
+        "github": "https://github.com/LineageOS/android_frameworks_base"
+      },
+      "patch": "frameworks__base.patch",
+      "sha256": "94c09ef535aad580dbf07da1a8020c3964703f011f82c67f2f8eda7b11202134",
+      "untracked_files": []
+    },
+    {
       "path": "frameworks/native",
       "upstream_name": "LineageOS/android_frameworks_native",
       "base": "9568531f9be7ae65f260699811f32ec4e461de6e",

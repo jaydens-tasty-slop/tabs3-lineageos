@@ -8,19 +8,23 @@ are unsupported. The ROM ZIP writes Boot and System; Recovery and Samsung
 firmware are retained.
 
 The current privately signed candidate is
-`lineage-23.2-20261009_140353-UNOFFICIAL-gts3lwifi.zip`, SHA-256:
+`lineage-23.2-20261010_003605-UNOFFICIAL-gts3lwifi.zip`, SHA-256:
 
 ```text
-2faffdea5c7b9ad27a7e7149ac6ae37028aa0d48e0236bbbc19a26ae0aac3887
+65aea8e4ea822238492021b7d3c8a33ba4ffbf68815a64d99b9a9b701b858172
 ```
 
-Its offline signature and source/image checks passed. A clean TWRP install
-with separate MindTheGapps completed, including Boot image readback and
-verification that Recovery was unchanged. The exact signed ZIP booted and passed
-a bounded read-only build/kernel, secure ordinary-ADB, GApps core-package and
-35-second core-process stability check. Its unplugged Wi-Fi/GApps study is
-armed; overnight results remain pending.
-Historical R4/R8 results do not qualify this exact signed ZIP.
+All offline signing/image/ADB-cleanup audits passed. A same-key dirty upgrade
+from the signed `140353` candidate completed, preserving separate MindTheGapps.
+Boot and both new bitmap libraries matched the release; Recovery stayed
+unchanged. The exact ZIP booted in about 111 seconds and passed a 35-second
+secure ordinary-ADB/core-process check, bitmap regression, Settings → Users,
+Digital Wellbeing and offline Google TTS checks. Its unplugged Wi-Fi/GApps
+study remains deferred and requires a fresh baseline.
+
+The prior signed `140353` candidate passed the clean-install sequence below
+with separate MindTheGapps. The new ZIP's clean installation has not been
+qualified. Historical R4/R8 results do not qualify this exact signed ZIP.
 
 ## Clean installation
 
@@ -57,10 +61,15 @@ above does not qualify those migrations.
 
 ## Later updates
 
-Keep the same persistent ROM signing identity. A dirty update between two
-privately signed releases has not yet been qualified. Earlier R8 preserved
-GApps during a dirty upgrade from R4, but that historical development-key
-upgrade does not establish this new release's upgrade behavior.
+Keep the same persistent ROM signing identity. The signed `140353` → `003605`
+dirty update completed through the TWRP CLI and GUI success barriers with no
+Data wipe. The separately installed GApps factory packages and restoration
+script matched their original hashes afterward; Android's updated Google
+packages remained available. This qualifies that one update path. Flash the
+ROM through TWRP, wait for installer success and then reboot; do not reinstall
+or remove GApps during an ordinary same-key update without a specific reason.
+Migration from older Android versions or development signing keys requires a
+separately planned clean installation.
 
 Google account setup, Play Store certification/downloads, and broad Google Apps
 behavior remain unqualified. See [known issues](KNOWN_ISSUES.md),

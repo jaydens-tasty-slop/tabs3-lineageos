@@ -56,14 +56,17 @@ No submodules are needed. Android's `repo` owns the large source checkout; the
 small outer repository owns the manifest, port patches and build instructions.
 The four device/kernel/vendor convenience forks preserve upstream ancestry and
 the R8 repairs. The common-device branch also includes the later source cleanup
-that removes the temporary forced-ADB rule. The 25-project patch snapshot and
+that removes the temporary forced-ADB rule. The 26-project patch snapshot and
 1,174 pinned base revisions are canonical; see [the source map](SOURCES.md).
 
 The build uses the standard Lineage version ID from `ro.lineage.version`: UTC
 date, with the upstream optional time-of-day suffix enabled by default. The
-current signed candidate is `23.2-20261009_140353-UNOFFICIAL-gts3lwifi`; its
-offline signing and image checks passed and TWRP installation completed.
-Android boot checks remain pending. Earlier R8 runtime results apply only to
+current signed candidate is `23.2-20261010_003605-UNOFFICIAL-gts3lwifi`. Its
+offline signing/image audits and same-key TWRP dirty upgrade passed, preserving
+separate GApps. The exact ZIP booted and passed bounded secure ordinary-ADB,
+core-process, bitmap, Settings/Wellbeing UI and offline TTS checks. The previous
+`140353` candidate passed a clean installation; the new ZIP's clean-install
+path and unplugged study remain pending. Earlier R8 runtime results apply to
 the named earlier package. Settings Build number uses Android's platform build
 ID, while the LineageOS version includes the date.
 

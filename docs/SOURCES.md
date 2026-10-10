@@ -1,9 +1,9 @@
 # Source distribution
 
 The build root reconstructs Android from `manifests/base-source-lock.xml` and
-the 25 patch entries in `patches/index.json`. The 1,174 base project revisions
-and patch hashes are pinned. The signed candidate source export passed 25 patch
-application/reversal checks. Seven project snapshots differ between frozen R4
+the 26 patch entries in `patches/index.json`. The 1,174 base project revisions
+and patch hashes are pinned. The current source export passed 26 patch
+application/reversal checks, including the HWUI bitmap compatibility fallback. Seven project snapshots differ between frozen R4
 and R8. The base lock is unchanged.
 
 The build does not depend on public source forks. Android `repo` checks out the
@@ -13,7 +13,7 @@ clean branch commits preserve the R8 repairs; the common-device branch also
 contains the later cleanup that removes the temporary forced-ADB rule, and
 the kernel branch identifies the maintained `jaydenmilne-tabs3-v1` release. The
 commit IDs differ from source snapshot heads because the forks preserve a
-descriptive port history. They are not a substitute for the 25-project patch
+descriptive port history. They are not a substitute for the 26-project patch
 index and 1,174 pinned base revisions. Confirm remote availability and exact
 branch heads before relying on a link. Fork publication is separate from this
 source snapshot.

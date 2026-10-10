@@ -2,7 +2,7 @@
 
 Device: SM-T820 (`gts3lwifi`). Framework: LineageOS 23.2 / Android 16.
 Current signed candidate kernel: `3.18.140-jaydenmilne-tabs3-v1+`, #17.
-Last reviewed: October 9, 2026. The historical R8 package below used kernel #15.
+Last reviewed: October 10, 2026 UTC. The historical R8 package below used kernel #15.
 
 ## Tested operations and current limits
 
@@ -18,36 +18,47 @@ Last reviewed: October 9, 2026. The historical R8 package below used kernel #15.
 
 ## Privately signed candidate
 
-`23.2-20261009_140353-UNOFFICIAL-gts3lwifi` uses persistent private signing
+`23.2-20261010_003605-UNOFFICIAL-gts3lwifi` uses persistent private signing
 keys and the standard `release-keys` tag. Offline checks verified 161 APK
 certificates, 34 APEX container certificates/public keys and payload AVB
-signatures, the whole-file OTA signature and OTA trust, and the exact
+signatures, the whole-file OTA signature/trust, and the exact
 source/System/Boot/OTA ADB cleanup gate. No embedded authorization keys or
 forced ADB activation are included.
 
-Its clean TWRP install with separate MindTheGapps completed. Every reset and
-install step reported CLI and GUI success, Boot readback matched the ZIP, and
-Recovery stayed unchanged. The exact signed ZIP booted and passed a 35-second
-read-only build/kernel, secure ordinary-ADB, Google core-package and core-process
-stability check. All 34 APEX modules are active, and Wi-Fi has validated internet
-connectivity. A twelve-hour unplugged study with this signed kernel and separate
-GApps is armed; battery drain, suspend and overnight Wi-Fi results remain
-pending. Older qualification results are not transferred. Settings Build number now
-shows the Android platform ID without `test-keys`; the LineageOS version carries
-the build date.
+Its same-key dirty upgrade from the signed `140353` candidate completed
+through TWRP CLI/GUI success barriers. Boot and both new HWUI libraries matched
+the release, Recovery stayed unchanged, and the three separate GApps factory
+APKs/add-on script survived with matching hashes. The exact ZIP booted in
+110.6 seconds and passed a 35.491-second read-only build/kernel, secure
+ordinary-ADB, Google core-package and core-process check. All 34 APEX modules
+are active, and Wi-Fi has validated internet connectivity.
 
-The pre-study crash history contains Google TTS and Digital Wellbeing startup
-failures reporting access to credential-protected data before unlock, plus
-Settings failures copying a profile photo (`Could not copy bitmap to parcel
-blob`). These entries were captured before the unplugged interval; their cause
-and recurrence after unlock remain unverified. They require review before broad
-GApps/application reliability is claimed. Older development-signed clean-build
-logs contain both crash patterns. Their Google credential-data errors precede
-the recorded `USER_UNLOCKED` event; no later occurrence of that message was
-found in those logs. Bitmap source review identifies an enabled memfd path that
-requests `F_SEAL_FUTURE_WRITE`, absent from the 3.18 kernel. A compatibility
-candidate and focused diagnostics are prepared separately; no fix is included
-in this signed ZIP and runtime confirmation remains pending.
+Settings profile-photo/default-icon updates on the previous signed ZIP failed
+with `Could not copy bitmap to parcel blob`. Android's enabled memfd path asks
+for `F_SEAL_FUTURE_WRITE`, which the 3.18 kernel rejects with EINVAL. Both ABIs
+reproduced the failure above 12 KiB. The new HWUI capability check falls back to
+protected ashmem and passed all ten roundtrips per ABI against the installed
+libraries. A permission-free ordinary app also passed 10/10 cases. Settings →
+Users now stays open and renders the profile icon; that same screen reproduced
+the fatal exception on the baseline. The new source export contains 26 project
+patches; the previous 25 patch hashes and kernel/Boot payload are unchanged.
+
+The historical initial-clean-boot logs contain Google TTS and Digital
+Wellbeing failures accessing credential-protected data before unlock. These
+also predate private signing. No such fatal exception appeared during this
+new dirty-upgrade boot or its focused checks. After normal unlock, Digital
+Wellbeing rendered its dashboard and Google TTS initialized, listed 473 voices
+and generated an 80,588-byte file with the installed offline en-US voice.
+The diagnostic app/audio were removed; the final crash buffer was clear.
+Initial clean-boot timing and wider Google Apps behavior remain unqualified.
+
+The previous signed `140353` ZIP passed a clean TWRP installation with separate
+MindTheGapps. This new ZIP's clean-install path remains unqualified. The old
+sleep-study baseline was canceled before unplugging for crash troubleshooting;
+a fresh twelve-hour unplugged Wi-Fi/GApps baseline and results are required.
+Historical hardware results are not transferred to this ZIP. Settings Build
+number shows the platform ID without `test-keys`; the LineageOS version carries
+the build date. Temporary USB stay-awake was restored to its original value.
 
 The earlier `103849` cleanup build booted and passed bounded read-only secure
 ADB/GApps/process checks. Further testing of that development-signed package
@@ -164,4 +175,6 @@ SELinux is permissive, Data encryption is unsupported and Android Verified Boot
 is disabled. Samsung/Qualcomm kernel and vendor components remain old; the
 vendor security baseline is March 2020. R4 and R8 artifacts use development
 signing. Tests cover one tablet and bounded sessions. Persistent private signing keys
-are now prepared; qualification of the exact signed candidate remains pending. There is no SM-T825/LTE support claim.
+are in use; the current signed ZIP passed the scoped checks above. Its clean
+installation and overnight study remain pending. There is no SM-T825/LTE
+support claim.
