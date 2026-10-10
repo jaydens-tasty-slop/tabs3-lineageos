@@ -1,4 +1,7 @@
 .DEFAULT_GOAL := build
+-include local.mk
+TAB_S3_ANDROID_DIR ?= $(CURDIR)/android
+export TAB_S3_ANDROID_DIR TAB_S3_UPSTREAM_DIR TAB_S3_CCACHE_DIR
 .PHONY: help image setup build package status logs shell source-check smoke smoke-payloads smoke-hardware \
 	device-image device-start devices ensure-image ensure-sources ensure-device-image ensure-smoke-image \
 	sleep-study-payload sleep-study-start sleep-study-finish
@@ -37,8 +40,8 @@ setup: ensure-image
 	sh scripts/podman.sh fetch bash scripts/setup_checkout.sh
 
 ensure-sources: ensure-image
-	@if [ -d android/.repo ]; then \
-	  if [ ! -f android/build/envsetup.sh ]; then \
+	@if [ -d "$(TAB_S3_ANDROID_DIR)/.repo" ]; then \
+	  if [ ! -f "$(TAB_S3_ANDROID_DIR)/build/envsetup.sh" ]; then \
 	    printf '%s\n' 'Android checkout is incomplete. Resume source sync as described in docs/BUILDING.md.' >&2; \
 	    exit 1; \
 	  fi; \

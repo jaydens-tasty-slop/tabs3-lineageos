@@ -11,6 +11,12 @@ applies them. There are no Git submodules.
 All four repositories are genuine GitHub forks of the corresponding
 `awesometic` repository. Their default branch is `tabs3/lineage-23.2`.
 
+The kernel's pinned base is `awesometic`'s `lineage-21.0-caf` tip. GitHub's
+fork header compares against the upstream default `lineage-18.1-caf`, which
+has different history. At publication our kernel has three port commits
+ahead of `lineage-21.0-caf` and none behind it; the header's eight-ahead,
+five-behind count compares the separate Android 11 branch.
+
 | Android path | Repository | Published commit |
 | --- | --- | --- |
 | `device/samsung/gts3l-common` | [Device common](https://github.com/jaydens-tasty-slop/tabs3-android_device_samsung_gts3l-common) | `9f9bfcecba0c0c9a9018a5fae746f0f83f905555` |

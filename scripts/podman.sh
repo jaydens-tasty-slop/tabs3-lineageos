@@ -8,6 +8,56 @@ task_container=${TAB_S3_BUILD_CONTAINER:-lineageos-gts3-rom-build}
 task_action=${1:-status}
 if [ "$#" -gt 0 ]; then shift; fi
 
+task_shared_source() {
+    case "$1" in
+        android) printf '%s\n' "${TAB_S3_ANDROID_DIR:-$task_workspace/android}" ;;
+        upstream) printf '%s\n' "${TAB_S3_UPSTREAM_DIR:-$task_workspace/upstream}" ;;
+        state/ccache) printf '%s\n' "${TAB_S3_CCACHE_DIR:-$task_workspace/state/ccache}" ;;
+    esac
+}
+
+# External directories get explicit child mounts. The mount points in this
+# workspace must be real directories: OCI runtimes cannot mount through an
+# outward-pointing symlink beneath the parent workspace bind mount.
+task_podman_run() {
+    for task_relative in android upstream state/ccache; do
+        task_source=$(task_shared_source "$task_relative")
+        task_destination=$task_workspace/$task_relative
+        [ "$task_source" != "$task_destination" ] || continue
+        [ -d "$task_source" ] || {
+            printf 'Shared directory is missing: %s\n' "$task_source" >&2
+            exit 1
+        }
+        if [ -L "$task_destination" ]; then
+            printf 'Replace the local symlink with an empty directory before sharing: %s\n' "$task_destination" >&2
+            exit 1
+        fi
+        mkdir -p "$task_destination"
+        task_source=$(CDPATH= cd -- "$task_source" && pwd -P)
+        task_label=$(printf '%s' "$task_relative" | tr / .)
+        set -- --volume "$task_source:/workspace/$task_relative" \
+            --label "io.tabs3.shared.$task_label=$task_source" "$@"
+    done
+    exec podman run "$@"
+}
+
+task_check_shared_mounts() {
+    for task_relative in android upstream state/ccache; do
+        task_source=$(task_shared_source "$task_relative")
+        task_expected=
+        if [ "$task_source" != "$task_workspace/$task_relative" ]; then
+            task_expected=$(CDPATH= cd -- "$task_source" && pwd -P)
+        fi
+        task_label=$(printf '%s' "$task_relative" | tr / .)
+        task_actual=$(podman inspect --format "{{index .Config.Labels \"io.tabs3.shared.$task_label\"}}" "$task_container")
+        if [ "$task_actual" = '<no value>' ]; then task_actual=; fi
+        [ "$task_actual" = "$task_expected" ] || {
+            printf 'Container %s uses different shared directories. Choose another container name or remove the stopped container first.\n' "$task_container" >&2
+            exit 1
+        }
+    done
+}
+
 case "$task_action" in
     image)
         exec podman build --pull=missing -t "$task_image" \
@@ -39,13 +89,14 @@ case "$task_action" in
                 printf '%s\n' "Container $task_container belongs to another workspace. Set TAB_S3_BUILD_CONTAINER to a different name." >&2
                 exit 1
             fi
+            task_check_shared_mounts
             if [ "$(podman inspect --format '{{.State.Running}}' "$task_container")" = true ]; then
                 exec podman logs --follow --tail=30 "$task_container"
             fi
             exec podman start --attach "$task_container"
         fi
         mkdir -p "$task_workspace/logs" "$task_workspace/state"
-        exec podman run --name "$task_container" --pull=never --init --network=none \
+        task_podman_run --name "$task_container" --pull=never --init --network=none \
             --userns=keep-id --user "$(id -u):$(id -g)" \
             --cpus=24 --memory=38g --memory-swap=48g \
             --security-opt=no-new-privileges --cap-drop=ALL \
@@ -56,7 +107,7 @@ case "$task_action" in
             bash "$task_build_script"
         ;;
     exec)
-        exec podman run --rm --pull=never --network=none \
+        task_podman_run --rm --pull=never --network=none \
             --userns=keep-id --user "$(id -u):$(id -g)" \
             --security-opt=no-new-privileges --cap-drop=ALL \
             --env PYTHONDONTWRITEBYTECODE=1 \
@@ -64,7 +115,7 @@ case "$task_action" in
         ;;
     smoke-payloads)
         mkdir -p "$task_workspace/state" "$task_workspace/artifacts"
-        exec podman run --rm --pull=never --network=none \
+        task_podman_run --rm --pull=never --network=none \
             --userns=keep-id --user "$(id -u):$(id -g)" \
             --cpus=4 --memory=6g --memory-swap=8g \
             --security-opt=no-new-privileges --cap-drop=ALL \
@@ -77,7 +128,7 @@ case "$task_action" in
         if [ -t 0 ] && [ -t 1 ]; then
             set -- --interactive --tty
         fi
-        exec podman run --rm "$@" --pull=never --network=none \
+        task_podman_run --rm "$@" --pull=never --network=none \
             --userns=keep-id --user "$(id -u):$(id -g)" \
             --security-opt=no-new-privileges --cap-drop=ALL \
             --env PYTHONDONTWRITEBYTECODE=1 \
@@ -85,7 +136,7 @@ case "$task_action" in
             "$task_image" bash
         ;;
     fetch)
-        exec podman run --rm --pull=never --network=host \
+        task_podman_run --rm --pull=never --network=host \
             --userns=keep-id --user "$(id -u):$(id -g)" \
             --security-opt=no-new-privileges --cap-drop=ALL \
             --env PYTHONDONTWRITEBYTECODE=1 \

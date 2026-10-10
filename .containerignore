@@ -1,4 +1,5 @@
 .git
+local.mk
 .agents
 .codex
 .aws

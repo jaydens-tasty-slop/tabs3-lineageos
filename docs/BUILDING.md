@@ -272,6 +272,37 @@ retain raw evidence privately.
 
 ## Incremental work
 
+### Share an existing checkout with another build root
+
+To try this build setup with sources and output already on disk, create an
+ignored `local.mk` in the new build-root directory:
+
+```make
+export TAB_S3_ANDROID_DIR := /path/to/existing/lineage-os/android
+export TAB_S3_UPSTREAM_DIR := /path/to/existing/lineage-os/upstream
+export TAB_S3_CCACHE_DIR := /path/to/existing/lineage-os/state/ccache
+export TAB_S3_BUILD_CONTAINER := lineageos-gts3-shared-rom-build
+export TAB_S3_PACKAGE_CONTAINER := lineageos-gts3-shared-rom-package
+```
+
+Run `make` normally. Podman binds these directories at `/workspace/android`,
+`/workspace/upstream` and `/workspace/state/ccache`. Existing `android/out` is
+reused, preserving the container paths used by Ninja and ccache. The new build
+root retains its own `state`, logs, reports and scripts. Local mount points are
+ordinary directories; outward-pointing symlinks cannot be mounted safely by
+the OCI runtime. No second source or output copy is needed.
+
+On the host, generated ZIPs are in the selected external Android directory's
+`out/target/product/gts3lwifi/`. The new root's local `android` directory is a
+container mount point and does not expose the shared files outside Podman.
+
+Use the matching manifest/patch snapshot and run builds against this shared
+checkout one at a time. This is an incremental rebuild using existing output.
+To pick up changed shared paths, choose a new container name or remove the
+stopped container. `local.mk` is excluded from Git and the image build context.
+
+### Build and cache behavior
+
 ```sh
 make build
 make logs

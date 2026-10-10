@@ -88,6 +88,7 @@
 *.passwords
 
 # Private progress and device evidence stay outside the public source tree.
+/local.mk
 BUGS.md
 CAMERA_HANDOFF.txt
 DEVICE_WORKFLOW.md
