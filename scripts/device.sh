@@ -58,6 +58,14 @@ case "$task_action" in
     start)
         umask 077
         mkdir -p "$task_workspace/state/device-adb" "$task_workspace/backups" "$task_workspace/diagnostics"
+        if podman container exists "$task_container"; then
+            task_container_image=$(podman inspect --format '{{.Image}}' "$task_container")
+            task_current_image=$(podman image inspect --format '{{.Id}}' "$task_image")
+            if [ "$task_container_image" != "$task_current_image" ]; then
+                podman rm --force "$task_container" >/dev/null
+                printf '%s\n' 'Recreated device tools container for the current image.'
+            fi
+        fi
         if [ "$task_backend" = host ]; then
             command -v adb >/dev/null 2>&1 || {
                 printf '%s\n' 'Host mode requires adb on PATH; use TAB_S3_ADB_BACKEND=usb for container USB access.' >&2

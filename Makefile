@@ -4,7 +4,8 @@ TAB_S3_ANDROID_DIR ?= $(CURDIR)/android
 export TAB_S3_ANDROID_DIR TAB_S3_UPSTREAM_DIR TAB_S3_CCACHE_DIR
 .PHONY: help image setup build package status logs shell source-check smoke smoke-payloads smoke-hardware \
 	device-image device-start devices ensure-image ensure-sources ensure-device-image ensure-smoke-image \
-	sleep-study-payload sleep-study-start sleep-study-finish
+	sleep-study-payload sleep-study-start sleep-study-finish qualification-payloads browser-payloads \
+	test-images test-quick test-full test-browser
 .NOTPARALLEL:
 export SERIAL
 TAB_S3_SLEEP_HOURS ?= 12
@@ -27,6 +28,9 @@ help:
 	  '  make smoke        Run read-only basic SM-T820 platform checks' \
 	  '  make smoke-payloads Generate local media/GPU smoke payloads in Podman' \
 	  '  make smoke-hardware Run opt-in unlocked app-level media/GPU/audio/WebView smoke' \
+	  '  make test-quick Run the bounded Android 17 release gate (SERIAL is optional)' \
+	  '  make test-full  Run quick plus codecs, DRM, I/O, cameras, network and stability' \
+	  '  make test-browser Run signed F-Droid apps, browser/GPU, stress and UI tests' \
 	  '  make sleep-study-start  Start a private unplugged sleep study' \
 	  '  make sleep-study-finish Collect and analyze the active sleep study'
 
@@ -94,11 +98,31 @@ ensure-smoke-image: ensure-device-image
 	    -f container/MediaTools.Containerfile .; \
 	fi
 
+test-images: ensure-image
+	sh scripts/device.sh image
+	podman build --pull=never --network=host -t localhost/lineageos-gts3-media:ubuntu22.04 \
+	  -f container/MediaTools.Containerfile .
+
 smoke-payloads: ensure-smoke-image
 	sh scripts/podman.sh smoke-payloads
 
 smoke-hardware: smoke-payloads device-start
 	sh scripts/device_smoke_hardware.sh
+
+qualification-payloads: test-images
+	sh scripts/podman.sh qualification-payloads
+
+browser-payloads: test-images
+	sh scripts/podman.sh browser-payloads
+
+test-quick: qualification-payloads device-start
+	sh scripts/device_qualification.sh quick
+
+test-full: qualification-payloads device-start
+	sh scripts/device_qualification.sh full
+
+test-browser: browser-payloads device-start
+	sh scripts/device_qualification.sh browser
 
 sleep-study-payload: ensure-image
 	sh scripts/podman.sh exec python3 scripts/build_sleep_clock.py

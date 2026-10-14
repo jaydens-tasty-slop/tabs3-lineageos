@@ -115,15 +115,23 @@ case "$task_action" in
             --env PYTHONDONTWRITEBYTECODE=1 \
             --volume "$task_workspace:/workspace" --workdir /workspace "$task_image" "$@"
         ;;
-    smoke-payloads)
+    smoke-payloads|qualification-payloads|browser-payloads)
         mkdir -p "$task_workspace/state" "$task_workspace/artifacts"
-        task_podman_run --rm --pull=never --network=none \
+        task_payload_command='bash /workspace/scripts/build_smoke_payloads.sh'
+        task_payload_network=none
+        if [ "$task_action" = qualification-payloads ]; then
+            task_payload_command='python3 /workspace/scripts/build_qualification_payloads.py'
+        elif [ "$task_action" = browser-payloads ]; then
+            task_payload_command='python3 /workspace/scripts/build_browser_payloads.py'
+            task_payload_network=host
+        fi
+        task_podman_run --rm --pull=never --network="$task_payload_network" \
             --userns=keep-id --user "$(id -u):$(id -g)" \
             --cpus=4 --memory=6g --memory-swap=8g \
             --security-opt=no-new-privileges --cap-drop=ALL \
             --env PYTHONDONTWRITEBYTECODE=1 \
             --volume "$task_workspace:/workspace" --workdir /workspace \
-            "$task_smoke_image" bash /workspace/scripts/build_smoke_payloads.sh
+            "$task_smoke_image" sh -c "$task_payload_command"
         ;;
     shell)
         set --
@@ -146,7 +154,7 @@ case "$task_action" in
             --volume "$task_workspace:/workspace" --workdir /workspace "$task_image" "$@"
         ;;
     *)
-        printf '%s\n' 'Usage: sh scripts/podman.sh {image|ensure-image|status|logs|build|package|shell|exec COMMAND...|smoke-payloads|fetch COMMAND...}' >&2
+        printf '%s\n' 'Usage: sh scripts/podman.sh {image|ensure-image|status|logs|build|package|shell|exec COMMAND...|smoke-payloads|qualification-payloads|browser-payloads|fetch COMMAND...}' >&2
         exit 2
         ;;
 esac

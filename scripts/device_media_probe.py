@@ -22,6 +22,11 @@ MIMES = {"avc": "video/avc", "hevc": "video/hevc", "mpeg4": "video/mp4v-es",
          "vp9": "video/x-vnd.on2.vp9", "aac": "audio/mp4a-latm", "mp3": "audio/mpeg",
          "flac": "audio/flac", "vorbis": "audio/vorbis", "opus": "audio/opus"}
 INSTALL_OUTPUT_LIMIT = 8192
+KNOWN_UNADVERTISED_LEGACY = {
+    "OMX.qcom.video.decoder.vc1", "OMX.qcom.video.decoder.vc1.secure",
+    "OMX.qcom.video.decoder.divx", "OMX.qcom.video.decoder.divx311",
+    "OMX.qcom.video.decoder.divx4",
+}
 
 
 def bounded_process_output(value):
@@ -38,7 +43,7 @@ def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", required=True)
-    parser.add_argument("--suite", choices=("inventory", "drm", "gpu", "webview", "audio-route", "decode", "encode", "all"), default="all")
+    parser.add_argument("--suite", choices=("inventory", "drm", "gpu", "webview", "audio-route", "decode", "secure-decode", "encode", "all"), default="all")
     parser.add_argument("--case", action="append", help="Limit decoding to these fixture names")
     parser.add_argument("--fixtures", type=pathlib.Path, default=ROOT / "artifacts/device-media-fixtures-v2")
     parser.add_argument("--keep-app", action="store_true", help="Keep this diagnostic package for follow-up probes")
@@ -147,7 +152,7 @@ def main():
                     "Diagnostic APK install did not complete successfully; see apk_install_attempt")
             installed_here = True
         report["framework_before"] = device.shell("pidof system_server; cat /proc/sys/kernel/random/boot_id", check=True).stdout
-        if args.suite in ("inventory", "decode", "encode", "all"):
+        if args.suite in ("inventory", "decode", "secure-decode", "encode", "all"):
             inventory = invoke("inventory", "inventory")
             report["inventory"] = inventory
             inventory_available = (inventory.get("passed") is True
@@ -174,7 +179,11 @@ def main():
             missing = [item for item in expected if item["name"] not in present]
             nonsecure_missing = [item for item in missing if not item["secure"]]
             secure_missing = [item for item in missing if item["secure"]]
+            known_missing = [item for item in missing if item["name"] in KNOWN_UNADVERTISED_LEGACY]
+            unexpected_missing = [item for item in missing if item["name"] not in KNOWN_UNADVERTISED_LEGACY]
             report["missing_expected_vendor_components"] = missing
+            report["known_unadvertised_legacy_components"] = known_missing
+            report["unexpected_missing_vendor_components"] = unexpected_missing
             report["vendor_inventory_status"] = "complete" if not missing else "incomplete"
             report["vendor_inventory_summary"] = {
                 "expected_component_count": len(expected),
@@ -182,6 +191,8 @@ def main():
                 "missing_expected_component_count": len(missing),
                 "missing_nonsecure_component_count": len(nonsecure_missing),
                 "missing_secure_component_count": len(secure_missing),
+                "known_unadvertised_legacy_component_count": len(known_missing),
+                "unexpected_missing_component_count": len(unexpected_missing),
                 "complete": not missing,
             }
         else:
@@ -242,9 +253,14 @@ def main():
                         device.shell("run-as " + PACKAGE + " rm files/" + shlex.quote(name), check=True)
                     report["results"].append(item);write_report()
                     print(label + ": " + str(item.get("passed")), flush=True)
-        if args.suite in ("decode", "all"):
+        if args.suite in ("decode", "secure-decode", "all"):
             selected = [case for case in manifest["cases"] if not args.case or case["name"] in args.case]
             require(not args.case or set(args.case) == {case["name"] for case in selected}, "Unknown fixture case")
+            secure = args.suite == "secure-decode"
+            if secure:
+                require(selected and all(case["kind"] == "video" and case["name"].startswith("hevc-")
+                                         for case in selected),
+                        "Secure decode accepts generated HEVC video fixtures only")
             target_dir = "/data/local/tmp/tabs3-media-" + uuid.uuid4().hex[:12]
             listing = device.shell("ls -d " + target_dir)
             require(listing.returncode != 0, "Staging directory already exists; refusing to replace it")
@@ -260,9 +276,11 @@ def main():
                 prefix = case["name"].split("-")[0]
                 mime = MIMES[prefix]
                 candidates = [codec for codec in codecs if not codec["encoder"] and codec["hardware_accelerated"]
-                              and not codec["name"].endswith(".secure")
+                              and codec["name"].endswith(".secure") == secure
                               and any(t["mime"] == mime for t in codec["types"])]
-                components = ["default"] + [codec["name"] for codec in candidates]
+                components = [codec["name"] for codec in candidates]
+                if not secure:
+                    components.insert(0, "default")
                 if "main10" in case["name"]:
                     # HEVC Main10 is profile 2 in the public SDK.
                     components = [codec["name"] for codec in candidates if any(p["profile"] == 2 for t in codec["types"] if t["mime"] == mime for p in t.get("profiles", []))]
@@ -271,11 +289,17 @@ def main():
                                                   "reason": "No hardware HEVC Main10 profile advertised"});write_report();continue
                 for component in components:
                     label = case["name"] + "-" + component.replace(".", "_")
-                    item = invoke("decode", label, {"input": target_dir + "/" + file.name, "codec": component})
+                    command = "secure_decode" if secure else "decode"
+                    item = invoke(command, label, {"input": target_dir + "/" + file.name, "codec": component},
+                                  timeout=40 if secure else 120)
                     item["name"] = label
                     item["requested_component"] = component
                     item["fixture_sha256"] = case["sha256"]
-                    if case["kind"] == "video" and item.get("passed"):
+                    if secure and item.get("passed"):
+                        item["fixture_frame_count_passed"] = item.get("output_frames") == case["frames"]
+                        item["widevine_l1_session"] = item.get("session_security_level") == 5
+                        item["passed"] = item["fixture_frame_count_passed"] and item["widevine_l1_session"]
+                    elif case["kind"] == "video" and item.get("passed"):
                         expected = case["reference_pixels_gl_origin"]
                         errors = []
                         for frame in item.get("rendered_samples", []):
@@ -296,8 +320,9 @@ def main():
                     print(label + ": " + str(item.get("passed")) + "; selected=" + str(item.get("component")), flush=True)
         report["framework_after"] = device.shell("pidof system_server; cat /proc/sys/kernel/random/boot_id").stdout
         report["framework_unchanged"] = report["framework_after"] == report["framework_before"]
-        if args.suite in ("decode", "all"):
-            fixture_results = [item for item in report["results"] if item.get("command") == "decode"]
+        if args.suite in ("decode", "secure-decode", "all"):
+            fixture_command = "secure_decode" if args.suite == "secure-decode" else "decode"
+            fixture_results = [item for item in report["results"] if item.get("command") == fixture_command]
             fixture_passed = bool(fixture_results) and all(item.get("passed") is True for item in fixture_results)
             report["functional_fixture_results"] = {
                 "status": "passed" if fixture_passed else "failed",
@@ -313,8 +338,9 @@ def main():
                 "failed_or_unavailable_result_count": 0,
             }
         report["passed"] = bool(report["results"]) and all(item.get("passed") is not False for item in report["results"]) and report["framework_unchanged"]
-        if args.suite in ("decode", "all"):
-            report["passed"] &= not any(not item["secure"] for item in report.get("missing_expected_vendor_components", []))
+        if args.suite in ("decode", "secure-decode", "all"):
+            report["passed"] &= not any(not item["secure"] for item in
+                                        report.get("unexpected_missing_vendor_components", []))
     except BaseException as error:
         report["passed"] = False;report["errors"].append(str(error));raise
     finally:

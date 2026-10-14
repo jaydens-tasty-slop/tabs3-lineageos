@@ -14,6 +14,7 @@
 !/docs/SOURCES.md
 !/docs/INSTALLING.md
 !/docs/SIGNING.md
+!/docs/TESTING.md
 !/container/
 /container/*
 !/container/Containerfile
@@ -47,6 +48,24 @@
 !/scripts/build_vulkan_validation.py
 !/scripts/build_smoke_payloads.sh
 !/scripts/build_smoke_payloads.py
+!/scripts/build_qualification_payloads.py
+!/scripts/build_browser_payloads.py
+!/scripts/build_validation_payloads.py
+!/scripts/build_camera_controls_payload.py
+!/scripts/build_io_payload.py
+!/scripts/device_qualification.sh
+!/scripts/run_qualification.py
+!/scripts/device_camera_control_regression.py
+!/scripts/device_io_probe.py
+!/scripts/device_usb_probe.py
+!/scripts/probe_server.py
+!/scripts/device_fdroid_validation.py
+!/scripts/device_fdroid_install.py
+!/scripts/device_stability.py
+!/scripts/device_ui_performance.py
+!/scripts/prepare_fdroid_apps.py
+!/scripts/fetch_fdroid_payloads.py
+!/scripts/generate_media_stress_fixtures.py
 !/scripts/setup_checkout.sh
 !/scripts/clone_upstreams.py
 !/scripts/apply_port.py
@@ -64,11 +83,23 @@
 /device-validation/*
 !/device-validation/media/
 !/device-validation/media/**
+!/device-validation/browser/
+!/device-validation/browser/**
+!/device-validation/camera-controls/
+!/device-validation/camera-controls/**
+!/device-validation/io/
+!/device-validation/io/**
+!/device-validation/src/
+!/device-validation/src/**
 !/device-validation/native/
 /device-validation/native/*
 !/device-validation/native/vulkan_compute.c
 !/device-validation/native/vulkan_compute.comp
 !/device-validation/native/sleep_clock.c
+!/qualification/
+!/qualification/**
+**/__pycache__/
+*.py[cod]
 
 # Local release identities and signing credentials must never enter source Git.
 /state/release-signing/

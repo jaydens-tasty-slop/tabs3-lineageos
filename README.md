@@ -40,7 +40,8 @@ Builds are not expected to be byte-for-byte identical because timestamps,
 signing and container package versions can differ.
 
 See the [build guide](docs/BUILDING.md), [installation guide](docs/INSTALLING.md),
-[source map](docs/SOURCES.md), and [test scope and known issues](docs/KNOWN_ISSUES.md).
+[qualification guide](docs/TESTING.md), [source map](docs/SOURCES.md), and
+[test scope and known issues](docs/KNOWN_ISSUES.md).
 
 ## Current status
 
