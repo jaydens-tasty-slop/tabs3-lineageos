@@ -9,10 +9,15 @@ source checkout and build output on a filesystem that supports Unix ownership,
 permissions, symlinks and hard links. A removable NTFS/exFAT disk is useful for
 backups or finished ZIPs, rather than the Android checkout.
 
-The supplied build profile allows 24 CPU cores, 38 GiB memory and up to 48 GiB
-including swap. A host with 64 GiB RAM and several hundred GiB of free storage is
-a practical starting point. These are the working profile, not measured minimum
-requirements. Fetches require Internet access; compilation runs without network.
+The supplied build profile allows 24 CPU cores, 38 GiB memory, up to 48 GiB
+including swap, and 8,192 processes/threads. The explicit PID budget is needed
+because concurrent Metalava JVMs can exceed Podman's 2,048 default even when
+memory remains available. Override the resource values with
+`TAB_S3_BUILD_MEMORY`, `TAB_S3_BUILD_MEMORY_SWAP`, or
+`TAB_S3_BUILD_PIDS_LIMIT`. A host with 64 GiB RAM and several hundred GiB of
+free storage is a practical starting point. These are the working profile, not
+measured minimum requirements. Fetches require Internet access; compilation
+runs without network.
 
 ## Fresh checkout
 
