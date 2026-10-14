@@ -34,11 +34,11 @@ ADB_KEY_ASSIGNMENT = re.compile(
 PROPERTY_OVERRIDE = re.compile(
     r"(?im)^\s*PRODUCT_DEFAULT_PROPERTY_OVERRIDES\s*(?:\+=|\?=|:=|=)\s*([^#\r\n]+)")
 FORCED_SET_PROPERTY = re.compile(
-    r"(?i)\bsetprop\s+(persist\.sys\.usb\.config|sys\.usb\.config)\s+([^\s#]+)")
+    r"(?i)\bsetprop\s+(persist\.(?:sys|vendor)\.usb\.config|sys\.usb\.config)\s+([^\s#]+)")
 INSECURE_SET_PROPERTY = re.compile(
     r"(?i)\bsetprop\s+(ro\.adb\.secure|ro\.secure|persist\.service\.adb\.enable|service\.adb\.root)\s+([^\s#]+)")
 ADB_CONFIG_PROPERTY = re.compile(
-    r"(?i)^\s*(persist\.sys\.usb\.config|sys\.usb\.config)\s*=\s*([^#\r\n]+)")
+    r"(?i)^\s*(persist\.(?:sys|vendor)\.usb\.config|sys\.usb\.config)\s*=\s*([^#\r\n]+)")
 INSECURE_PROPERTY = re.compile(
     r"(?i)^\s*(ro\.adb\.secure|ro\.secure|persist\.service\.adb\.enable|service\.adb\.root)\s*=\s*([^#\r\n]+)")
 ADB_ENABLED_PROPERTY = re.compile(r"(?i)^\s*adb_enabled\s*=\s*([^#\r\n]+)")
@@ -148,7 +148,8 @@ def inspect_config_bytes(data, relative_path, findings, properties=None):
         match = ADB_CONFIG_PROPERTY.match(line)
         if match and has_adb_function(match.group(2)):
             findings.append({"kind": "usb_adb_config_property", "path": relative_path,
-                             "line": number, "property": match.group(1)})
+                             "line": number, "property": match.group(1),
+                             "value": match.group(2).strip()})
         match = INSECURE_PROPERTY.match(line)
         if match:
             name, value = match.groups()
@@ -174,7 +175,7 @@ def inspect_config_bytes(data, relative_path, findings, properties=None):
         for match in PROPERTY_OVERRIDE.finditer(line):
             value = match.group(1)
             override = re.search(
-                r"(?i)(?:persist\.sys\.usb\.config|sys\.usb\.config)\s*=\s*([^\s]+)",
+                r"(?i)(?:persist\.(?:sys|vendor)\.usb\.config|sys\.usb\.config)\s*=\s*([^\s]+)",
                 value)
             if override and has_adb_function(override.group(1)):
                 findings.append({"kind": "adb_property_override", "path": relative_path,
@@ -182,6 +183,25 @@ def inspect_config_bytes(data, relative_path, findings, properties=None):
             if has_insecure_adb_override(value):
                 findings.append({"kind": "insecure_adb_property_override",
                                  "path": relative_path, "line": number})
+
+
+def audit_release_properties(properties, findings, scope):
+    """Require production ADB security properties, with no contradictory copy."""
+    expected = {
+        "ro.adb.secure": "1",
+        "ro.secure": "1",
+        "ro.debuggable": "0",
+    }
+    for name, wanted in expected.items():
+        entries = properties.get(name, [])
+        values = sorted({entry["value"] for entry in entries})
+        if not entries or any(entry["value"] != wanted for entry in entries):
+            findings.append({
+                "kind": scope + "_release_adb_property_mismatch",
+                "property": name,
+                "expected_value": wanted,
+                "observed_values": values,
+            })
 
 
 def walk_plain_tree(root, label):
@@ -320,7 +340,7 @@ def audit_source(source_root):
                         for name in set_environment)
     default_overrides = os.environ.get("PRODUCT_DEFAULT_PROPERTY_OVERRIDES", "")
     if default_overrides and (re.search(
-            r"(?i)(?:persist\.sys\.usb\.config|sys\.usb\.config)\s*=\s*[^\s]*adb",
+            r"(?i)(?:persist\.(?:sys|vendor)\.usb\.config|sys\.usb\.config)\s*=\s*[^\s]*adb",
             default_overrides) or has_insecure_adb_override(default_overrides)):
         findings.append({"kind": "adb_build_environment_override",
                          "variable": "PRODUCT_DEFAULT_PROPERTY_OVERRIDES"})
@@ -352,10 +372,7 @@ def audit_target_files(target_root):
         inspect_config_bytes(data, relative, findings, properties)
         scanned += 1
     key_inventory = audit_key_paths(target_root, key_paths, findings, "target-files")
-    adb_secure = [entry for entry in properties.get("ro.adb.secure", [])]
-    if not adb_secure or any(entry["value"] != "1" for entry in adb_secure):
-        findings.append({"kind": "target_files_ro_adb_secure_not_exactly_one",
-                         "observed_values": sorted({entry["value"] for entry in adb_secure})})
+    audit_release_properties(properties, findings, "target_files")
     release_properties = {}
     for name in ("ro.lineage.version", "ro.build.version.incremental", "ro.build.date.utc"):
         entries = properties.get(name, [])
@@ -370,7 +387,8 @@ def audit_target_files(target_root):
             "release_properties": release_properties,
             "adb_properties": {name: values for name, values in sorted(properties.items())
                                if name in ("ro.adb.secure", "ro.debuggable", "ro.secure",
-                                           "persist.sys.usb.config", "sys.usb.config",
+                                           "persist.sys.usb.config", "persist.vendor.usb.config",
+                                           "sys.usb.config",
                                            "persist.service.adb.enable", "service.adb.root")},
             "findings": findings}
 
@@ -606,17 +624,15 @@ def audit_system_image(system_image, tools_dir):
             data = run_debugfs(debugfs, raw, "cat " + debugfs_path(row["path"]))
             inspect_config_bytes(data, row["path"].lstrip("/"), findings, properties)
             config_count += 1
-        adb_secure = properties.get("ro.adb.secure", [])
-        if not adb_secure or any(item["value"] != "1" for item in adb_secure):
-            findings.append({"kind": "system_ro_adb_secure_not_exactly_one",
-                             "observed_values": sorted({item["value"] for item in adb_secure})})
+        audit_release_properties(properties, findings, "system")
         return {"sha256": original_sha, "sparse_input": sparse,
                 "filesystem_paths_enumerated": len(inventory),
                 "text_configs_scanned": config_count,
                 "key_paths": key_rows,
                 "adb_properties": {name: values for name, values in sorted(properties.items())
                                    if name in ("ro.adb.secure", "ro.debuggable", "ro.secure",
-                                               "persist.sys.usb.config", "sys.usb.config",
+                                               "persist.sys.usb.config", "persist.vendor.usb.config",
+                                               "sys.usb.config",
                                                "persist.service.adb.enable", "service.adb.root")},
                 "findings": findings}
 

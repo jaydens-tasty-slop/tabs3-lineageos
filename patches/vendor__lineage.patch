@@ -1,8 +1,49 @@
+diff --git a/build/soong/Android.bp b/build/soong/Android.bp
+index 237f7aa17aed08004ec7af61b7a58ef2c028e99f..2390c845e7a9a84f616dd4fd27250551a1188910 100644
+--- a/build/soong/Android.bp
++++ b/build/soong/Android.bp
+@@ -26,12 +26,12 @@ lineage_generator {
+          "(cd $(KERNEL_BUILD_OUT_PREFIX).; " +
+          "if [ -n \"$(TARGET_KERNEL_PLATFORM_TARGET)\" ]; then " +
+          "    pushd $(KERNEL_PATH); " +
+-         "    ./tools/bazel --output_user_root=$(KERNEL_BUILD_OUT_PREFIX)$(genDir)/bazel-out --output_root=$(KERNEL_BUILD_OUT_PREFIX)$(genDir)/bazel-out run --experimental_convenience_symlinks=ignore --cpu=$(KERNEL_ARCH) //$(TARGET_KERNEL_SOURCE):$(TARGET_KERNEL_PLATFORM_TARGET)_uapi_headers_dist -- --destdir=$(KERNEL_BUILD_OUT_PREFIX)$(genDir); " +
++         "    ./tools/bazel --output_user_root=$(KERNEL_BUILD_OUT_PREFIX)$(genDir)/bazel-out --output_root=$(KERNEL_BUILD_OUT_PREFIX)$(genDir)/bazel-out run --experimental_convenience_symlinks=ignore --cpu=$(KERNEL_ARCH) //$(TARGET_KERNEL_SOURCE):$(TARGET_KERNEL_PLATFORM_TARGET)_uapi_headers_dist -- --destdir=$(KERNEL_BUILD_OUT_PREFIX)$(genDir) || exit 1; " +
+          "    popd; " +
+          "    gzip -d $(genDir)/kernel-uapi-headers.tar.gz; " +
+          "    tar -xf $(genDir)/kernel-uapi-headers.tar -C $(genDir); " +
+          "else " +
+-         "    $(PATH_OVERRIDE_SOONG) $(KERNEL_MAKE_CMD) $(KERNEL_MAKE_FLAGS) -C $(TARGET_KERNEL_SOURCE) O=$(KERNEL_BUILD_OUT_PREFIX)$(genDir) ARCH=$(KERNEL_ARCH) $(KERNEL_CROSS_COMPILE) headers_install; " +
++         "    $(PATH_OVERRIDE_SOONG) $(KERNEL_MAKE_CMD) $(KERNEL_MAKE_FLAGS) $(TARGET_KERNEL_ADDITIONAL_FLAGS) -C $(TARGET_KERNEL_SOURCE) O=$(KERNEL_BUILD_OUT_PREFIX)$(genDir) ARCH=$(KERNEL_ARCH) $(KERNEL_CROSS_COMPILE) headers_install || exit 1; " +
+          "fi; " +
+          "vendor/lineage/tools/clean_headers.sh $(KERNEL_BUILD_OUT_PREFIX)$(genDir))",
+ 
+diff --git a/build/soong/generator/generator.go b/build/soong/generator/generator.go
+index c70ef5f0b992fa3dd107bf67715aa01a0165affc..555c7671eeedcbfc1fc7acbda39dbfdcc30bd9e3 100644
+--- a/build/soong/generator/generator.go
++++ b/build/soong/generator/generator.go
+@@ -258,11 +258,12 @@ func (g *Module) GenerateAndroidBuildActions(ctx android.ModuleContext) {
+ 	// Dummy output dep
+ 	dummyDep := android.PathForModuleGen(ctx, ".dummy_dep")
+ 
+-	genDir := android.PathForModuleGen(ctx)
+-	manifestPath := android.PathForModuleOut(ctx, "generator.sbox.textproto")
+-
+-	// Use a RuleBuilder to create a rule that runs the command inside an sbox sandbox.
+-	rule := android.NewRuleBuilder(pctx, ctx).Sbox(genDir, manifestPath)
++	// This generator intentionally produces whole directory trees as side effects and
++	// exposes them through GeneratedHeaderDirs/GeneratedSourceFiles. Android 17's
++	// sbox retains only declared file outputs, which would discard those trees and
++	// leave just .dummy_dep. Run the rule directly so the exported directories are
++	// preserved.
++	rule := android.NewRuleBuilder(pctx, ctx).SandboxDisabled()
+ 
+ 	rule.Command().
+ 		Text(rawCommand).
 diff --git a/build/tasks/kernel.mk b/build/tasks/kernel.mk
-index a4846e3411fe4ff7bf5423a5cdd2fa732b95a59b..01b536b8e8633a7efbace0211a2d12fc86b561d8 100644
+index 15ce95b74109c88f58055b1a6a6ce754577f5b05..61b2151ce79907764537ffaf34999f89ac3676c9 100644
 --- a/build/tasks/kernel.mk
 +++ b/build/tasks/kernel.mk
-@@ -392,6 +392,7 @@ ifneq ($(filter $(FULL_KERNEL_BUILD),true)$(TARGET_KERNEL_PLATFORM_TARGET),)
+@@ -382,6 +382,7 @@ ifneq ($(filter $(FULL_KERNEL_BUILD),true)$(TARGET_KERNEL_PLATFORM_TARGET),)
  # $(6): suffix for output dir, needed for GKI modules usecase, empty otherwise
  # $(7): partition image intermediates file list
  # $(8): external dependency module intermediates dir
@@ -10,7 +51,7 @@ index a4846e3411fe4ff7bf5423a5cdd2fa732b95a59b..01b536b8e8633a7efbace0211a2d12fc
  # Depmod requires a well-formed kernel version so 0.0 is used as a placeholder.
  define build-image-kernel-modules-lineage
      mkdir -p $(2)/lib/modules$(6)
-@@ -428,13 +429,13 @@ define build-image-kernel-modules-lineage
+@@ -418,13 +419,13 @@ define build-image-kernel-modules-lineage
          exit 1; \
      fi; \
      if [ -n "$(7)" ]; then \
@@ -29,7 +70,7 @@ index a4846e3411fe4ff7bf5423a5cdd2fa732b95a59b..01b536b8e8633a7efbace0211a2d12fc
          done; \
          sort -u "$(7)" -o "$(7)"; \
      fi;
-@@ -472,6 +473,10 @@ ifneq ($(BUILDING_VENDOR_IMAGE),)
+@@ -462,6 +463,10 @@ ifneq ($(BUILDING_VENDOR_IMAGE),)
  KERNEL_MODULES_PARTITION_FILE_LIST := $(vendorimage_intermediates)/file_list.txt
  else # No vendor partition
  KERNEL_MODULES_PARTITION_FILE_LIST := $(systemimage_intermediates)/file_list.txt
@@ -40,7 +81,7 @@ index a4846e3411fe4ff7bf5423a5cdd2fa732b95a59b..01b536b8e8633a7efbace0211a2d12fc
  endif # BUILDING_VENDOR_IMAGE
  $(INSTALLED_VENDORIMAGE_TARGET): $(TARGET_PREBUILT_INT_KERNEL)
  endif
-@@ -527,11 +532,30 @@ ifeq ($(FULL_KERNEL_BUILD),true)
+@@ -517,11 +522,30 @@ ifeq ($(FULL_KERNEL_BUILD),true)
  $(KERNEL_OUT):
  	mkdir -p $(KERNEL_OUT)
  
@@ -72,7 +113,7 @@ index a4846e3411fe4ff7bf5423a5cdd2fa732b95a59b..01b536b8e8633a7efbace0211a2d12fc
  	@echo "Building Kernel Image ($(BOARD_KERNEL_IMAGE_NAME))"
  	$(call make-kernel-target,$(BOARD_KERNEL_IMAGE_NAME))
  	$(hide) if [ -d "$(KERNEL_SRC)/arch/$(KERNEL_ARCH)/boot/dts/" ]; then \
-@@ -580,7 +604,7 @@ $(TARGET_PREBUILT_INT_KERNEL): $(KERNEL_CONFIG) $(DEPMOD) $(DTC) $(KERNEL_MODULE
+@@ -570,7 +594,7 @@ $(TARGET_PREBUILT_INT_KERNEL): $(KERNEL_CONFIG) $(DEPMOD) $(DTC) $(KERNEL_MODULE
  					module_name=$$(basename $$n); \
  					if [[ ! "$(SYSTEM_KERNEL_MODULES)" =~ "$$module_name" ]]; then echo $$n; fi; \
  				done); \
@@ -81,7 +122,7 @@ index a4846e3411fe4ff7bf5423a5cdd2fa732b95a59b..01b536b8e8633a7efbace0211a2d12fc
  				if grep -q 'CONFIG_MODULE_SIG_FORMAT=y' $(KERNEL_CONFIG); then \
  					(for m in $$(find $(SYSTEM_KERNEL_MODULES_OUT) -type f -name "*.ko"); do \
  						$(KERNEL_OUT)/scripts/sign-file sha1 \
-@@ -589,7 +613,7 @@ $(TARGET_PREBUILT_INT_KERNEL): $(KERNEL_CONFIG) $(DEPMOD) $(DTC) $(KERNEL_MODULE
+@@ -579,7 +603,7 @@ $(TARGET_PREBUILT_INT_KERNEL): $(KERNEL_CONFIG) $(DEPMOD) $(DTC) $(KERNEL_MODULE
  					done) || exit "$$?"; \
  				fi; \
  				,\
@@ -90,7 +131,7 @@ index a4846e3411fe4ff7bf5423a5cdd2fa732b95a59b..01b536b8e8633a7efbace0211a2d12fc
  			) \
  			$(if $(BOOT_KERNEL_MODULES)$(BOOT_KERNEL_MODULES_FINDER),\
  				$(if $(BOOT_KERNEL_MODULES_FINDER), \
-@@ -625,6 +649,13 @@ $(TARGET_PREBUILT_INT_KERNEL): $(KERNEL_CONFIG) $(DEPMOD) $(DTC) $(KERNEL_MODULE
+@@ -615,6 +639,13 @@ $(TARGET_PREBUILT_INT_KERNEL): $(KERNEL_CONFIG) $(DEPMOD) $(DTC) $(KERNEL_MODULE
  			) \
  		fi
  
@@ -104,8 +145,8 @@ index a4846e3411fe4ff7bf5423a5cdd2fa732b95a59b..01b536b8e8633a7efbace0211a2d12fc
  .PHONY: kerneltags
  kerneltags: $(KERNEL_CONFIG)
  	$(call make-kernel-target,tags)
-@@ -803,7 +834,7 @@ $(TARGET_PREBUILT_INT_KERNEL): $(DEPMOD) $(KERNEL_MODULES_PARTITION_FILE_LIST) $
- 		($(call build-image-kernel-modules-lineage,$$system_dlkm_modules,$(SYSTEM_KERNEL_MODULES_OUT),$(SYSTEM_KERNEL_MODULE_MOUNTPOINT)/,$(SYSTEM_KERNEL_DEPMOD_STAGING_DIR),$(SYSTEM_KERNEL_MODULES_LOAD),,$(SYSTEM_KERNEL_MODULES_PARTITION_FILE_LIST),))\
+@@ -787,7 +818,7 @@ $(TARGET_PREBUILT_INT_KERNEL): $(DEPMOD) $(KERNEL_MODULES_PARTITION_FILE_LIST) $
+ 		($(call build-image-kernel-modules-lineage,$$system_dlkm_modules,$(SYSTEM_KERNEL_MODULES_OUT),$(SYSTEM_KERNEL_MODULE_MOUNTPOINT)/,$(SYSTEM_KERNEL_DEPMOD_STAGING_DIR),$$system_dlkm_modules,,$(SYSTEM_KERNEL_MODULES_PARTITION_FILE_LIST),))\
  	)
  	vendor_modules=$$(comm -23 <(find $(KERNEL_OUT) -maxdepth 1 -type f -name '*.ko' | awk -F'/' '{ print $$NF }' | sort) <(awk -F'/' '{ print $$NF }' $(KERNEL_OUT)/system_dlkm.modules.load | sort) | sed 's|^|$(KERNEL_OUT)/|'); \
 -	($(call build-image-kernel-modules-lineage,$$vendor_modules,$(KERNEL_MODULES_OUT),$(KERNEL_MODULE_MOUNTPOINT)/,$(KERNEL_DEPMOD_STAGING_DIR),$(BOARD_VENDOR_KERNEL_MODULES_LOAD),,$(KERNEL_MODULES_PARTITION_FILE_LIST),$(SYSTEM_KERNEL_DEPMOD_STAGING_DIR)/lib/modules/0.0/$(SYSTEM_KERNEL_MODULE_MOUNTPOINT)))
@@ -113,3 +154,15 @@ index a4846e3411fe4ff7bf5423a5cdd2fa732b95a59b..01b536b8e8633a7efbace0211a2d12fc
  
  ifeq ($(BOARD_INCLUDE_DTB_IN_BOOTIMG),true)
  $(INSTALLED_DTBIMAGE_TARGET): $(TARGET_PREBUILT_INT_KERNEL)
+diff --git a/config/BoardConfigSoong.mk b/config/BoardConfigSoong.mk
+index 9b0598dbbac9c54349a553428d107eabe30a79aa..2521dddacd54ca8689b741b4f92fa4fd0e952aec 100644
+--- a/config/BoardConfigSoong.mk
++++ b/config/BoardConfigSoong.mk
+@@ -10,6 +10,7 @@ EXPORT_TO_SOONG := \
+     KERNEL_PATH \
+     PATH_OVERRIDE_SOONG \
+     TARGET_KERNEL_CONFIG \
++    TARGET_KERNEL_ADDITIONAL_FLAGS \
+     TARGET_KERNEL_SOURCE \
+     TARGET_KERNEL_PLATFORM_TARGET \
+     TARGET_MAX_PAGE_SIZE_SUPPORTED \

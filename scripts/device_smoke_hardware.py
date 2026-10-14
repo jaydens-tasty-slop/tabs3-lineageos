@@ -16,6 +16,11 @@ from device_smoke_common import require
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
+def keyguard_dismissed(policy):
+    return ('mIsShowing=false' in policy or
+            re.search(r'^\s*showing=false\s*$', policy, re.M) is not None)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--serial')
@@ -28,8 +33,8 @@ def main():
     require(len(suites) == len(set(suites)), 'Do not repeat suites in one run')
     device = AdbDevice(args.serial)
     args.serial = device.serial
-    require(not device.recovery and device.props.get('ro.build.version.sdk') == '36'
-            and device.props.get('sys.boot_completed') == '1', 'Booted Android 16 required')
+    require(not device.recovery and device.props.get('ro.build.version.sdk') == '37'
+            and device.props.get('sys.boot_completed') == '1', 'Booted Android 17 required')
     require(device.shell('id -u', check=True).stdout.strip() == '2000',
             'Use ordinary Android shell UID 2000; root ADB is outside this smoke scope')
     setup_complete = device.shell(
@@ -58,7 +63,7 @@ def main():
         while True:
             state = device.shell('am get-started-user-state 0', check=True).stdout.strip()
             policy = device.shell('dumpsys window policy', check=True).stdout
-            if state == 'RUNNING_UNLOCKED' and 'mIsShowing=false' in policy:
+            if state == 'RUNNING_UNLOCKED' and keyguard_dismissed(policy):
                 break
             require(time.monotonic() < deadline, 'Normal unlock was not observed before the deadline')
             time.sleep(0.5)
@@ -66,7 +71,7 @@ def main():
         report['framework_before'] = device.shell('pidof system_server; cat /proc/sys/kernel/random/boot_id', check=True).stdout
         for suite in suites:
             policy = device.shell('dumpsys window policy', check=True).stdout
-            require('mIsShowing=false' in policy, 'The screen locked before the next foreground probe')
+            require(keyguard_dismissed(policy), 'The screen locked before the next foreground probe')
             if suite == 'vulkan':
                 helper = 'device_vulkan_probe.py'
                 command = [sys.executable, str(ROOT / 'scripts' / helper), '--serial', args.serial]

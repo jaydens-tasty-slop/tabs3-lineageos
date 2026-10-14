@@ -1,5 +1,5 @@
 diff --git a/libprocessgroup/processgroup.cpp b/libprocessgroup/processgroup.cpp
-index cea22b7a6c3a18aac6ce935056ae99aa346d2366..edd4133cd2c2221b512c55b5050742f21de3aff9 100644
+index 7648c21095bd16241db6acf0cc7861432bdfeac5..f1628ba3cc1a890d477a338b3b2f1c23a5f67f21 100644
 --- a/libprocessgroup/processgroup.cpp
 +++ b/libprocessgroup/processgroup.cpp
 @@ -27,6 +27,8 @@
@@ -37,7 +37,7 @@ index cea22b7a6c3a18aac6ce935056ae99aa346d2366..edd4133cd2c2221b512c55b5050742f2
  static bool CgroupKillAvailable() {
      static std::once_flag f;
      static bool cgroup_kill_available = false;
-@@ -310,11 +331,12 @@ void removeAllEmptyProcessGroups() {
+@@ -313,16 +334,18 @@ void removeAllEmptyProcessGroups() {
  
      std::vector<std::string> cgroups;
      std::string path, memcg_apps_path;
@@ -47,12 +47,23 @@ index cea22b7a6c3a18aac6ce935056ae99aa346d2366..edd4133cd2c2221b512c55b5050742f2
 +    if (GetProcessGroupHierarchy(&path, &v2)) {
          cgroups.push_back(path);
      }
--    if (android::libprocessgroup_flags::cgroup_v2_sys_app_isolation()) {
-+    if (v2 && android::libprocessgroup_flags::cgroup_v2_sys_app_isolation()) {
-         for (const char* sub : {"apps", "system"}) {
-             std::string subpath = path + "/" + sub;
-             struct stat st;
-@@ -411,10 +433,15 @@ bool sendSignalToProcessGroup(uid_t uid, pid_t initialPid, int signal) {
+-
+-    for (const char* sub : {"apps", "system"}) {
+-        std::string subpath = path + "/" + sub;
+-        struct stat st;
+-        if (stat(subpath.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) {
+-            cgroups.push_back(subpath);
++    if (v2) {
++        for (const char* sub : {"apps", "system"}) {
++            std::string subpath = path + "/" + sub;
++            struct stat st;
++            if (stat(subpath.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) {
++                cgroups.push_back(subpath);
++            }
+         }
+     }
+ 
+@@ -415,10 +438,15 @@ bool sendSignalToProcessGroup(uid_t uid, pid_t initialPid, int signal) {
  
      if (CgroupsAvailable()) {
          std::string hierarchy_root_path, cgroup_v2_path;
@@ -71,7 +82,7 @@ index cea22b7a6c3a18aac6ce935056ae99aa346d2366..edd4133cd2c2221b512c55b5050742f2
              LOG(VERBOSE) << "Using " << PROCESSGROUP_CGROUP_KILL_FILE << " to SIGKILL "
                           << cgroup_v2_path;
  
-@@ -580,7 +607,30 @@ static int KillProcessGroup(
+@@ -584,7 +612,30 @@ int KillProcessGroup(
      if (!CgroupsAvailable() || !signal_ret) return signal_ret ? 0 : -1;
  
      std::string hierarchy_root_path;
@@ -103,7 +114,7 @@ index cea22b7a6c3a18aac6ce935056ae99aa346d2366..edd4133cd2c2221b512c55b5050742f2
  
      const std::string cgroup_v2_path =
              ConvertUidPidToPath(hierarchy_root_path.c_str(), uid, initialPid, true);
-@@ -755,8 +805,9 @@ int createProcessGroup(uid_t uid, pid_t initialPid, bool memControl) {
+@@ -761,8 +812,9 @@ int createProcessGroup(uid_t uid, pid_t initialPid, bool memControl) {
      }
  
      std::string cgroup;
@@ -114,9 +125,9 @@ index cea22b7a6c3a18aac6ce935056ae99aa346d2366..edd4133cd2c2221b512c55b5050742f2
 +    return createProcessGroupInternal(uid, initialPid, cgroup, v2);
  }
  
- static bool SetProcessGroupValue(pid_t tid, const std::string& attr_name, int64_t value) {
+ int createCGroupForCloneInto(uid_t uid, pid_t zygote_pid, uint64_t start_seq) {
 diff --git a/libprocessgroup/setup/cgroup_map_write.cpp b/libprocessgroup/setup/cgroup_map_write.cpp
-index 899b4e9524727256ff213e795c49e63bbeae005f..6f609914924b66e8d1650aa45650c9f562f5d677 100644
+index 0b26e9568e9d2cb6d94ae2287592069cf79ef95d..952f3a628993bbaab244be4c3b89ce1341ffdaae 100644
 --- a/libprocessgroup/setup/cgroup_map_write.cpp
 +++ b/libprocessgroup/setup/cgroup_map_write.cpp
 @@ -25,6 +25,10 @@
@@ -130,7 +141,7 @@ index 899b4e9524727256ff213e795c49e63bbeae005f..6f609914924b66e8d1650aa45650c9f5
  #include <unistd.h>
  
  #include <android-base/logging.h>
-@@ -202,6 +206,15 @@ static bool MountV1CgroupController(const CgroupDescriptor& descriptor) {
+@@ -201,6 +205,15 @@ static bool MountV1CgroupController(const CgroupDescriptor& descriptor) {
  
      if (mount("none", controller->path(), "cgroup", MS_NODEV | MS_NOEXEC | MS_NOSUID,
                options.c_str())) {
@@ -146,7 +157,7 @@ index 899b4e9524727256ff213e795c49e63bbeae005f..6f609914924b66e8d1650aa45650c9f5
          if (IsOptionalController(controller)) {
              PLOG(INFO) << "Failed to mount optional controller " << controller->name();
              return true;
-@@ -269,6 +282,18 @@ static bool CreateV2SubHierarchy(const std::string& path, const CgroupDescriptor
+@@ -268,6 +281,18 @@ static bool CreateV2SubHierarchy(const std::string& path, const CgroupDescriptor
      return ::ActivateControllers(path, descriptors);
  }
  
@@ -165,25 +176,25 @@ index 899b4e9524727256ff213e795c49e63bbeae005f..6f609914924b66e8d1650aa45650c9f5
  bool CgroupSetup() {
      CgroupDescriptorMap descriptors;
  
-@@ -304,10 +329,17 @@ bool CgroupSetup() {
-                                                    ? CGROUP_V2_ROOT_DEFAULT
-                                                    : it->second.controller()->path();
+@@ -300,10 +325,17 @@ bool CgroupSetup() {
+                                                ? CGROUP_V2_ROOT_DEFAULT
+                                                : it->second.controller()->path();
  
--        LOG(INFO) << "Using system/app isolation under: " << cgroup_v2_root;
--        if (!CreateV2SubHierarchy(cgroup_v2_root + "/apps", descriptors) ||
--            !CreateV2SubHierarchy(cgroup_v2_root + "/system", descriptors)) {
--            return false;
-+        if (IsOptionalV2HierarchyUnavailable(cgroup_v2_root, descriptors)) {
-+            // Kernels without cgroup v2 may explicitly mark the hierarchy
-+            // optional. Its mount failure must not make v1 setup fail later
-+            // by trying to create subgroups on the underlying sysfs mount.
-+            LOG(INFO) << "Skipping system/app isolation: optional cgroup v2 is not mounted";
-+        } else {
-+            LOG(INFO) << "Using system/app isolation under: " << cgroup_v2_root;
-+            if (!CreateV2SubHierarchy(cgroup_v2_root + "/apps", descriptors) ||
-+                !CreateV2SubHierarchy(cgroup_v2_root + "/system", descriptors)) {
-+                return false;
-+            }
-         }
+-    LOG(INFO) << "Using system/app isolation under: " << cgroup_v2_root;
+-    if (!CreateV2SubHierarchy(cgroup_v2_root + "/apps", descriptors) ||
+-        !CreateV2SubHierarchy(cgroup_v2_root + "/system", descriptors)) {
+-        return false;
++    if (IsOptionalV2HierarchyUnavailable(cgroup_v2_root, descriptors)) {
++        // Kernels without cgroup v2 may explicitly mark the hierarchy
++        // optional. Its mount failure must not make v1 setup fail later
++        // by trying to create subgroups on the underlying sysfs mount.
++        LOG(INFO) << "Skipping system/app isolation: optional cgroup v2 is not mounted";
++    } else {
++        LOG(INFO) << "Using system/app isolation under: " << cgroup_v2_root;
++        if (!CreateV2SubHierarchy(cgroup_v2_root + "/apps", descriptors) ||
++            !CreateV2SubHierarchy(cgroup_v2_root + "/system", descriptors)) {
++            return false;
++        }
      }
  
+     return true;

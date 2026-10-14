@@ -406,7 +406,7 @@ def main():
     parser.add_argument("--installed-system", type=pathlib.Path, required=True,
                         help="Build output system directory, to check installed init services")
     parser.add_argument("--report", type=pathlib.Path, required=True)
-    parser.add_argument("--expected-sdk", type=int, default=36)
+    parser.add_argument("--expected-sdk", type=int, default=37)
     args = parser.parse_args()
     report = check_ota(args.zip, args.expected_sdk)
     require(report["boot"]["kernel_sha256"] == file_sha256(args.kernel_image),

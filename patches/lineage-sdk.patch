@@ -1,0 +1,15 @@
+diff --git a/lineage/lib/main/java/org/lineageos/platform/internal/display/DisplayHardwareController.java b/lineage/lib/main/java/org/lineageos/platform/internal/display/DisplayHardwareController.java
+index 016acd307839cdfc9d0ef81a32381fa3f0c5936e..d97d1a8fdd58bdab48f02e40940cf204e57d04c9 100644
+--- a/lineage/lib/main/java/org/lineageos/platform/internal/display/DisplayHardwareController.java
++++ b/lineage/lib/main/java/org/lineageos/platform/internal/display/DisplayHardwareController.java
+@@ -301,6 +301,10 @@ public class DisplayHardwareController extends LiveDisplayFeature {
+ 
+         // always start with the current values in the hardware
+         int[] currentInts = mHardware.getDisplayColorCalibration();
++        if (currentInts == null || currentInts.length != 3 || mMaxColor <= 0) {
++            Slog.w(TAG, "Display color calibration is temporarily unavailable");
++            return;
++        }
+         float[] currentColors = new float[] {
+                 (float)currentInts[0] / (float)mMaxColor,
+                 (float)currentInts[1] / (float)mMaxColor,

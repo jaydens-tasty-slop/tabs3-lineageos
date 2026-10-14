@@ -1,5 +1,5 @@
 diff --git a/server/Android.bp b/server/Android.bp
-index 78d1f1d91d37bd69aa62e7b79976505e93fb2e0d..f17a6080127fa155508dd7be203fbe20a7deef1e 100644
+index 44dc816be1ca43f2da7295238eb1e9591a7ea72c..e7f642d7a49d946ff9040a1027de73345d5f546f 100644
 --- a/server/Android.bp
 +++ b/server/Android.bp
 @@ -71,6 +71,7 @@ cc_library_static {
@@ -62,7 +62,7 @@ index 8a9673874aadc0b069ead63c49f54e5026f28f04..37d8e66abf00ed644a0360e625d7cb92
      std::vector<std::string> ipt_basic_accounting_commands = {
              "*filter",
 diff --git a/server/Controllers.cpp b/server/Controllers.cpp
-index 48d0c509a5cecc0f0869847734074d25251554ad..3c741b19001432d2bc95acaa1785d38b5ca7d659 100644
+index 8a2c3be3e198d24130c8bc1c46342f1ebe591a71..9dd1fe795a5bd7a83fb12e214841ddd659000818 100644
 --- a/server/Controllers.cpp
 +++ b/server/Controllers.cpp
 @@ -20,6 +20,8 @@
@@ -74,21 +74,23 @@ index 48d0c509a5cecc0f0869847734074d25251554ad..3c741b19001432d2bc95acaa1785d38b
  #include <android-base/strings.h>
  #include <netdutils/Stopwatch.h>
  
-@@ -281,7 +283,11 @@ void Controllers::initIptablesRules() {
+@@ -285,7 +287,13 @@ int Controllers::initIptablesRules() {
      gLog.info("Setting up OEM hooks: %" PRId64 "us", s.getTimeAndResetUs());
  
      /* When enabled, DROPs all packets except those matching rules. */
--    firewallCtrl.setupIptablesHooks();
-+    if (int error = firewallCtrl.setupIptablesHooks();
-+        error && !android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) {
-+        gLog.error("Failed to initialize legacy firewall (%s)", strerror(-error));
+-    res |= firewallCtrl.setupIptablesHooks();
++    const int firewallError = firewallCtrl.setupIptablesHooks();
++    if (firewallError &&
++        !android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) {
++        gLog.error("Failed to initialize legacy firewall (%s)", strerror(-firewallError));
 +        exit(1);
 +    }
++    res |= firewallError;
      gLog.info("Setting up FirewallController hooks: %" PRId64 "us", s.getTimeAndResetUs());
  
      /* Does DROPs in FORWARD by default */
-@@ -342,6 +348,9 @@ void Controllers::init() {
-         exit(3);
+@@ -351,6 +359,9 @@ void Controllers::init() {
+         exit(4);
      };
      gLog.info("Initializing XfrmController: %" PRId64 "us", s.getTimeAndResetUs());
 +    if (!android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) {
@@ -423,7 +425,7 @@ index cfdd08ce60533f624602e273f88abfe849dba77b..dea47d1a5ce15f0e9a92b13cea1de0d1
  
  }  // namespace net
 diff --git a/server/NetdNativeService.cpp b/server/NetdNativeService.cpp
-index 957261a48389d7b912c1ef6103487e7d5767a7de..67b015c7f64b1a21ba9fa650c30873ad0eaa865e 100644
+index 4686cd0ad12c893a478812e8f7cf178c1af11187..978d726f56f96ec93d19bcdecebf232f8b4cd31c 100644
 --- a/server/NetdNativeService.cpp
 +++ b/server/NetdNativeService.cpp
 @@ -24,6 +24,7 @@
@@ -505,7 +507,7 @@ index 957261a48389d7b912c1ef6103487e7d5767a7de..67b015c7f64b1a21ba9fa650c30873ad
  }
  
  // TODO: Remove this function when there are no users. Currently, it is still used by DNS resolver
-@@ -1087,8 +1104,20 @@ binder::Status NetdNativeService::networkAllowBypassVpnOnNetwork(bool allow, int
+@@ -1070,8 +1087,20 @@ binder::Status NetdNativeService::networkAllowBypassVpnOnNetwork(bool allow, int
      return statusFromErrcode(err);
  }
  
@@ -528,7 +530,7 @@ index 957261a48389d7b912c1ef6103487e7d5767a7de..67b015c7f64b1a21ba9fa650c30873ad
  }
  
  binder::Status NetdNativeService::firewallSetFirewallType(int32_t firewallType) {
-@@ -1108,21 +1137,30 @@ binder::Status NetdNativeService::firewallSetInterfaceRule(const std::string& if
+@@ -1091,21 +1120,30 @@ binder::Status NetdNativeService::firewallSetInterfaceRule(const std::string& if
      return statusFromErrcode(res);
  }
  
@@ -569,7 +571,7 @@ index 957261a48389d7b912c1ef6103487e7d5767a7de..67b015c7f64b1a21ba9fa650c30873ad
  
  binder::Status NetdNativeService::tetherAddForward(const std::string& intIface,
 diff --git a/server/main.cpp b/server/main.cpp
-index d27fd76a31634a815c4569c3e007db770b2baab7..0b34c8361a5a8fd670eb602f882accbb16ab7a81 100644
+index be9a1d03d5d59ae43fc3aa85974af307175598f6..db40ff04f1d594b82c879a2b062f1a2dadf712a9 100644
 --- a/server/main.cpp
 +++ b/server/main.cpp
 @@ -33,6 +33,7 @@
@@ -580,7 +582,7 @@ index d27fd76a31634a815c4569c3e007db770b2baab7..0b34c8361a5a8fd670eb602f882accbb
  #include <android/binder_process.h>
  #include <binder/IPCThreadState.h>
  #include <binder/IServiceManager.h>
-@@ -135,7 +136,8 @@ int main() {
+@@ -140,7 +141,8 @@ int main(const int argc, const char* argv[]) {
      }
  
      std::string cg2_path;

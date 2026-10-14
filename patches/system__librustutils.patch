@@ -1,0 +1,18 @@
+diff --git a/cap/src/lib.rs b/cap/src/lib.rs
+index c534d7cfcbb6240f8ed1643d12f228e680ed4f56..26c16bc0a284e1419d5675ec3ff7d08c71a2492c 100644
+--- a/cap/src/lib.rs
++++ b/cap/src/lib.rs
+@@ -607,7 +607,12 @@ pub fn cap_within_bound(cap: Capability) -> Result<bool> {
+     // SAFETY: This function takes no pointers and return value is checked and
+     //         wrapped in a `Result<bool>` type.
+     match unsafe { cap_bindgen::cap_get_bound(cap as cap_bindgen::cap_value_t) } {
+-        -1 => Err(CapabilityError::GetCapBoundFailure(Errno::last())),
++        // Older kernels return EINVAL when userspace asks about a capability
++        // that did not exist when the kernel was built. Treat it as absent.
++        -1 => match Errno::last() {
++            Errno::EINVAL => Ok(false),
++            errno => Err(CapabilityError::GetCapBoundFailure(errno)),
++        },
+         ret => Ok(ret > 0),
+     }
+ }

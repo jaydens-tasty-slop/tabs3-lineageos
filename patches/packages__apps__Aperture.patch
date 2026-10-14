@@ -1,0 +1,147 @@
+diff --git a/app/src/main/java/org/lineageos/aperture/CameraActivity.kt b/app/src/main/java/org/lineageos/aperture/CameraActivity.kt
+index edae6e063975ff8d75c0e1ec805a370f6c827bff..51029d06781865485fadd7a0b53daa54627dd054 100644
+--- a/app/src/main/java/org/lineageos/aperture/CameraActivity.kt
++++ b/app/src/main/java/org/lineageos/aperture/CameraActivity.kt
+@@ -809,9 +809,12 @@ open class CameraActivity : AppCompatActivity(R.layout.activity_camera) {
+                         }
+ 
+                         CameraXCameraState.ERROR_STREAM_CONFIG -> {
+-                            // CameraX use case misconfiguration, no way to recover
+-                            showToast(R.string.error_stream_config)
+-                            finish()
++                            if (viewModel.fallbackVideoQuality()) {
++                                showToast(R.string.error_stream_config_fallback)
++                            } else {
++                                showToast(R.string.error_stream_config)
++                                finish()
++                            }
+                         }
+ 
+                         CameraXCameraState.ERROR_CAMERA_DISABLED -> {
+@@ -1393,23 +1396,31 @@ open class CameraActivity : AppCompatActivity(R.layout.activity_camera) {
+                 screenFlashView.setController(viewModel.cameraController)
+                 screenFlashView.setScreenFlashWindow(window)
+ 
+-                val videoRecordingAvailable = viewModel.isVideoRecordingAvailable()
+-                if (viewModel.initialCameraMode == CameraMode.VIDEO && !videoRecordingAvailable) {
+-                    // If an app asked for a video we have to bail out
+-                    if (viewModel.inSingleCaptureMode.value) {
+-                        Toast.makeText(
+-                            this@CameraActivity,
+-                            R.string.camcorder_unsupported_toast,
+-                            Toast.LENGTH_LONG,
+-                        ).show()
+-                        finish()
+-                        return@collect
++                try {
++                    val videoRecordingAvailable = viewModel.isVideoRecordingAvailable()
++                    if (viewModel.initialCameraMode == CameraMode.VIDEO && !videoRecordingAvailable) {
++                        // If an app asked for a video we have to bail out
++                        if (viewModel.inSingleCaptureMode.value) {
++                            Toast.makeText(
++                                this@CameraActivity,
++                                R.string.camcorder_unsupported_toast,
++                                Toast.LENGTH_LONG,
++                            ).show()
++                            finish()
++                            return@collect
++                        }
++                        // Fallback to photo mode
++                        viewModel.initialCameraMode = CameraMode.PHOTO
+                     }
+-                    // Fallback to photo mode
+-                    viewModel.initialCameraMode = CameraMode.PHOTO
+-                }
+ 
+-                if (!viewModel.initializeCameraConfiguration()) {
++                    if (!viewModel.initializeCameraConfiguration()) {
++                        noCamera()
++                    }
++                } catch (e: Exception) {
++                    // A restarting legacy provider can make CameraX initialization fail before it
++                    // has a camera list. Treat that as temporary unavailability instead of letting
++                    // an uncaught future exception kill the app process.
++                    Log.e(LOG_TAG, "Unable to initialize cameras", e)
+                     noCamera()
+                 }
+ 
+diff --git a/app/src/main/java/org/lineageos/aperture/viewmodels/CameraViewModel.kt b/app/src/main/java/org/lineageos/aperture/viewmodels/CameraViewModel.kt
+index 9a59c3cbb667c83ec3f80b4776fb3e2b44a61594..84481c8e9292467746e3390daa101f52d7a69529 100644
+--- a/app/src/main/java/org/lineageos/aperture/viewmodels/CameraViewModel.kt
++++ b/app/src/main/java/org/lineageos/aperture/viewmodels/CameraViewModel.kt
+@@ -1456,6 +1456,49 @@ class CameraViewModel(application: Application) : ApertureViewModel(application)
+             )
+         }
+ 
++    /**
++     * Fall back to the highest lower video quality after a stream configuration failure.
++     *
++     * Some legacy camera HALs advertise an encoder profile that they cannot expose as a regular
++     * Camera2 stream. Persisting the lower quality prevents the camera from getting stuck in a
++     * launch-and-exit loop while leaving the advertised quality available for future HAL fixes.
++     */
++    fun fallbackVideoQuality(): Boolean {
++        var fallbackApplied = false
++        val updated = updateConfiguration<CameraConfiguration.Video> { cameraConfiguration ->
++            val orderedQualities = listOf(Quality.SD, Quality.HD, Quality.FHD, Quality.UHD)
++            val currentIndex = orderedQualities.indexOf(cameraConfiguration.videoQuality)
++            val videoQuality = cameraConfiguration.camera.supportedVideoQualities.keys
++                .filter { orderedQualities.indexOf(it) in 0 until currentIndex }
++                .maxByOrNull { orderedQualities.indexOf(it) }
++                ?: return@updateConfiguration cameraConfiguration
++
++            val videoQualityInfo = cameraConfiguration.camera.supportedVideoQualities[
++                videoQuality
++            ] ?: return@updateConfiguration cameraConfiguration
++
++            val videoFrameRate = cameraConfiguration.videoFrameRate.takeIf {
++                videoQualityInfo.supportedFrameRates.contains(it)
++            } ?: videoQualityInfo.supportedFrameRates.firstOrNull()
++
++            val videoDynamicRange = cameraConfiguration.videoDynamicRange.takeIf {
++                videoQualityInfo.supportedDynamicRanges.contains(it)
++            } ?: videoQualityInfo.supportedDynamicRanges.firstOrNull()
++                ?: return@updateConfiguration cameraConfiguration
++
++            preferencesRepository.videoQuality.value = videoQuality
++            fallbackApplied = true
++
++            cameraConfiguration.copy(
++                videoQuality = videoQuality,
++                videoFrameRate = videoFrameRate,
++                videoDynamicRange = videoDynamicRange,
++            )
++        }
++
++        return updated && fallbackApplied
++    }
++
+     /**
+      * Cycle the video frame rate.
+      */
+@@ -1847,9 +1890,10 @@ class CameraViewModel(application: Application) : ApertureViewModel(application)
+         }
+ 
+         return try {
+-            val currentCameraConfiguration = _cameraConfiguration.value ?: error(
+-                "Camera configuration is null"
+-            )
++            val currentCameraConfiguration = _cameraConfiguration.value ?: run {
++                Log.w(LOG_TAG, "Ignoring reconfiguration before camera initialization")
++                return false
++            }
+ 
+             T::class.safeCast(currentCameraConfiguration)?.let {
+                 val newCameraConfiguration = block(it)
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+index f29f5c65d00f128d0cc8f1717a2f85d570c2046f..b4bdc13a5f5572675f8a527d0406ce5343459753 100644
+--- a/app/src/main/res/values/strings.xml
++++ b/app/src/main/res/values/strings.xml
+@@ -208,6 +208,7 @@
+     <string name="error_max_cameras_in_use">Maximum number of open cameras has been reached, try to close other apps using the device\'s cameras.</string>
+     <string name="error_camera_in_use">This camera is already in use, try closing the app using it.</string>
+     <string name="error_stream_config">There was an error while preparing the stream. Please report this to the developers.</string>
++    <string name="error_stream_config_fallback">This video quality is not supported by the camera hardware. Switched to a lower quality.</string>
+     <string name="error_other_recoverable_error">Error while setting up the session. The app will try to recover.</string>
+     <string name="error_camera_disabled">The camera is disabled. This might be caused by the device policy.</string>
+     <string name="error_camera_fatal_error">A fatal error has been encountered. Try to restart your device.</string>

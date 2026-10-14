@@ -3,18 +3,20 @@
 import concurrent.futures
 import hashlib
 import json
+import os
 import pathlib
 import subprocess
 import xml.etree.ElementTree as ET
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+ANDROID = pathlib.Path(os.environ.get("TAB_S3_ANDROID_DIR", ROOT / "android")).resolve()
 LOCK = ROOT / "manifests/base-source-lock.xml"
 OUTPUT = ROOT / "patches"
 OUTPUT.mkdir(exist_ok=True)
 
 # These pinned checkouts contain materialized LFS objects. Without the clean
 # filter, Git silently exports unchanged APKs as enormous binary changes.
-lfs_project = ROOT / "android/external/chromium-webview/prebuilt/arm64"
+lfs_project = ANDROID / "external/chromium-webview/prebuilt/arm64"
 lfs_filter = subprocess.run(["git", "-C", str(lfs_project), "config", "--get", "filter.lfs.clean"],
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 lfs_version = subprocess.run(["git", "lfs", "version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -30,7 +32,7 @@ def git(project, *args):
 
 def export(attributes):
     path = attributes.get("path", attributes["name"])
-    project = ROOT / "android" / path
+    project = ANDROID / path
     base = attributes["revision"]
     git(project, "merge-base", "--is-ancestor", base, "HEAD")
     patch = git(project, "diff", "--binary", "--full-index", base)

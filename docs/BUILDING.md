@@ -25,7 +25,7 @@ make
 ```
 
 `setup_checkout.sh` clones the requested device repositories, initializes Android
-`repo` at the pinned Lineage manifest, synchronizes the 1,174 revisions in
+`repo` at the pinned Lineage manifest, synchronizes the 1,251 revisions in
 `manifests/base-source-lock.xml`, and applies every patch in `patches/index.json`.
 Plain `make` reuses an existing checkout; explicit `make setup` refuses to
 replace one. `make image`, `make setup` and `make build` are also available
@@ -77,22 +77,19 @@ workspace; the build commands do not disable host SELinux.
 
 No submodules are needed. Android's `repo` owns the large source checkout; the
 small outer repository owns the manifest, port patches and build instructions.
-The four published device/kernel/vendor forks preserve upstream ancestry and
-the port repairs, including removal of the temporary forced-ADB rule.
-The 26-project patch snapshot and
-1,174 pinned base revisions are canonical; see [the source map](SOURCES.md).
+The four published device/kernel/vendor forks preserve the earlier Android 16
+history. The 34-project patch snapshot and 1,251 pinned base revisions are the
+canonical Android 17 source; see [the source map](SOURCES.md).
 
 The build uses the standard Lineage version ID from `ro.lineage.version`: UTC
 date, with the upstream optional time-of-day suffix enabled by default. The
-current signed release is `23.2-20261010_003605-UNOFFICIAL-gts3lwifi`. Its
-offline signing/image audits and same-key TWRP dirty upgrade passed, preserving
-separate GApps. The exact ZIP booted and passed bounded secure ordinary-ADB,
-core-process, bitmap, Settings/Wellbeing UI and offline TTS checks. The previous
-`140353` build passed a clean installation; the new ZIP's clean-install
-path is untested. An unplugged 11h48m study with separate GApps used 2% battery
-and recovered one brief Wi-Fi disconnect automatically. Earlier hardware
-results apply to their named packages. Settings Build number uses Android's platform build
-ID, while the LineageOS version includes the date.
+Android 17 final package is not yet published. The release candidate must be
+built from a source tree reconstructed by this public buildroot, with fresh
+output, and pass the source, System/Boot/OTA and ADB-safety gates. Earlier
+Android 17 packages are development artifacts. The prior Android 16 signed
+release and its clean/dirty install, hardware and standby results are
+historical; they do not qualify the Android 17 release. Settings Build number
+uses Android's platform build ID, while the LineageOS version includes the date.
 
 The build and package targets pass the established legacy kernel host-tool
 flags through `TARGET_KERNEL_ADDITIONAL_FLAGS`: Ubuntu GCC/G++, binutils,
@@ -146,7 +143,7 @@ select a specific authorized device when more than one is visible, use
 `make smoke SERIAL=<adb-serial>`.
 
 The smoke check is read-only on the tablet. It checks SM-T820/gts3lwifi identity,
-Android 16 boot completion, core system services, runtime and ART APEX mounts,
+Android 17 boot completion, core system services, runtime and ART APEX mounts,
 the system package inventory and the last 200 crash-buffer log entries. It
 refuses ambiguous device selection when `SERIAL` is omitted. Crash log text is
 neither printed nor saved. It does not install an app or test payload, reboot,
@@ -176,7 +173,7 @@ of being overwritten.
 The generated keystore uses a documented throwaway password for this local
 diagnostic APK only; it is never used for ROM or release signing.
 
-`smoke-hardware` uses the ADB tools container and requires Android 16, completed
+`smoke-hardware` uses the ADB tools container and requires Android 17, completed
 first-run setup, USB power and a normal user unlock. It checks a short AVC, HEVC
 and AAC decode, GLES rendering, a generated AudioTrack route, a local
 WebView page, and Vulkan compute. It does not require root ADB, host FFmpeg,
@@ -338,7 +335,7 @@ installer is the generated `lineage-*.zip`; copy the selected release and its
 checksum into a distribution directory. Do not confuse a kernel `boot.img` with
 the complete ROM installer.
 
-LineageOS names the public ZIP `lineage-23.2-YYYYMMDD-UNOFFICIAL-gts3lwifi.zip`
+LineageOS names the public ZIP `lineage-24.0-YYYYMMDD-UNOFFICIAL-gts3lwifi.zip`
 using the UTC build date. Its optional time-of-day setting adds
 `_HHMMSS` to the version. Keep experiment labels in release
 notes and qualification records, not in the public ZIP basename.
@@ -368,10 +365,9 @@ it does not install Samsung firmware or replace recovery.
 
 An Android-major-version or signing-identity change needs a clean-install
 procedure. Do not assume Android 14 Data can be retained. Optional Google Apps
-must match Android 16/ARM64 and be installed separately in recovery immediately
+must match Android 17/ARM64 and be installed separately in recovery immediately
 after the ROM, before the first Android boot. Adding them to an already booted
-installation requires a factory reset. The previous signed clean install and
-the current same-key dirty update both booted with separate MindTheGapps.
-Account setup, Play Store certification/downloads and broader Google Apps
-behavior remain unqualified. See [installation](INSTALLING.md) for the tested
-update path and the exact ZIP's clean-install limit.
+installation requires a factory reset. No Android 17 Google Apps package has
+yet been qualified by this project; do not reuse the recorded Android 16
+package. Account setup, Play Store certification/downloads and broader Google
+Apps behavior remain unqualified. See [installation](INSTALLING.md).

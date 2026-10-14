@@ -20,7 +20,7 @@
   <project name="LineageOS/android_hardware_samsung"
            path="hardware/samsung" remote="github"
            revision="5d20e3541d147494e074bf710d35b1960a6ed0a2" />
-  <!-- The latest maintained MSM8996 HAL branches are older than 23.2. -->
+  <!-- The latest maintained MSM8996 HAL branches are older than 24.0. -->
   <project name="LineageOS/android_hardware_qcom_audio"
            path="hardware/qcom-caf/msm8996/audio" remote="github"
            revision="560c079979144611f90e32f5a7485e631ef022c9" />
@@ -33,6 +33,13 @@
   <project name="platform/prebuilts/vndk/v29"
            path="prebuilts/vndk/v29" remote="aosp"
            revision="2e659f04a7cde964415c82dd7507610769165408" clone-depth="1" />
+  <!-- Android 17 dropped GCC; this 3.18 kernel still needs both 4.9 cross compilers. -->
+  <project name="LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9"
+           path="prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9" remote="github"
+           revision="5e030eafe024784a73cdf47e6936ac0dbfc763dc" clone-depth="1" />
+  <project name="LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9"
+           path="prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9" remote="github"
+           revision="111258a10e017f067b27e6cfcea7619d753f3309" clone-depth="1" />
   <project name="LineageOS/android_external_ant-wireless_ant_client"
            path="external/ant-wireless/ant_client" remote="github"
            revision="846dbb2d61e119b9fd8faa0dfafe5a4f33bbd785" />

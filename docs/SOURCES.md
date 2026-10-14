@@ -1,15 +1,17 @@
 # Source distribution
 
 The canonical reconstruction uses `manifests/base-source-lock.xml` and
-`patches/index.json`: **1,174 pinned base projects and 26 patch entries**.
+`patches/index.json`: **1,251 pinned base projects and 34 patch entries**.
 Every patch carries a checksum and an exact upstream base. Setup fetches the
 projects as Git clones through Android `repo`, verifies the patches, and
 applies them. There are no Git submodules.
 
-## Published forks
+## Published Android 16 forks
 
 All four repositories are genuine GitHub forks of the corresponding
-`awesometic` repository. Their default branch is `tabs3/lineage-23.2`.
+`awesometic` repository. Their published default branch is the historical
+`tabs3/lineage-23.2`. The Android 17 source is captured by the pinned manifest
+and patch snapshot; a `tabs3/lineage-24.0` fork set has not been published.
 
 The kernel's pinned base is `awesometic`'s `lineage-21.0-caf` tip. GitHub's
 fork header compares against the upstream default `lineage-18.1-caf`, which
@@ -32,7 +34,7 @@ frozen ROM provenance retains the original IDs.
 
 These four branches cover device, kernel and vendor changes. The remaining
 Android framework, platform and build changes are in the complete patch set.
-Use the pinned manifest and all 26 patches together when building this release;
+Use the pinned manifest and all 34 patches together when building this release;
 four fork checkouts alone are insufficient.
 
 The common-device fork removes the temporary forced-ADB rule. The kernel
@@ -43,13 +45,15 @@ context without requiring another fork.
 
 ## Maintainer publication helper
 
-`bash scripts/publish_source_forks.sh` verifies the pinned branch tips, source
-trees, patch checksums and commit identities, then creates missing GitHub fork
+`bash scripts/publish_source_forks.sh` is retained for the historical Android
+16 publication. It verifies those pinned branch tips, source trees, patch
+checksums and commit identities, then creates missing GitHub fork
 relationships and pushes through the configured SSH key. It refuses divergent
 branches and never force-pushes. Use `--check-local` for checks without network
 access or publication. Missing staging clones can be restored from the already
 published branches. The helper requires GitHub CLI authentication as the owner
-and `~/.ssh/jaydens-tasty-slop`; neither is needed to build the ROM.
+and `~/.ssh/jaydens-tasty-slop`; neither is needed to build the ROM. Do not use
+it to publish Android 17 until its branch map and expected commits are updated.
 
 ## Licenses and private material
 

@@ -7,7 +7,7 @@ import android.media.*;
 import android.opengl.*;
 import android.os.*;
 import android.util.Log;
-import android.view.Surface;
+import android.view.*;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.TextView;
@@ -30,6 +30,7 @@ public final class MainActivity extends Activity {
         JSONObject result=new JSONObject().put("command",command).put("sdk",Build.VERSION.SDK_INT);
         try {
         if("inventory".equals(command))inventory(result);
+        else if("drm".equals(command))drm(result);
         else if("gpu".equals(command))gpu(result);
         else if("audio_route".equals(command))audioRoute(result,null);
         else if("offload_caps".equals(command))offloadCapabilities(result);
@@ -59,6 +60,7 @@ public final class MainActivity extends Activity {
         if (output == null || !output.matches("[a-zA-Z0-9_-]{1,80}\\.json")) output = "result.json";
         final String command = intent.getStringExtra("command");
         if ("webview".equals(command)) { webViewProbe(); return; }
+        if ("secure_decode".equals(command)) { secureDecodeProbe(intent); return; }
         new Thread(() -> {
             JSONObject result = new JSONObject();
             long started = SystemClock.elapsedRealtime();
@@ -67,6 +69,7 @@ public final class MainActivity extends Activity {
                 result.put("sdk", Build.VERSION.SDK_INT);
                 result.put("fingerprint", Build.FINGERPRINT);
                 if ("inventory".equals(command)) inventory(result);
+                else if ("drm".equals(command)) drm(result);
                 else if ("gpu".equals(command)) gpu(result);
                 else if ("decode".equals(command)) decode(result, intent);
                 else if ("encode".equals(command)) encode(result, intent);
@@ -82,6 +85,117 @@ public final class MainActivity extends Activity {
             try { result.put("elapsed_ms", SystemClock.elapsedRealtime() - started); } catch (Exception ignored) {}
             save(result);
         }, "hardware-probe").start();
+    }
+
+    private void secureDecodeProbe(Intent intent) {
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
+        SurfaceView view=new SurfaceView(this);view.setSecure(true);setContentView(view);
+        view.getHolder().addCallback(new SurfaceHolder.Callback(){boolean started;
+            @Override public void surfaceCreated(SurfaceHolder holder){
+                if(started)return;started=true;
+                new Thread(()->{
+                    JSONObject result=new JSONObject();long begin=SystemClock.elapsedRealtime();
+                    try{secureDecode(result,intent,holder.getSurface());}
+                    catch(Throwable error){try{result.put("passed",false).put("error",Log.getStackTraceString(error));}catch(Exception ignored){}}
+                    try{result.put("elapsed_ms",SystemClock.elapsedRealtime()-begin);}catch(Exception ignored){}
+                    save(result);
+                },"secure-decode-probe").start();
+            }
+            @Override public void surfaceChanged(SurfaceHolder holder,int format,int width,int height){}
+            @Override public void surfaceDestroyed(SurfaceHolder holder){}
+        });
+    }
+
+    private static void secureDecode(JSONObject result,Intent intent,Surface surface) throws Exception {
+        String path=intent.getStringExtra("input"),name=intent.getStringExtra("codec");
+        File file=new File(path);String canonical=file.getCanonicalPath();
+        if(!canonical.matches("/data/local/tmp/tabs3-media-[a-f0-9]{12}/[a-zA-Z0-9_.-]+") || !file.isFile())
+            throw new IllegalArgumentException("Input must be a staged generated fixture");
+        if(name==null || !name.matches("OMX\\.qcom\\.video\\.decoder\\.[a-z0-9]+\\.secure"))
+            throw new IllegalArgumentException("An explicit Qualcomm secure decoder is required");
+        MediaExtractor extractor=new MediaExtractor();MediaCodec codec=null;MediaDrm drm=null;MediaCrypto crypto=null;
+        byte[] session=null;boolean started=false;
+        try{
+            extractor.setDataSource(path);MediaFormat format=null;int track=-1;
+            for(int i=0;i<extractor.getTrackCount();i++){MediaFormat f=extractor.getTrackFormat(i);String mime=f.getString(MediaFormat.KEY_MIME);if(mime.startsWith("video/")){format=f;track=i;break;}}
+            if(format==null)throw new IllegalStateException("No video track");extractor.selectTrack(track);
+            boolean stripCsd=intent.getBooleanExtra("strip_csd",false),startOnly=intent.getBooleanExtra("start_only",false);
+            boolean splitHevcCsd=intent.getBooleanExtra("split_hevc_csd",false);
+            boolean manualCsd=intent.getBooleanExtra("manual_csd",false);byte[] manualCsdBytes=null;
+            if(manualCsd){
+                ByteBuffer csd=format.getByteBuffer("csd-0");if(csd==null)throw new IllegalArgumentException("manual_csd requires csd-0");
+                ByteBuffer copy=csd.duplicate();manualCsdBytes=new byte[copy.remaining()];copy.get(manualCsdBytes);
+                for(int i=0;i<4;i++)format.removeKey("csd-"+i);
+            }
+            int splitCsdCount=0;
+            if(splitHevcCsd){
+                ByteBuffer csd=format.getByteBuffer("csd-0");
+                if(csd==null)throw new IllegalArgumentException("split_hevc_csd requires csd-0");
+                ArrayList<byte[]> units=splitAnnexB(csd);
+                if(units.size()<3)throw new IllegalArgumentException("Expected at least VPS, SPS and PPS in csd-0");
+                for(int i=0;i<4;i++)format.removeKey("csd-"+i);
+                for(byte[] unit:units)format.setByteBuffer("csd-"+(splitCsdCount++),ByteBuffer.wrap(unit));
+            }
+            if(stripCsd)for(int i=0;i<4;i++)format.removeKey("csd-"+i);
+            format.setFeatureEnabled(MediaCodecInfo.CodecCapabilities.FEATURE_SecurePlayback,true);
+            UUID widevine=new UUID(0xedef8ba979d64aceL,0xa3c827dcd51d21edL);
+            drm=new MediaDrm(widevine);session=drm.openSession();crypto=new MediaCrypto(widevine,session);
+            codec=MediaCodec.createByCodecName(name);
+            result.put("command","secure_decode").put("input",file.getName()).put("component",name)
+                    .put("format",format.toString()).put("strip_csd",stripCsd).put("manual_csd",manualCsd)
+                    .put("split_hevc_csd",splitHevcCsd)
+                    .put("split_csd_count",splitCsdCount).put("start_only",startOnly)
+                    .put("session_security_level",drm.getSecurityLevel(session));
+            codec.configure(format,surface,crypto,0);codec.start();started=true;
+            if(startOnly){
+                SystemClock.sleep(1500);MediaCodec.BufferInfo startInfo=new MediaCodec.BufferInfo();
+                result.put("dequeue_after_start",codec.dequeueOutputBuffer(startInfo,0)).put("passed",true)
+                        .put("limits","Configures and starts the secure decoder without client input, then checks that it remains executable; it does not decode a frame.");
+                return;
+            }
+            if(manualCsd){
+                int index=codec.dequeueInputBuffer(2000000);if(index<0)throw new IllegalStateException("No input buffer for manual CSD");
+                ByteBuffer buffer=codec.getInputBuffer(index);buffer.put(manualCsdBytes);
+                codec.queueInputBuffer(index,0,manualCsdBytes.length,0,0);result.put("manual_csd_bytes",manualCsdBytes.length);
+            }
+            boolean inputEOS=false,outputEOS=false;int inputSamples=0,outputBuffers=0,payloadBuffers=0;
+            HashSet<Long> outputTimestamps=new HashSet<>();MediaCodec.BufferInfo info=new MediaCodec.BufferInfo();
+            long begin=SystemClock.elapsedRealtime();
+            while(!outputEOS){
+                if(SystemClock.elapsedRealtime()-begin>20000)throw new IllegalStateException("Secure decode exceeded 20 seconds");
+                if(!inputEOS){int index=codec.dequeueInputBuffer(1000);if(index>=0){ByteBuffer buffer=codec.getInputBuffer(index);int size=extractor.readSampleData(buffer,0);
+                    if(size<0){codec.queueInputBuffer(index,0,0,0,MediaCodec.BUFFER_FLAG_END_OF_STREAM);inputEOS=true;}
+                    else{codec.queueInputBuffer(index,0,size,extractor.getSampleTime(),0);extractor.advance();inputSamples++;}}}
+                int index=codec.dequeueOutputBuffer(info,1000);
+                if(index>=0){
+                    outputBuffers++;
+                    boolean frame=info.size>0 && (info.flags&MediaCodec.BUFFER_FLAG_CODEC_CONFIG)==0;
+                    if(frame){payloadBuffers++;outputTimestamps.add(info.presentationTimeUs);}
+                    codec.releaseOutputBuffer(index,frame);outputEOS=(info.flags&MediaCodec.BUFFER_FLAG_END_OF_STREAM)!=0;
+                }
+            }
+            result.put("input_samples",inputSamples).put("output_buffers",outputBuffers)
+                    .put("output_buffers_with_payload",payloadBuffers).put("output_frames",outputTimestamps.size())
+                    .put("output_eos",outputEOS).put("passed",outputEOS&&outputTimestamps.size()==inputSamples)
+                    .put("limits","Generated clear fixture through an L1 MediaCrypto session and protected SurfaceView; validates secure decoder initialization and unencrypted subsamples, not licensed encrypted playback or visible protected pixels.");
+        }finally{
+            if(codec!=null){if(started)try{codec.stop();}catch(Exception ignored){}codec.release();}
+            if(crypto!=null)crypto.release();if(drm!=null){if(session!=null)try{drm.closeSession(session);}catch(Exception ignored){}drm.close();}extractor.release();
+        }
+    }
+
+    private static ArrayList<byte[]> splitAnnexB(ByteBuffer source) {
+        ByteBuffer copy=source.duplicate();byte[] data=new byte[copy.remaining()];copy.get(data);
+        ArrayList<Integer> starts=new ArrayList<>();
+        for(int i=0;i+3<data.length;i++){
+            int length=0;
+            if(data[i]==0&&data[i+1]==0&&data[i+2]==1)length=3;
+            else if(i+4<=data.length&&data[i]==0&&data[i+1]==0&&data[i+2]==0&&data[i+3]==1)length=4;
+            if(length>0){starts.add(i);i+=length-1;}
+        }
+        ArrayList<byte[]> result=new ArrayList<>();
+        for(int i=0;i<starts.size();i++)result.add(Arrays.copyOfRange(data,starts.get(i),i+1<starts.size()?starts.get(i+1):data.length));
+        return result;
     }
 
     private synchronized void save(JSONObject result) {
@@ -167,6 +281,49 @@ public final class MainActivity extends Activity {
         }
         result.put("codecs", codecs); result.put("passed", codecs.length() > 0);
         result.put("limits", "Inventory describes advertised support; it does not prove decoding or hardware execution.");
+    }
+
+    private static void drm(JSONObject result) throws Exception {
+        UUID widevine = new UUID(0xedef8ba979d64aceL, 0xa3c827dcd51d21edL);
+        result.put("widevine_uuid", widevine.toString());
+        result.put("scheme_supported", MediaDrm.isCryptoSchemeSupported(widevine));
+        JSONObject levels = new JSONObject();
+        for (int level : new int[] { MediaDrm.SECURITY_LEVEL_SW_SECURE_CRYPTO,
+                                     MediaDrm.SECURITY_LEVEL_SW_SECURE_DECODE,
+                                     MediaDrm.SECURITY_LEVEL_HW_SECURE_CRYPTO,
+                                     MediaDrm.SECURITY_LEVEL_HW_SECURE_DECODE,
+                                     MediaDrm.SECURITY_LEVEL_HW_SECURE_ALL }) {
+            try { levels.put(Integer.toString(level), MediaDrm.isCryptoSchemeSupported(widevine, null, level)); }
+            catch (Throwable error) { levels.put(Integer.toString(level), "error: " + error); }
+        }
+        result.put("supported_security_levels", levels);
+        MediaDrm drm = new MediaDrm(widevine);
+        byte[] session = null;
+        try {
+            JSONObject properties = new JSONObject();
+            for (String property : new String[] { MediaDrm.PROPERTY_VENDOR, MediaDrm.PROPERTY_VERSION,
+                                                  MediaDrm.PROPERTY_DESCRIPTION, MediaDrm.PROPERTY_ALGORITHMS,
+                                                  "securityLevel", "systemId" }) {
+                try { properties.put(property, drm.getPropertyString(property)); }
+                catch (Throwable error) { properties.put(property, "error: " + error); }
+            }
+            result.put("properties", properties);
+            try { result.put("max_security_level", drm.getMaxSecurityLevel()); }
+            catch (Throwable error) { result.put("max_security_level_error", error.toString()); }
+            try { result.put("connected_hdcp_level", drm.getConnectedHdcpLevel()); }
+            catch (Throwable error) { result.put("connected_hdcp_level_error", error.toString()); }
+            try { result.put("max_hdcp_level", drm.getMaxHdcpLevel()); }
+            catch (Throwable error) { result.put("max_hdcp_level_error", error.toString()); }
+            session = drm.openSession();
+            result.put("session_opened", true);
+            try { result.put("session_security_level", drm.getSecurityLevel(session)); }
+            catch (Throwable error) { result.put("session_security_level_error", error.toString()); }
+            result.put("passed", true);
+        } finally {
+            if (session != null) try { drm.closeSession(session); } catch (Throwable ignored) {}
+            drm.close();
+        }
+        result.put("limits", "Reports framework/HAL capabilities and session creation; it does not request a license or prove that any streaming service accepts the device.");
     }
 
     private static FloatBuffer floats(float[] values) {

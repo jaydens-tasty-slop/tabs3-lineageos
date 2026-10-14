@@ -1,3 +1,126 @@
+diff --git a/media/libstagefright/MediaCodec.cpp b/media/libstagefright/MediaCodec.cpp
+index ccd7790619e779d7e3310cad2cdf0a8022095e3f..16c99f5be146ddccd6fa41e20c67fb3b44a3bad2 100644
+--- a/media/libstagefright/MediaCodec.cpp
++++ b/media/libstagefright/MediaCodec.cpp
+@@ -5221,7 +5221,18 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
+                         break;
+                     }
+ 
+-                    if (!mCSD.empty()) {
++                    // VIDEO.VE.4.4 on msm8996 fatally asserts when the legacy
++                    // secure HEVC decoder receives a parameter-set-only input
++                    // buffer. Defer its CSD and prepend it to the first access
++                    // unit instead. The same firmware accepts that in-band form.
++                    const bool prependSecureHevcCsd =
++                            mComponentName.startsWith("OMX.qcom.")
++                            && mComponentName.endsWith(".video.decoder.hevc.secure");
++                    if (!mCSD.empty() && prependSecureHevcCsd) {
++                        ALOGV("[%s] deferring %zu secure HEVC CSD buffer(s)",
++                                mComponentName.c_str(), mCSD.size());
++                    }
++                    if (!mCSD.empty() && !prependSecureHevcCsd) {
+                         ssize_t index = dequeuePortBuffer(kPortIndexInput);
+                         CHECK_GE(index, 0);
+ 
+@@ -7115,8 +7126,10 @@ status_t MediaCodec::onQueueInputBuffer(const sp<AMessage> &msg) {
+ 
+     // We allow the simpler queueInputBuffer API to be used even in
+     // secure mode, by fabricating a single unencrypted subSample.
+-    CryptoPlugin::SubSample ss;
+-    CryptoPlugin::Pattern pattern;
++    CryptoPlugin::SubSample ss{};
++    CryptoPlugin::Pattern pattern{};
++    bool hasSizeField = false;
++    bool hasCryptoInfos = false;
+ 
+     if (android::media::codec::provider_->secure_codecs_require_crypto()
+             && (mFlags & kFlagIsSecure) && !hasCryptoOrDescrambler()) {
+@@ -7124,7 +7137,7 @@ status_t MediaCodec::onQueueInputBuffer(const sp<AMessage> &msg) {
+         return INVALID_OPERATION;
+     }
+ 
+-    if (msg->findSize("size", &size)) {
++    if ((hasSizeField = msg->findSize("size", &size))) {
+         if (hasCryptoOrDescrambler()) {
+             ss.mNumBytesOfClearData = size;
+             ss.mNumBytesOfEncryptedData = 0;
+@@ -7143,6 +7156,7 @@ status_t MediaCodec::onQueueInputBuffer(const sp<AMessage> &msg) {
+         }
+         sp<RefBase> obj;
+         if (msg->findObject("cryptoInfos", &obj)) {
++            hasCryptoInfos = true;
+             CHECK(msg->findSize("ssize", &size));
+         } else {
+             CHECK(msg->findPointer("subSamples", (void **)&subSamples));
+@@ -7182,6 +7196,68 @@ status_t MediaCodec::onQueueInputBuffer(const sp<AMessage> &msg) {
+                 "client does not own the buffer #%zu", index));
+         return -EACCES;
+     }
++
++    std::vector<CryptoPlugin::SubSample> prependedSubSamples;
++    const bool prependSecureHevcCsd =
++            mComponentName.startsWith("OMX.qcom.")
++            && mComponentName.endsWith(".video.decoder.hevc.secure")
++            && hasCryptoOrDescrambler()
++            && !hasCryptoInfos && !mCSD.empty() && size > 0;
++    if (prependSecureHevcCsd) {
++        size_t csdSize = 0;
++        for (const sp<ABuffer>& csd : mCSD) {
++            if (__builtin_add_overflow(csdSize, csd->size(), &csdSize)) {
++                return -EOVERFLOW;
++            }
++        }
++        if (csdSize > UINT32_MAX) {
++            return -EOVERFLOW;
++        }
++        const uint32_t csdSize32 = static_cast<uint32_t>(csdSize);
++        if (hasSizeField) {
++            if (ss.mNumBytesOfClearData > UINT32_MAX - csdSize32) {
++                return -EOVERFLOW;
++            }
++            ss.mNumBytesOfClearData += csdSize32;
++        } else {
++            if (numSubSamples > 0) {
++                if (subSamples == nullptr) {
++                    return -EINVAL;
++                }
++                prependedSubSamples.assign(subSamples, subSamples + numSubSamples);
++            }
++            if (prependedSubSamples.empty()) {
++                CryptoPlugin::SubSample prefix{csdSize32, 0};
++                prependedSubSamples.push_back(prefix);
++            } else {
++                if (prependedSubSamples[0].mNumBytesOfClearData > UINT32_MAX - csdSize32) {
++                    return -EOVERFLOW;
++                }
++                prependedSubSamples[0].mNumBytesOfClearData += csdSize32;
++            }
++            subSamples = prependedSubSamples.data();
++            numSubSamples = prependedSubSamples.size();
++        }
++
++        if (offset > buffer->capacity() || size > buffer->capacity() - offset
++                || csdSize > buffer->capacity() - offset - size) {
++            mErrorLog.log(LOG_TAG, base::StringPrintf(
++                    "secure HEVC CSD prefix does not fit (csd=%zu, offset=%zu, size=%zu, cap=%zu)",
++                    csdSize, offset, size, buffer->capacity()));
++            return -EINVAL;
++        }
++        uint8_t *base = buffer->base();
++        memmove(base + offset + csdSize, base + offset, size);
++        size_t writeOffset = offset;
++        for (const sp<ABuffer>& csd : mCSD) {
++            memcpy(base + writeOffset, csd->data(), csd->size());
++            writeOffset += csd->size();
++        }
++        size += csdSize;
++        ALOGV("[%s] prepended %zu CSD bytes to the first secure HEVC access unit",
++                mComponentName.c_str(), csdSize);
++        mCSD.clear();
++    }
+     auto setInputBufferParams = [this, &msg, &buffer]
+         (int64_t timeUs, uint32_t flags = 0) -> status_t {
+         status_t err = OK;
 diff --git a/media/module/mpeg2ts/ESQueue.cpp b/media/module/mpeg2ts/ESQueue.cpp
 index 2dc7b0a597e6657af36bbfeda746a51c92a2427f..a26b7af7469a274de5c18e6a2b7f05921df7705b 100644
 --- a/media/module/mpeg2ts/ESQueue.cpp
@@ -249,37 +372,37 @@ index 0000000000000000000000000000000000000000..5a68e7a51b6d5b364a27e14314e51009
 +    EXPECT_EQ(position, 0u);
 +}
 diff --git a/services/audiopolicy/managerdefault/AudioPolicyManager.cpp b/services/audiopolicy/managerdefault/AudioPolicyManager.cpp
-index abf765547032d7a1df60bcc87e3ae5cebf389952..46a02f209421bd02880475f9930b89e21729b60e 100644
+index 2b588eceec2d6b7a644ee5e1d8e8c39a27c3b368..b2299606d7bba0e47a0b71e6712a4e59fe0f916f 100644
 --- a/services/audiopolicy/managerdefault/AudioPolicyManager.cpp
 +++ b/services/audiopolicy/managerdefault/AudioPolicyManager.cpp
 @@ -46,6 +46,7 @@
- #include <android_media_audiopolicy.h>
+ #include <com_android_media_audio.h>
  #include <com_android_media_audioserver.h>
  #include <cutils/bitops.h>
 +#include <cutils/properties.h>
  #include <error/expected_utils.h>
  #include <media/AudioParameter.h>
  #include <policy.h>
-@@ -337,6 +338,7 @@ status_t AudioPolicyManager::setDeviceConnectionStateInt(const sp<DeviceDescript
+@@ -367,6 +368,7 @@ status_t AudioPolicyManager::setDeviceConnectionStateInt(const sp<DeviceDescript
              }
          }
  
 +        bool closedDirectOutputProbe = false;
          auto checkCloseOutputs = [&]() {
              // outputs must be closed after checkOutputForAllStrategies() is executed
-             if (!outputs.empty()) {
-@@ -350,6 +352,10 @@ status_t AudioPolicyManager::setDeviceConnectionStateInt(const sp<DeviceDescript
-                                 (desc->mDirectOpenCount == 0))
-                             || (((desc->mFlags & AUDIO_OUTPUT_FLAG_SPATIALIZER) != 0) &&
-                                 !isOutputOnlyAvailableRouteToSomeDevice(desc))) {
-+                        if ((desc->mFlags & AUDIO_OUTPUT_FLAG_DIRECT) != 0 &&
-+                                desc->mDirectOpenCount == 0) {
-+                            closedDirectOutputProbe = true;
-+                        }
-                         clearAudioSourcesForOutput(output);
-                         closeOutput(output);
-                     }
-@@ -414,6 +420,38 @@ status_t AudioPolicyManager::setDeviceConnectionStateInt(const sp<DeviceDescript
+             for (audio_io_handle_t output : outputs) {
+@@ -379,6 +381,10 @@ status_t AudioPolicyManager::setDeviceConnectionStateInt(const sp<DeviceDescript
+                             (desc->mDirectOpenCount == 0))
+                         || (((desc->mFlags & AUDIO_OUTPUT_FLAG_SPATIALIZER) != 0) &&
+                             !isOutputOnlyAvailableRouteToSomeDevice(desc))) {
++                    if ((desc->mFlags & AUDIO_OUTPUT_FLAG_DIRECT) != 0 &&
++                            desc->mDirectOpenCount == 0) {
++                        closedDirectOutputProbe = true;
++                    }
+                     clearAudioSourcesForOutput(output);
+                     closeOutput(output);
+                 }
+@@ -442,6 +448,38 @@ status_t AudioPolicyManager::setDeviceConnectionStateInt(const sp<DeviceDescript
              reopenOutputsWithDevices(outputsToReopenWithDevices);
          }
  

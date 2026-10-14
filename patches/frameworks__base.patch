@@ -1,8 +1,8 @@
 diff --git a/libs/hwui/jni/Bitmap.cpp b/libs/hwui/jni/Bitmap.cpp
-index 1d4576156d51fe47154bca56e8f9d369627894ea..194993706902f67f2e6840c0e76dcebf4884da11 100644
+index d97d1bca4616c352599344075c0ed089aea7c436..d845ff89fb8554abc558a6adf7d5d9f87b349692 100644
 --- a/libs/hwui/jni/Bitmap.cpp
 +++ b/libs/hwui/jni/Bitmap.cpp
-@@ -761,6 +761,18 @@ static constexpr bool shouldUseAshmem(AParcel* parcel, int32_t size) {
+@@ -774,6 +774,18 @@ static constexpr bool shouldUseAshmem(AParcel* parcel, int32_t size) {
      return size > BLOB_INPLACE_LIMIT && AParcel_getAllowFds(parcel);
  }
  
@@ -21,12 +21,143 @@ index 1d4576156d51fe47154bca56e8f9d369627894ea..194993706902f67f2e6840c0e76dcebf
  static binder_status_t writeBlobFromFd(AParcel* parcel, int32_t size, int fd) {
      binder_status_t error = STATUS_OK;
      ON_ERROR_RETURN(AParcel_writeInt32(parcel, static_cast<int32_t>(BlobType::ASHMEM)));
-@@ -784,7 +796,7 @@ static binder_status_t writeBlob(AParcel* parcel, uint64_t bitmapId, const SkBit
+@@ -797,27 +809,48 @@ static binder_status_t writeBlob(AParcel* parcel, uint64_t bitmapId, const SkBit
                                              bitmap.width(), bitmap.height(), size);
          base::unique_fd fd;
  
--        if (com::android::graphics::hwui::flags::bitmap_use_memfd()) {
-+        if (com::android::graphics::hwui::flags::bitmap_use_memfd() && supportsBitmapMemfd()) {
-             fd.reset(syscall(__NR_memfd_create, ashmemId.c_str(), MFD_CLOEXEC | MFD_ALLOW_SEALING));
-             if (fd.get() < 0) {
-                 return STATUS_NO_MEMORY;
+-        fd.reset(syscall(__NR_memfd_create, ashmemId.c_str(), MFD_CLOEXEC | MFD_ALLOW_SEALING));
+-        if (fd.get() < 0) {
+-            return STATUS_NO_MEMORY;
+-        }
++        if (supportsBitmapMemfd()) {
++            fd.reset(syscall(__NR_memfd_create, ashmemId.c_str(), MFD_CLOEXEC | MFD_ALLOW_SEALING));
++            if (fd.get() < 0) {
++                return STATUS_NO_MEMORY;
++            }
+ 
+-        ssize_t written = write(fd.get(), data, size);
+-        if (written != size) {
+-            return STATUS_NO_MEMORY;
+-        }
++            ssize_t written = write(fd.get(), data, size);
++            if (written != size) {
++                return STATUS_NO_MEMORY;
++            }
++
++            if (fcntl(fd, F_ADD_SEALS,
++                      // Disallow growing / shrinking.
++                      F_SEAL_GROW | F_SEAL_SHRINK
++                      // If immutable, disallow writing.
++                      // Use F_SEAL_FUTURE_WRITE instead of F_SEAL_WRITE to work around a bug in
++                      // pre-6.7 kernels.
++                      // There are no writable mappings made prior to this, so both seals are
++                      // functionally equivalent.
++                      // See: b/409846908#comment39
++                      | (immutable ? F_SEAL_FUTURE_WRITE : 0))) {
++                return STATUS_UNKNOWN_ERROR;
++            }
+ 
+-        if (fcntl(fd, F_ADD_SEALS,
+-                    // Disallow growing / shrinking.
+-                    F_SEAL_GROW | F_SEAL_SHRINK
+-                    // If immutable, disallow writing.
+-                    // Use F_SEAL_FUTURE_WRITE instead of F_SEAL_WRITE to work around a bug in
+-                    // pre-6.7 kernels.
+-                    // There are no writable mappings made prior to this, so both seals are
+-                    // functionally equivalent.
+-                    // See: b/409846908#comment39
+-                    | (immutable ? F_SEAL_FUTURE_WRITE : 0))) {
+-            return STATUS_UNKNOWN_ERROR;
++        } else {
++            fd.reset(ashmem_create_region(ashmemId.c_str(), size));
++            if (fd.get() < 0) {
++                return STATUS_NO_MEMORY;
++            }
++
++            {
++                void* dest = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd.get(), 0);
++                if (dest == MAP_FAILED) {
++                    return STATUS_NO_MEMORY;
++                }
++                memcpy(dest, data, size);
++                munmap(dest, size);
++            }
++
++            if (immutable && ashmem_set_prot_region(fd.get(), PROT_READ) < 0) {
++                return STATUS_UNKNOWN_ERROR;
++            }
+         }
+ 
+         // Workaround b/149851140 in AParcel_writeParcelFileDescriptor
+diff --git a/services/core/jni/com_android_server_am_CachedAppOptimizer.cpp b/services/core/jni/com_android_server_am_CachedAppOptimizer.cpp
+index 8b9d34768384fc0451e61fc5c8cc97c415fbeff0..30999c4c0e4b942158402dbbb30670690ae31f60 100644
+--- a/services/core/jni/com_android_server_am_CachedAppOptimizer.cpp
++++ b/services/core/jni/com_android_server_am_CachedAppOptimizer.cpp
+@@ -27,6 +27,7 @@
+ #include <binder/BinderNetlink.h>
+ #include <cutils/compiler.h>
+ #include <dirent.h>
++#include <fcntl.h>
+ #include <jni.h>
+ #include <linux/android/binderfs.h>
+ #include <linux/errno.h>
+@@ -96,6 +97,10 @@ static bindernetlink::BinderNetlink binderNetlink;
+ // before starting next VMA batch
+ static std::atomic<bool> cancelRunningCompaction;
+ 
++// Kernel 3.18 predates pidfd_open(2) and process_madvise(2), but Qualcomm's
++// process-reclaim interface provides equivalent whole-process actions.
++static std::atomic<bool> useLegacyProcessReclaim;
++
+ // A VmaBatch represents a set of VMAs that can be processed
+ // as VMAs are processed by client code it is expected that the
+ // VMAs get consumed which means they are discarded as they are
+@@ -419,10 +424,35 @@ static int64_t compactProcess(int pid, VmaToAdviseFunc vmaToAdviseFunc) {
+     return pageoutBytes + coldBytes;
+ }
+ 
++static int reclaimProcessLegacy(int pid, int compactionFlags) {
++    cancelRunningCompaction.store(false);
++    if (CC_UNLIKELY(cancelRunningCompaction.load())) {
++        return ERROR_COMPACTION_CANCELLED;
++    }
++
++    const bool compactAnon = compactionFlags & COMPACT_ACTION_ANON_FLAG;
++    const bool compactFile = compactionFlags & COMPACT_ACTION_FILE_FLAG;
++    const char* action = compactAnon ? (compactFile ? "all" : "anon") : "file";
++    const std::string path = StringPrintf("/proc/%d/reclaim", pid);
++    unique_fd fd(TEMP_FAILURE_RETRY(open(path.c_str(), O_WRONLY | O_CLOEXEC)));
++    if (fd < 0) {
++        return -errno;
++    }
++    if (!android::base::WriteStringToFd(action, fd)) {
++        return errno == 0 ? -EIO : -errno;
++    }
++    return 0;
++}
++
+ // Compact process using process_madvise syscall
+ static void compactProcess(int pid, int compactionFlags) {
+     if ((compactionFlags & (COMPACT_ACTION_ANON_FLAG | COMPACT_ACTION_FILE_FLAG)) == 0) return;
+ 
++    if (useLegacyProcessReclaim.load()) {
++        reclaimProcessLegacy(pid, compactionFlags);
++        return;
++    }
++
+     bool compactAnon = compactionFlags & COMPACT_ACTION_ANON_FLAG;
+     bool compactFile = compactionFlags & COMPACT_ACTION_FILE_FLAG;
+ 
+@@ -438,7 +468,11 @@ static void compactProcess(int pid, int compactionFlags) {
+         vmaToAdviseFunc = getFilePageAdvice;
+     }
+ 
+-    compactProcess(pid, vmaToAdviseFunc);
++    const int64_t result = compactProcess(pid, vmaToAdviseFunc);
++    if (result == -ENOSYS) {
++        useLegacyProcessReclaim.store(true);
++        reclaimProcessLegacy(pid, compactionFlags);
++    }
+ }
+ 
+ static std::string profileFromCompactionFlags(int compactionFlags) {

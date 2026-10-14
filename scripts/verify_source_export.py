@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+ANDROID = pathlib.Path(os.environ.get("TAB_S3_ANDROID_DIR", ROOT / "android")).resolve()
 
 
 def main():
@@ -21,7 +22,7 @@ def main():
             assert hashlib.sha256(patch.read_bytes()).hexdigest() == change["sha256"]
             environment = os.environ.copy()
             environment["GIT_INDEX_FILE"] = str(pathlib.Path(fixture) / str(number))
-            command = ["git", "-C", str(ROOT / "android" / change["path"])]
+            command = ["git", "-C", str(ANDROID / change["path"])]
 
             def git(*args):
                 return subprocess.check_output(command + list(args), env=environment)

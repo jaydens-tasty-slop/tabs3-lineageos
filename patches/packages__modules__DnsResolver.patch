@@ -1,0 +1,14 @@
+diff --git a/Android.bp b/Android.bp
+index 6ad4fa4c71a07dddd410e7a6a713be28ac05893a..7ffafcc9b236911b82878eff2132600d2cac1da0 100644
+--- a/Android.bp
++++ b/Android.bp
+@@ -319,6 +319,9 @@ cc_library {
+         "libcrypto",
+         "libcutils",
+         "liblog", //Used by libstatslog_resolv
++        // libdns_helper is linked statically and its legacy-kernel fallback
++        // calls into this shared library, so keep the dependency explicit.
++        "libnetd_updatable",
+         "libnetdutils",
+         "libssl",
+         "libstatssocket",

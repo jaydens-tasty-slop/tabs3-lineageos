@@ -5,6 +5,8 @@ task_workspace=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 task_image=localhost/lineageos-gts3-build:ubuntu22.04
 task_smoke_image=localhost/lineageos-gts3-media:ubuntu22.04
 task_container=${TAB_S3_BUILD_CONTAINER:-lineageos-gts3-rom-build}
+task_build_memory=${TAB_S3_BUILD_MEMORY:-38g}
+task_build_memory_swap=${TAB_S3_BUILD_MEMORY_SWAP:-48g}
 task_action=${1:-status}
 if [ "$#" -gt 0 ]; then shift; fi
 
@@ -98,7 +100,7 @@ case "$task_action" in
         mkdir -p "$task_workspace/logs" "$task_workspace/state"
         task_podman_run --name "$task_container" --pull=never --init --network=none \
             --userns=keep-id --user "$(id -u):$(id -g)" \
-            --cpus=24 --memory=38g --memory-swap=48g \
+            --cpus=24 --memory="$task_build_memory" --memory-swap="$task_build_memory_swap" \
             --security-opt=no-new-privileges --cap-drop=ALL \
             --env PYTHONDONTWRITEBYTECODE=1 \
             --volume "$task_workspace:/workspace" --workdir /workspace \

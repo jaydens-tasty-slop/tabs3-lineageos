@@ -3,25 +3,33 @@
 This release targets **SM-T820 Wi-Fi only**. Results cover one tablet;
 SM-T825/LTE is unsupported. Google Apps are optional and separately installed.
 
-## Exact release checks
+## Android 17 candidate status
 
-`lineage-23.2-20261010_003605-UNOFFICIAL-gts3lwifi.zip` uses private persistent
-signing keys and kernel `3.18.140-jaydenmilne-tabs3-v1+`, #17.
+The final Android 17 package is not yet published. Iterative development builds
+have booted through setup and exercised touch, rotation, Wi-Fi, Bluetooth,
+fingerprint enrollment, flashlight, speakers, microphone, front/rear still
+capture and 1080p recording. These observations do not qualify the forthcoming
+cleanly reconstructed package.
 
-- Offline source, System/Boot/OTA, APK/APEX signature, APEX payload and ADB
-  cleanup audits passed. All 34 APEX modules became active after boot.
-- A same-key TWRP update preserved the separately installed MindTheGapps
-  add-on. Boot completed in about 111 seconds. The previous signed build
-  passed a clean installation; this exact ZIP's clean install is untested.
-- All 20 arm32/arm64 bitmap roundtrips and ten ordinary-app bitmap cases
-  passed. Settings → Users, Digital Wellbeing and offline Google TTS worked
-  after normal unlock. Bounded core-process checks passed with no crash-buffer
-  entries at the final capture.
-- An unplugged observation lasted **11h48m**, with battery **100% → 98%**,
-  unchanged boot/core identities and no recorded fatal crash. One AP-initiated
-  inactivity disconnect recovered with the screen off: IP configuration in
-  683 ms and validated internet in 993 ms. The older multi-hour Wi-Fi outage
-  did not recur during this interval.
+Widevine remains L1 in development testing. After a Qualcomm secure-HEVC CSD
+compatibility repair, generated protected streams and licensed Apple TV
+playback—including 1080p SDR and cached HDR content—played without the prior
+Venus decoder corruption. The repair still needs confirmation from the baked
+final package. Stock firmware's 4K30 camera mode has not been restored.
+
+The release gate requires `ro.secure=1`, `ro.adb.secure=1`,
+`ro.debuggable=0`, no embedded host ADB authorization key, matching built and
+OTA Boot/System payloads, and a successful clean installation.
+
+## Historical Android 16 checks
+
+The prior privately signed Android 16 release passed a clean installation and
+a same-key TWRP update with separate MindTheGapps. It passed bounded boot,
+core-process, bitmap, Settings/Wellbeing, offline TTS, hardware and media tests.
+An unplugged observation lasted **11h48m**, with battery **100% → 98%**,
+unchanged boot/core identities and no recorded fatal crash. One AP-initiated
+inactivity disconnect recovered with the screen off in about one second. These
+results guide Android 17 retesting but do not qualify the current artifact.
 
 The sleep endpoints included approximately 26 minutes of USB recharging;
 retained battery history established the actual precharge readings. Kernel
@@ -43,7 +51,7 @@ complete qualification to a new package.
 | Input | Touch, S-Pen, fingerprint, buttons and haptics; owner reports | Palm rejection and every accessory transition are not fully qualified |
 | Connectivity | Wi-Fi traffic/reconnect; owner verified Bluetooth pairing | All access points, profiles and prolonged sessions are not qualified |
 | Audio | Speaker/headphone playback, microphone capture; owner reports and bounded probes | Voice/video-call routing, all DSP paths and current-release audibility are not fully qualified |
-| Video | Generated AVC/HEVC decoder cases and 20-second 1080p60/4K30 clips, including HEVC Main10 | Secure playback, DRM, HDR, paced 60 fps and sustained performance are not qualified |
+| Video | Generated AVC/HEVC decoder cases, 1080p60/4K30 decode fixtures, protected HEVC controls and licensed Widevine L1 playback on development builds | Final-package secure playback, paced 60 fps and sustained performance are not qualified |
 | Encoding | Qualcomm AVC and HEVC encoders produced 30-frame outputs verified by independent host decoding | Long recordings and every rate/profile are not qualified |
 | Graphics | GLES2/3 drawing, ES3.1 and Vulkan compute; Chrome WebGL on Adreno 530 | Vulkan presentation, games and sustained workloads are not qualified |
 | Web | Local WebView/Chrome JavaScript and media fixtures | Browser frame drops remain; frame counters do not prove hardware decode for every frame |
@@ -72,8 +80,9 @@ nonsecure and one secure legacy VC-1/DivX component missing.
 - **Camera quality/endurance:** colors, the originally reported webcam green
   bar, long sessions, repeated cold boots and wider third-party use remain
   unqualified. Do not assume the original maintainer's camera issues are fixed.
-- **Unqualified hardware paths:** GPS fix, Widevine level, protected streaming,
-  HDR output, USB OTG, powered-off charging and voice/video calls.
+- **Unqualified hardware paths:** GPS fix, sustained protected streaming, HDR
+  output on the final package, USB OTG, powered-off charging and voice/video
+  calls.
 - **Double-tap-to-wake:** disabled in the inherited configuration. Actual
   Tab S3 touchscreen firmware support has not been established.
 - **Android Linux Terminal:** unsupported; the kernel does not enable
@@ -81,12 +90,10 @@ nonsecure and one secure legacy VC-1/DivX component missing.
 
 ## Google Apps and inherited limits
 
-A prior signed clean install with MindTheGapps Android 16 ARM64 booted. The
-exact release retained that add-on through a same-key update and passed scoped
-post-unlock Settings/Wellbeing/TTS checks. Some Google extras previously logged
-startup errors before the first unlock. Google account setup, sign-in, Play
-Store certification/downloads and broad interactive Google Apps behavior remain
-unqualified.
+A prior signed Android 16 clean install with MindTheGapps booted. No Android 17
+Google Apps package has been qualified; do not reuse the Android 16 package.
+Google account setup, sign-in, Play Store certification/downloads and broad
+interactive Google Apps behavior remain unqualified.
 
 SELinux is **permissive**, Data encryption is **unsupported**, and Android
 Verified Boot is **disabled**. Samsung/Qualcomm kernel and vendor components

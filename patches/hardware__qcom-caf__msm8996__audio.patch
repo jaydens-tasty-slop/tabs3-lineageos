@@ -44,6 +44,76 @@ index 362af77ecf43eaec551caba57b38612a131e9014..12ca74798ca90d720b4e3e8d82525e1e
  
  ifeq ($(strip $(AUDIO_FEATURE_ENABLED_EXT_HDMI)),true)
      LOCAL_CFLAGS += -DAUDIO_EXTERNAL_HDMI_ENABLED
+diff --git a/post_proc/Android.mk b/post_proc/Android.mk
+index 171c164a1a9457dedcd3674457f203f9b7d03dc4..9981c4b014a43be866cbacc672ee1029d4663235 100644
+--- a/post_proc/Android.mk
++++ b/post_proc/Android.mk
+@@ -49,7 +49,7 @@ ifneq ($(strip $(AUDIO_FEATURE_DISABLED_DTS_EAGLE)),true)
+     LOCAL_CFLAGS += -DDTS_EAGLE
+ endif
+ 
+-LOCAL_HEADER_LIBRARIES := libhardware_headers \
++LOCAL_HEADER_LIBRARIES := generated_kernel_headers libhardware_headers \
+                           libsystem_headers \
+                           libutils_headers
+ 
+@@ -65,12 +65,9 @@ LOCAL_MODULE_RELATIVE_PATH := soundfx
+ LOCAL_MODULE:= libqcompostprocbundle
+ LOCAL_VENDOR_MODULE := true
+ 
+-LOCAL_ADDITIONAL_DEPENDENCIES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr
+ 
+ LOCAL_C_INCLUDES := \
+         external/tinyalsa/include \
+-        $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include \
+-	$(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/techpack/audio/include \
+         $(call include-path-for, audio-effects)
+ 
+ ifeq ($(strip $(AUDIO_FEATURE_ENABLED_DLKM)),true)
+@@ -79,10 +76,6 @@ ifeq ($(strip $(AUDIO_FEATURE_ENABLED_DLKM)),true)
+   LOCAL_ADDITIONAL_DEPENDENCIES += $(BOARD_VENDOR_KERNEL_MODULES)
+ endif
+ 
+-ifeq ($(TARGET_COMPILE_WITH_MSM_KERNEL),true)
+-        LOCAL_C_INCLUDES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/techpack/audio/include
+-        LOCAL_ADDITIONAL_DEPENDENCIES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr
+-endif
+ 
+ include $(BUILD_SHARED_LIBRARY)
+ 
+@@ -110,7 +103,7 @@ LOCAL_SRC_FILES:= \
+ 
+ LOCAL_CFLAGS+= -O2 -fvisibility=hidden
+ 
+-LOCAL_HEADER_LIBRARIES := libhardware_headers \
++LOCAL_HEADER_LIBRARIES := generated_kernel_headers libhardware_headers \
+                           libsystem_headers \
+                           libutils_headers
+ 
+@@ -123,12 +116,9 @@ LOCAL_MODULE_RELATIVE_PATH := soundfx
+ LOCAL_MODULE:= libvolumelistener
+ LOCAL_VENDOR_MODULE := true
+ 
+-LOCAL_ADDITIONAL_DEPENDENCIES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr
+ 
+ LOCAL_C_INCLUDES := \
+         $(call project-path-for,qcom-audio)/hal \
+-        $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include \
+-        $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/techpack/audio/include \
+         external/tinyalsa/include \
+         $(call include-path-for, audio-effects) \
+         $(call include-path-for, audio-route) \
+@@ -141,10 +131,6 @@ ifeq ($(strip $(AUDIO_FEATURE_ENABLED_DLKM)),true)
+   LOCAL_ADDITIONAL_DEPENDENCIES += $(BOARD_VENDOR_KERNEL_MODULES)
+ endif
+ 
+-ifeq ($(TARGET_COMPILE_WITH_MSM_KERNEL),true)
+-        LOCAL_C_INCLUDES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/techpack/audio/include
+-        LOCAL_ADDITIONAL_DEPENDENCIES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr
+-endif
+ 
+ include $(BUILD_SHARED_LIBRARY)
+ 
 diff --git a/mm-audio/Android.mk b/mm-audio/Android.mk
 new file mode 100644
 index 0000000000000000000000000000000000000000..5e46fc1b9d0c4173be2de9e7294049b7a23cc5bb
@@ -36407,73 +36477,3 @@ index 0000000000000000000000000000000000000000..6eabd87ffcd049dac2b82dbf84eaa09a
 +	aenc-g711/qdsp6/Makefile
 +	])
 +AC_OUTPUT
-diff --git a/post_proc/Android.mk b/post_proc/Android.mk
-index 171c164a1a9457dedcd3674457f203f9b7d03dc4..9981c4b014a43be866cbacc672ee1029d4663235 100644
---- a/post_proc/Android.mk
-+++ b/post_proc/Android.mk
-@@ -49,7 +49,7 @@ ifneq ($(strip $(AUDIO_FEATURE_DISABLED_DTS_EAGLE)),true)
-     LOCAL_CFLAGS += -DDTS_EAGLE
- endif
- 
--LOCAL_HEADER_LIBRARIES := libhardware_headers \
-+LOCAL_HEADER_LIBRARIES := generated_kernel_headers libhardware_headers \
-                           libsystem_headers \
-                           libutils_headers
- 
-@@ -65,12 +65,9 @@ LOCAL_MODULE_RELATIVE_PATH := soundfx
- LOCAL_MODULE:= libqcompostprocbundle
- LOCAL_VENDOR_MODULE := true
- 
--LOCAL_ADDITIONAL_DEPENDENCIES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr
- 
- LOCAL_C_INCLUDES := \
-         external/tinyalsa/include \
--        $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include \
--	$(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/techpack/audio/include \
-         $(call include-path-for, audio-effects)
- 
- ifeq ($(strip $(AUDIO_FEATURE_ENABLED_DLKM)),true)
-@@ -79,10 +76,6 @@ ifeq ($(strip $(AUDIO_FEATURE_ENABLED_DLKM)),true)
-   LOCAL_ADDITIONAL_DEPENDENCIES += $(BOARD_VENDOR_KERNEL_MODULES)
- endif
- 
--ifeq ($(TARGET_COMPILE_WITH_MSM_KERNEL),true)
--        LOCAL_C_INCLUDES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/techpack/audio/include
--        LOCAL_ADDITIONAL_DEPENDENCIES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr
--endif
- 
- include $(BUILD_SHARED_LIBRARY)
- 
-@@ -110,7 +103,7 @@ LOCAL_SRC_FILES:= \
- 
- LOCAL_CFLAGS+= -O2 -fvisibility=hidden
- 
--LOCAL_HEADER_LIBRARIES := libhardware_headers \
-+LOCAL_HEADER_LIBRARIES := generated_kernel_headers libhardware_headers \
-                           libsystem_headers \
-                           libutils_headers
- 
-@@ -123,12 +116,9 @@ LOCAL_MODULE_RELATIVE_PATH := soundfx
- LOCAL_MODULE:= libvolumelistener
- LOCAL_VENDOR_MODULE := true
- 
--LOCAL_ADDITIONAL_DEPENDENCIES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr
- 
- LOCAL_C_INCLUDES := \
-         $(call project-path-for,qcom-audio)/hal \
--        $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include \
--        $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/techpack/audio/include \
-         external/tinyalsa/include \
-         $(call include-path-for, audio-effects) \
-         $(call include-path-for, audio-route) \
-@@ -141,10 +131,6 @@ ifeq ($(strip $(AUDIO_FEATURE_ENABLED_DLKM)),true)
-   LOCAL_ADDITIONAL_DEPENDENCIES += $(BOARD_VENDOR_KERNEL_MODULES)
- endif
- 
--ifeq ($(TARGET_COMPILE_WITH_MSM_KERNEL),true)
--        LOCAL_C_INCLUDES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/techpack/audio/include
--        LOCAL_ADDITIONAL_DEPENDENCIES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr
--endif
- 
- include $(BUILD_SHARED_LIBRARY)
- 

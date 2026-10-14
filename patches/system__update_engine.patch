@@ -1,5 +1,5 @@
 diff --git a/aosp/map_file_generator.cc b/aosp/map_file_generator.cc
-index 8e2072017ecbb78d1f5e50ee3cfe720759a2b3a1..5fbaf842e0cfe914a77e07702a23edd77362ec29 100644
+index c9a2b7a70c23dc554318c15fa10ef86e41e14a91..e84717b1dda142b56c402ebb3291f53c6404ae64 100644
 --- a/aosp/map_file_generator.cc
 +++ b/aosp/map_file_generator.cc
 @@ -19,6 +19,7 @@
@@ -10,7 +10,7 @@ index 8e2072017ecbb78d1f5e50ee3cfe720759a2b3a1..5fbaf842e0cfe914a77e07702a23edd7
  #include <sparse/sparse.h>
  
  #include "android-base/file.h"
-@@ -34,7 +35,8 @@ namespace chromeos_update_engine {
+@@ -33,7 +34,8 @@ namespace chromeos_update_engine {
  
  int WriteBlockMap(const char* img,
                    const FilesystemInterface* fs,
@@ -20,7 +20,7 @@ index 8e2072017ecbb78d1f5e50ee3cfe720759a2b3a1..5fbaf842e0cfe914a77e07702a23edd7
    std::vector<FilesystemInterface::File> files;
    if (!fs->GetFiles(&files)) {
      LOG(ERROR) << "Failed to parse file info in " << img;
-@@ -47,6 +49,14 @@ int WriteBlockMap(const char* img,
+@@ -46,6 +48,14 @@ int WriteBlockMap(const char* img,
      return -errno;
    }
    for (const auto& file : files) {
@@ -35,7 +35,7 @@ index 8e2072017ecbb78d1f5e50ee3cfe720759a2b3a1..5fbaf842e0cfe914a77e07702a23edd7
      if (file.extents.empty()) {
        continue;
      }
-@@ -87,6 +97,12 @@ bool IsSparseImage(int fd) {
+@@ -86,6 +96,12 @@ bool IsSparseImage(int fd) {
  }
  
  int Main(int argc, const char* argv[]) {
@@ -48,13 +48,8 @@ index 8e2072017ecbb78d1f5e50ee3cfe720759a2b3a1..5fbaf842e0cfe914a77e07702a23edd7
    const char* img = argv[1];
    const char* output_file = argv[2];
    android::base::unique_fd fd(open(img, O_RDONLY | O_CLOEXEC));
-@@ -113,15 +129,15 @@ int Main(int argc, const char* argv[]) {
+@@ -112,11 +128,11 @@ int Main(int argc, const char* argv[]) {
  
-   fs = SquashfsFilesystem::CreateFromFile(img, true);
-   if (fs != nullptr) {
--    return WriteBlockMap(img, fs.get(), output_file);
-+    return WriteBlockMap(img, fs.get(), output_file, non_ab);
-   }
    fs = ErofsFilesystem::CreateFromFile(img);
    if (fs != nullptr) {
 -    return WriteBlockMap(img, fs.get(), output_file);
@@ -67,10 +62,3 @@ index 8e2072017ecbb78d1f5e50ee3cfe720759a2b3a1..5fbaf842e0cfe914a77e07702a23edd7
    }
    LOG(ERROR) << "Failed to parse " << img;
    return -1;
-@@ -130,4 +146,4 @@ int Main(int argc, const char* argv[]) {
- 
- int main(int argc, const char* argv[]) {
-   return chromeos_update_engine::Main(argc, argv);
--}
-\ No newline at end of file
-+}

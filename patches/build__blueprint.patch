@@ -1,8 +1,8 @@
 diff --git a/bootstrap/command.go b/bootstrap/command.go
-index b2c2b00914ef03199a6975d22cb108fb9125b13b..5e30a8a5f33ecf40a7a82d12578bfcb8a4ad7228 100644
+index e5f6862942dd630d071faaa9408dfde86dbeb6a3..07095a413e986c50aa438f0d67a3c797ca3dd2ab 100644
 --- a/bootstrap/command.go
 +++ b/bootstrap/command.go
-@@ -66,7 +66,9 @@ var goModuleTypesAreWrapped = false
+@@ -68,7 +68,9 @@ var goModuleTypesAreWrapped = false
  // so that it is correctly rebuilt when needed in case Blueprint is itself
  // invoked from Ninja
  func RunBlueprint(args Args, stopBefore StopBefore, ctx *blueprint.Context, config interface{}) ([]string, error) {

@@ -16,7 +16,7 @@ index c2fd3c2ef276d3134f83e248ed1c0fa760344e4f..a4c0cb6e7de7b6a7d3d80bceb462af5b
  }
  
 diff --git a/audio/core/all-versions/default/Device.cpp b/audio/core/all-versions/default/Device.cpp
-index ae015a3b16104ecebcaf6ff232bf1f31e74d3428..d424ba5f737eca5f7fb41baca05549aa14f2583a 100644
+index d03118ae5defe9f25d0832d17d83d47d72c27da3..ed2efd40ae22806c02d7a94379842827348f7924 100644
 --- a/audio/core/all-versions/default/Device.cpp
 +++ b/audio/core/all-versions/default/Device.cpp
 @@ -28,6 +28,7 @@
@@ -167,6 +167,851 @@ index 2bea425f26cccae5b7f6286e4a06ffd4a2783420..a36dc505fd4816dff7c690b55ece857d
  }
  
  #endif
+diff --git a/camera/common/default/CameraModule.cpp b/camera/common/default/CameraModule.cpp
+index 9e5c21fccb9e75b38867c24cfe6a9d71390b9290..0fb798df71b5e692a671bcfdeb292070eee55769 100644
+--- a/camera/common/default/CameraModule.cpp
++++ b/camera/common/default/CameraModule.cpp
+@@ -20,6 +20,9 @@
+ 
+ #include <utils/Trace.h>
+ #include <aidl/android/hardware/graphics/common/PixelFormat.h>
++#include <cutils/properties.h>
++#include <dlfcn.h>
++#include <cstring>
+ 
+ #include "CameraModule.h"
+ 
+@@ -31,6 +34,174 @@ namespace camera {
+ namespace common {
+ namespace helper {
+ 
++namespace {
++
++bool isTabS3Wifi() {
++    char device[PROPERTY_VALUE_MAX] = {};
++    property_get("ro.product.vendor.device", device, "");
++    return std::strcmp(device, "gts3lwifi") == 0;
++}
++
++// The stock QCamera HAL has working UHD30 sensor, ISP and encoder paths, but
++// its initialized public picture-size table omits the mode on this device.
++// Patch only the already initialized back-camera cache, and only after its
++// exact ABI landmarks have been verified.
++bool patchTabS3UhdCapability(camera_module_t* module, int cameraId) {
++    if (cameraId != 0 || !isTabS3Wifi() || module->common.dso == nullptr) {
++        return false;
++    }
++
++    auto capabilities = reinterpret_cast<uint8_t**>(
++            dlsym(module->common.dso, "_ZN7qcamera14gCamCapabilityE"));
++    if (capabilities == nullptr || capabilities[cameraId] == nullptr) {
++        ALOGE("Tab S3 UHD30: initialized capability cache is unavailable");
++        return false;
++    }
++
++    struct Dimension {
++        int32_t width;
++        int32_t height;
++    };
++    constexpr size_t kPictureSizeCountOffset = 5736;
++    constexpr size_t kPictureSizesOffset = 5740;
++    constexpr size_t kPictureMinDurationsOffset = 6256;
++    constexpr size_t kJpegStallDurationsOffset = 19160;
++    constexpr size_t kActiveArrayOffset = 17680;
++    constexpr uint32_t kMaxPictureSizes = 64;
++    constexpr Dimension kUhd30 = {3840, 2160};
++    constexpr int64_t kUhd30FrameDurationNs = 33333333;
++    constexpr int64_t kUhdJpegStallDurationNs = 370000000;
++
++    uint8_t* capability = capabilities[cameraId];
++    auto count = reinterpret_cast<uint32_t*>(capability + kPictureSizeCountOffset);
++    auto sizes = reinterpret_cast<Dimension*>(capability + kPictureSizesOffset);
++    auto minDurations = reinterpret_cast<int64_t*>(capability + kPictureMinDurationsOffset);
++    auto jpegStallDurations =
++            reinterpret_cast<int64_t*>(capability + kJpegStallDurationsOffset);
++    auto activeArray = reinterpret_cast<Dimension*>(capability + kActiveArrayOffset);
++
++    if (*count == 0 || *count >= kMaxPictureSizes || activeArray->width != 4128 ||
++        activeArray->height != 3096 || sizes[0].width != 4128 || sizes[0].height != 3096) {
++        ALOGE("Tab S3 UHD30: unexpected initialized capability ABI "
++              "(count %u, active %dx%d, first %dx%d)",
++              *count, activeArray->width, activeArray->height, sizes[0].width, sizes[0].height);
++        return false;
++    }
++
++    for (uint32_t i = 0; i < *count; ++i) {
++        if (sizes[i].width == kUhd30.width && sizes[i].height == kUhd30.height) {
++            return true;
++        }
++    }
++
++    const uint32_t index = *count;
++    sizes[index] = kUhd30;
++    minDurations[index] = kUhd30FrameDurationNs;
++    jpegStallDurations[index] = kUhdJpegStallDurationNs;
++    ++*count;
++    return true;
++}
++
++void appendTabS3UhdMetadata(CameraMetadata& chars) {
++    constexpr int32_t kWidth = 3840;
++    constexpr int32_t kHeight = 2160;
++    constexpr int64_t kFrameDurationNs = 33333333;
++    constexpr int64_t kJpegStallDurationNs = 370000000;
++    constexpr int32_t kFormats[] = {
++            HAL_PIXEL_FORMAT_YCbCr_420_888,
++            HAL_PIXEL_FORMAT_BLOB,
++            HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED,
++    };
++
++    camera_metadata_entry entry = chars.find(ANDROID_SCALER_AVAILABLE_STREAM_CONFIGURATIONS);
++    if (entry.count == 0 || entry.count % 4 != 0) {
++        ALOGE("Tab S3 UHD30: malformed stream configuration metadata");
++        return;
++    }
++    Vector<int32_t> configurations;
++    configurations.setCapacity(entry.count + 12);
++    for (size_t i = 0; i < entry.count; ++i) {
++        configurations.push(entry.data.i32[i]);
++    }
++    for (int32_t format : kFormats) {
++        bool found = false;
++        for (size_t i = 0; i < entry.count; i += 4) {
++            found |= entry.data.i32[i] == format && entry.data.i32[i + 1] == kWidth &&
++                    entry.data.i32[i + 2] == kHeight &&
++                    entry.data.i32[i + 3] ==
++                            ANDROID_SCALER_AVAILABLE_STREAM_CONFIGURATIONS_OUTPUT;
++        }
++        if (!found) {
++            configurations.push(format);
++            configurations.push(kWidth);
++            configurations.push(kHeight);
++            configurations.push(ANDROID_SCALER_AVAILABLE_STREAM_CONFIGURATIONS_OUTPUT);
++        }
++    }
++    if (chars.update(ANDROID_SCALER_AVAILABLE_STREAM_CONFIGURATIONS, configurations) != OK) {
++        ALOGE("Tab S3 UHD30: could not extend stream configuration metadata");
++        return;
++    }
++
++    entry = chars.find(ANDROID_SCALER_AVAILABLE_MIN_FRAME_DURATIONS);
++    if (entry.count == 0 || entry.count % 4 != 0) {
++        ALOGE("Tab S3 UHD30: malformed minimum-frame-duration metadata");
++        return;
++    }
++    Vector<int64_t> minDurations;
++    minDurations.setCapacity(entry.count + 12);
++    for (size_t i = 0; i < entry.count; ++i) {
++        minDurations.push(entry.data.i64[i]);
++    }
++    for (int32_t format : kFormats) {
++        bool found = false;
++        for (size_t i = 0; i < entry.count; i += 4) {
++            found |= entry.data.i64[i] == format && entry.data.i64[i + 1] == kWidth &&
++                    entry.data.i64[i + 2] == kHeight;
++        }
++        if (!found) {
++            minDurations.push(static_cast<int64_t>(format));
++            minDurations.push(kWidth);
++            minDurations.push(kHeight);
++            minDurations.push(kFrameDurationNs);
++        }
++    }
++    if (chars.update(ANDROID_SCALER_AVAILABLE_MIN_FRAME_DURATIONS, minDurations) != OK) {
++        ALOGE("Tab S3 UHD30: could not extend minimum-frame-duration metadata");
++        return;
++    }
++
++    entry = chars.find(ANDROID_SCALER_AVAILABLE_STALL_DURATIONS);
++    if (entry.count == 0 || entry.count % 4 != 0) {
++        ALOGE("Tab S3 UHD30: malformed stall-duration metadata");
++        return;
++    }
++    Vector<int64_t> stallDurations;
++    stallDurations.setCapacity(entry.count + 4);
++    for (size_t i = 0; i < entry.count; ++i) {
++        stallDurations.push(entry.data.i64[i]);
++    }
++    bool jpegFound = false;
++    for (size_t i = 0; i < entry.count; i += 4) {
++        jpegFound |= entry.data.i64[i] == HAL_PIXEL_FORMAT_BLOB &&
++                entry.data.i64[i + 1] == kWidth && entry.data.i64[i + 2] == kHeight;
++    }
++    if (!jpegFound) {
++        stallDurations.push(static_cast<int64_t>(HAL_PIXEL_FORMAT_BLOB));
++        stallDurations.push(kWidth);
++        stallDurations.push(kHeight);
++        stallDurations.push(kJpegStallDurationNs);
++    }
++    if (chars.update(ANDROID_SCALER_AVAILABLE_STALL_DURATIONS, stallDurations) != OK) {
++        ALOGE("Tab S3 UHD30: could not extend stall-duration metadata");
++        return;
++    }
++
++    ALOGI("Tab S3 UHD30: extended initialized back-camera capability and metadata");
++}
++
++}  // namespace
++
+ void CameraModule::deriveCameraCharacteristicsKeys(uint32_t deviceVersion, CameraMetadata& chars) {
+     ATRACE_CALL();
+ 
+@@ -299,6 +470,9 @@ int CameraModule::getCameraInfo(int cameraId, struct camera_info* info) {
+         }
+         CameraMetadata m;
+         m.append(rawInfo.static_camera_characteristics);
++        if (patchTabS3UhdCapability(mModule, cameraId)) {
++            appendTabS3UhdMetadata(m);
++        }
+         deriveCameraCharacteristicsKeys(rawInfo.device_version, m);
+         cameraInfo = rawInfo;
+         cameraInfo.static_camera_characteristics = m.release();
+diff --git a/camera/provider/2.4/default/Android.bp b/camera/provider/2.4/default/Android.bp
+index c56b54d30ecb6ecc7c6d1b5d8328eb1b749ac11f..8923dc56f3d479e8c7251df535e06125d57a7940 100644
+--- a/camera/provider/2.4/default/Android.bp
++++ b/camera/provider/2.4/default/Android.bp
+@@ -183,6 +183,8 @@ cc_binary {
+     defaults: ["camera_service_defaults"],
+     compile_multilib: "32",
+     init_rc: ["android.hardware.camera.provider@2.4-service.rc"],
++    cflags: ["-DTAB_S3_CAMERA_CRYPTO_KEEPALIVE"],
++    shared_libs: ["libdl"],
+ }
+ 
+ cc_binary {
+diff --git a/camera/provider/2.4/default/android.hardware.camera.provider@2.4-service.rc b/camera/provider/2.4/default/android.hardware.camera.provider@2.4-service.rc
+index f7ac9f83e4b388112e2ad25f182eed5c52549ee2..115d3e8ea6103d6606cd9955e476c2169687a842 100644
+--- a/camera/provider/2.4/default/android.hardware.camera.provider@2.4-service.rc
++++ b/camera/provider/2.4/default/android.hardware.camera.provider@2.4-service.rc
+@@ -6,3 +6,6 @@ service vendor.camera-provider-2-4 /vendor/bin/hw/android.hardware.camera.provid
+     ioprio rt 4
+     capabilities SYS_NICE
+     task_profiles CameraServiceCapacity MaxPerformance
++    # The legacy Qualcomm daemon keeps camera enumeration state outside this process. If the
++    # provider dies, reset that state as well or every provider restart can report zero cameras.
++    onrestart restart qcamerasvr
+diff --git a/camera/provider/2.4/default/service.cpp b/camera/provider/2.4/default/service.cpp
+index 0a4f7874a674d4c2a2e599f29622dda6a6ad10c3..0f243448d4f8f954695d8e9c04902553c61242fc 100644
+--- a/camera/provider/2.4/default/service.cpp
++++ b/camera/provider/2.4/default/service.cpp
+@@ -26,6 +26,11 @@
+ #include <hidl/LegacySupport.h>
+ #include <malloc.h>
+ 
++#ifdef TAB_S3_CAMERA_CRYPTO_KEEPALIVE
++#include <dlfcn.h>
++#include <cstring>
++#endif
++
+ using android::status_t;
+ using android::hardware::defaultLazyPassthroughServiceImplementation;
+ using android::hardware::defaultPassthroughServiceImplementation;
+@@ -37,6 +42,31 @@ const bool kLazyService = true;
+ const bool kLazyService = false;
+ #endif
+ 
++#ifdef TAB_S3_CAMERA_CRYPTO_KEEPALIVE
++namespace {
++void retainTabS3LegacyCameraCrypto() {
++    char device[PROPERTY_VALUE_MAX] = {};
++    property_get("ro.product.vendor.device", device, "");
++    if (std::strcmp(device, "gts3lwifi") != 0) {
++        return;
++    }
++
++    // Compatibility experiment for the Tab S3 JPEG session-close failure.
++    // Retain one reference to its existing vendor dependency for this provider
++    // lifetime. This is intentionally never dlclosed; it changes neither the
++    // vendor library bytes nor symbol visibility and is not a global preload.
++    // Use target headers: Bionic's RTLD_NOW differs between LP32 and LP64.
++    static void* const crypto = dlopen("/vendor/lib/libcrypto.so", RTLD_NOW | RTLD_LOCAL);
++    if (crypto == nullptr) {
++        ALOGE("Tab S3 camera vendor crypto retention failed: %s", dlerror());
++    } else {
++        ALOGI("Tab S3 camera vendor crypto reference retained for provider lifetime.");
++    }
++}
++
++}  // namespace
++#endif
++
+ int main()
+ {
+     ALOGI("CameraProvider@2.4 legacy service is starting.");
+@@ -44,6 +74,10 @@ int main()
+     // /dev/vndbinder
+     android::ProcessState::initWithDriver("/dev/vndbinder");
+ 
++#ifdef TAB_S3_CAMERA_CRYPTO_KEEPALIVE
++    retainTabS3LegacyCameraCrypto();
++#endif
++
+     // b/166675194
+     if (property_get_bool("ro.vendor.camera.provider24.disable_mem_init", false)) {
+         if (mallopt(M_BIONIC_ZERO_INIT, 0) == 0) {
+diff --git a/compatibility_matrices/Android.bp b/compatibility_matrices/Android.bp
+index a429ab0179a3eb043c3765321c1452f17916392a..b2591a573ea7fcbac6d3f52d18d924da30fcbd3b 100644
+--- a/compatibility_matrices/Android.bp
++++ b/compatibility_matrices/Android.bp
+@@ -79,6 +79,16 @@ phony {
+     }),
+ }
+ 
++// SM-T820 retains the Android 10 HAL contract in the supplied vendor tree.
++// Restore its real matrix for HAL validation rather than changing the vendor
++// target level or disabling VINTF checks. This is a custom legacy-device port;
++// it does not claim the Android 10 launch kernel requirements for Linux 3.18.
++vintf_compatibility_matrix {
++    name: "framework_compatibility_matrix.4.xml",
++    stem: "compatibility_matrix.4.xml",
++    srcs: ["compatibility_matrix.4.xml"],
++}
++
+ ////////////////////////////////////////////
+ // AUTO GENERATED MODULES
+ // DO NOT ADD MORE MODULES BELOW THIS LINE
+diff --git a/health/2.1/default/Android.bp b/health/2.1/default/Android.bp
+index 00d89e274c6aedb4a0841cd05f06ea723ebc7832..715d476d53c00085215eb7ffd0c5790c0167b258 100644
+--- a/health/2.1/default/Android.bp
++++ b/health/2.1/default/Android.bp
+@@ -53,9 +53,8 @@ cc_library_shared {
+     name: "android.hardware.health@2.1-impl",
+     stem: "android.hardware.health@2.0-impl-2.1",
+ 
+-    // Only vendor and recovery variants are allowed, not core.
++    // Only the vendor variant is allowed, not core.
+     vendor: true,
+-    recovery_available: true,
+ 
+     defaults: ["android.hardware.health@2.1-impl-defaults"],
+ 
+@@ -67,6 +66,19 @@ cc_library_shared {
+     // installed.
+ }
+ 
++// Keep Recovery as an explicit module. A single vendor module with
++// recovery_available is ambiguous to Android 17's generated-filesystem image
++// dependency resolver when both variants are selected by PRODUCT_PACKAGES.
++cc_library_shared {
++    name: "android.hardware.health@2.1-impl.recovery",
++    stem: "android.hardware.health@2.0-impl-2.1",
++    recovery: true,
++    defaults: ["android.hardware.health@2.1-impl-defaults"],
++    srcs: [
++        "impl.cpp",
++    ],
++}
++
+ // Default binderized service of the health@2.1 HAL.
+ // This binderized implementation dlopen()s the passthrough implementation,
+ // so there is no need to implement your own.
+diff --git a/memtrack/1.0/Android.bp b/memtrack/1.0/Android.bp
+new file mode 100644
+index 0000000000000000000000000000000000000000..a7e30ffd0d91b5c52bf28a9e5bb3ea2beac3225c
+--- /dev/null
++++ b/memtrack/1.0/Android.bp
+@@ -0,0 +1,24 @@
++// This file is autogenerated by hidl-gen -Landroidbp.
++
++package {
++    // See: http://go/android-license-faq
++    // A large-scale-change added 'default_applicable_licenses' to import
++    // all of the 'license_kinds' from "hardware_interfaces_license"
++    // to get the below license kinds:
++    //   SPDX-license-identifier-Apache-2.0
++    default_applicable_licenses: ["hardware_interfaces_license"],
++}
++
++hidl_interface {
++    name: "android.hardware.memtrack@1.0",
++    root: "android.hardware",
++    srcs: [
++        "types.hal",
++        "IMemtrack.hal",
++    ],
++    interfaces: [
++        "android.hidl.base@1.0",
++    ],
++    // The legacy memtrack service consumes only the native interface.
++    gen_java: false,
++}
+diff --git a/memtrack/1.0/IMemtrack.hal b/memtrack/1.0/IMemtrack.hal
+new file mode 100644
+index 0000000000000000000000000000000000000000..a329032cbb519d21389e42a4847c0348a3f22147
+--- /dev/null
++++ b/memtrack/1.0/IMemtrack.hal
+@@ -0,0 +1,68 @@
++/*
++ * Copyright (C) 2016 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package android.hardware.memtrack@1.0;
++
++/**
++ * The Memory Tracker HAL is designed to return information about
++ * device-specific memory usage.
++ * The primary goal is to be able to track memory that is not
++ * trackable in any other way, for example texture memory that is allocated by
++ * a process, but not mapped in to that process's address space.
++ * A secondary goal is to be able to categorize memory used by a process into
++ * GL, graphics, etc. All memory sizes must be in real memory usage,
++ * accounting for stride, bit depth, rounding up to page size, etc.
++ *
++ * Constructor for the interface should be used to perform memtrack management
++ * setup actions and is called once before any calls to getMemory().
++ */
++interface IMemtrack {
++    /**
++     * getMemory() populates MemtrackRecord vector with the sizes of memory
++     * plus associated flags for that memory.
++     *
++     * This function must be thread-safe, it may get called from multiple
++     * threads at the same time.
++     *
++     * A process collecting memory statistics will call getMemory for each
++     * combination of pid and memory type. For each memory type that it
++     * recognizes, the HAL must fill out an array of memtrack_record
++     * structures breaking down the statistics of that memory type as much as
++     * possible. For example,
++     * getMemory(<pid>, GL) might return:
++     * { { 4096,  ACCOUNTED | PRIVATE | SYSTEM },
++     *   { 40960, UNACCOUNTED | PRIVATE | SYSTEM },
++     *   { 8192,  ACCOUNTED | PRIVATE | DEDICATED },
++     *   { 8192,  UNACCOUNTED | PRIVATE | DEDICATED } }
++     * If the HAL cannot differentiate between SYSTEM and DEDICATED memory, it
++     * could return:
++     * { { 12288,  ACCOUNTED | PRIVATE },
++     *   { 49152,  UNACCOUNTED | PRIVATE } }
++     *
++     * Memory must not overlap between types. For example, a graphics buffer
++     * that has been mapped into the GPU as a surface must show up when
++     * GRAPHICS is requested and not when GL
++     * is requested.
++     *
++     * @param pid process for which memory information is requested
++     * @param type memory type that information is being requested about
++     * @return records vector of MemtrackRecord containing memory information
++     * @return retval SUCCESS on success, TYPE_NOT_FOUND if the type is not
++     * supported.
++     */
++    getMemory(int32_t pid, MemtrackType type)
++            generates (MemtrackStatus retval, vec<MemtrackRecord> records);
++};
+diff --git a/memtrack/1.0/default/Android.bp b/memtrack/1.0/default/Android.bp
+new file mode 100644
+index 0000000000000000000000000000000000000000..addffe3344f01ca763243fde5c59a34258a9c81d
+--- /dev/null
++++ b/memtrack/1.0/default/Android.bp
+@@ -0,0 +1,60 @@
++// Copyright (C) 2016 The Android Open Source Project
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//      http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package {
++    // See: http://go/android-license-faq
++    // A large-scale-change added 'default_applicable_licenses' to import
++    // all of the 'license_kinds' from "hardware_interfaces_license"
++    // to get the below license kinds:
++    //   SPDX-license-identifier-Apache-2.0
++    default_applicable_licenses: ["hardware_interfaces_license"],
++}
++
++cc_library_shared {
++    name: "android.hardware.memtrack@1.0-impl",
++    defaults: ["hidl_defaults"],
++    proprietary: true,
++    relative_install_path: "hw",
++    srcs: ["Memtrack.cpp"],
++
++    shared_libs: [
++        "libbase",
++        "liblog",
++        "libhidlbase",
++        "libhardware",
++        "libutils",
++        "android.hardware.memtrack@1.0",
++    ],
++
++}
++
++cc_binary {
++    relative_install_path: "hw",
++    defaults: ["hidl_defaults"],
++    proprietary: true,
++    name: "android.hardware.memtrack@1.0-service",
++    init_rc: ["android.hardware.memtrack@1.0-service.rc"],
++    srcs: ["service.cpp"],
++
++    shared_libs: [
++        "liblog",
++        "libbase",
++        "libdl",
++        "libutils",
++        "libhardware",
++        "libhidlbase",
++        "android.hardware.memtrack@1.0",
++    ],
++
++}
+diff --git a/memtrack/1.0/default/Memtrack.cpp b/memtrack/1.0/default/Memtrack.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..0bbf83d2b3034e7239809a2aedf7aa5835d26de2
+--- /dev/null
++++ b/memtrack/1.0/default/Memtrack.cpp
+@@ -0,0 +1,100 @@
++/*
++ * Copyright (C) 2016 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#define LOG_TAG "android.hardware.memtrack@1.0-impl"
++
++#include <log/log.h>
++
++#include <hardware/hardware.h>
++#include <hardware/memtrack.h>
++
++#include "Memtrack.h"
++
++namespace android {
++namespace hardware {
++namespace memtrack {
++namespace V1_0 {
++namespace implementation {
++
++Memtrack::Memtrack(const memtrack_module_t *module) : mModule(module) {
++    if (mModule)
++        mModule->init(mModule);
++}
++
++Memtrack::~Memtrack() {}
++
++Return<void> Memtrack::getMemory(int32_t pid, MemtrackType type,
++        getMemory_cb _hidl_cb)  {
++    hidl_vec<MemtrackRecord> records;
++    size_t temp = 0;
++    size_t *size = &temp;
++    int ret = 0;
++
++    if (mModule->getMemory == nullptr)
++    {
++        _hidl_cb(MemtrackStatus::SUCCESS, records);
++        return Void();
++    }
++    ret = mModule->getMemory(mModule, pid, static_cast<memtrack_type>(type),
++            NULL, size);
++    if (ret == 0)
++    {
++        memtrack_record *legacy_records = new memtrack_record[*size];
++        ret = mModule->getMemory(mModule, pid,
++                static_cast<memtrack_type>(type), legacy_records, size);
++        if (ret == 0)
++        {
++            records.resize(*size);
++            for(size_t i = 0; i < *size; i++)
++            {
++                records[i].sizeInBytes = legacy_records[i].size_in_bytes;
++                records[i].flags = legacy_records[i].flags;
++            }
++        }
++        delete[] legacy_records;
++    }
++    _hidl_cb(MemtrackStatus::SUCCESS, records);
++    return Void();
++}
++
++
++IMemtrack* HIDL_FETCH_IMemtrack(const char* /* name */) {
++    const hw_module_t* hw_module = nullptr;
++    const memtrack_module_t* memtrack_module = nullptr;
++    int err = hw_get_module(MEMTRACK_HARDWARE_MODULE_ID, &hw_module);
++    if (err) {
++        ALOGE ("hw_get_module %s failed: %d", MEMTRACK_HARDWARE_MODULE_ID, err);
++        return nullptr;
++    }
++
++    if (!hw_module->methods || !hw_module->methods->open) {
++        memtrack_module = reinterpret_cast<const memtrack_module_t*>(hw_module);
++    } else {
++        err = hw_module->methods->open(hw_module, MEMTRACK_HARDWARE_MODULE_ID,
++                reinterpret_cast<hw_device_t**>(const_cast<memtrack_module_t**>(&memtrack_module)));
++        if (err) {
++            ALOGE("Passthrough failed to load legacy HAL.");
++            return nullptr;
++        }
++    }
++    return new Memtrack(memtrack_module);
++}
++
++} // namespace implementation
++}  // namespace V1_0
++}  // namespace memtrack
++}  // namespace hardware
++}  // namespace android
+diff --git a/memtrack/1.0/default/Memtrack.h b/memtrack/1.0/default/Memtrack.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..0adba7657f9afd3c9b9cd89a1724f82072c18511
+--- /dev/null
++++ b/memtrack/1.0/default/Memtrack.h
+@@ -0,0 +1,57 @@
++/*
++ * Copyright (C) 2016 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#ifndef ANDROID_HARDWARE_MEMTRACK_V1_0_MEMTRACK_H
++#define ANDROID_HARDWARE_MEMTRACK_V1_0_MEMTRACK_H
++
++#include <android/hardware/memtrack/1.0/IMemtrack.h>
++#include <hidl/Status.h>
++
++#include <hidl/MQDescriptor.h>
++namespace android {
++namespace hardware {
++namespace memtrack {
++namespace V1_0 {
++namespace implementation {
++
++using ::android::hardware::memtrack::V1_0::IMemtrack;
++using ::android::hardware::memtrack::V1_0::MemtrackRecord;
++using ::android::hardware::memtrack::V1_0::MemtrackStatus;
++using ::android::hardware::memtrack::V1_0::MemtrackType;
++using ::android::hardware::Return;
++using ::android::hardware::Void;
++using ::android::hardware::hidl_vec;
++using ::android::hardware::hidl_string;
++using ::android::sp;
++
++struct Memtrack : public IMemtrack {
++    Memtrack(const memtrack_module_t* module);
++    ~Memtrack();
++    Return<void> getMemory(int32_t pid, MemtrackType type, getMemory_cb _hidl_cb)  override;
++
++  private:
++    const memtrack_module_t* mModule;
++};
++
++extern "C" IMemtrack* HIDL_FETCH_IMemtrack(const char* name);
++
++}  // namespace implementation
++}  // namespace V1_0
++}  // namespace memtrack
++}  // namespace hardware
++}  // namespace android
++
++#endif  // ANDROID_HARDWARE_MEMTRACK_V1_0_MEMTRACK_H
+diff --git a/memtrack/1.0/default/android.hardware.memtrack@1.0-service.rc b/memtrack/1.0/default/android.hardware.memtrack@1.0-service.rc
+new file mode 100644
+index 0000000000000000000000000000000000000000..f5eee54cfbf2e323449ed315b468ca901108d433
+--- /dev/null
++++ b/memtrack/1.0/default/android.hardware.memtrack@1.0-service.rc
+@@ -0,0 +1,5 @@
++service vendor.memtrack-hal-1-0 /vendor/bin/hw/android.hardware.memtrack@1.0-service
++    interface android.hardware.memtrack@1.0::IMemtrack default
++    class hal
++    user system
++    group system
+diff --git a/memtrack/1.0/default/service.cpp b/memtrack/1.0/default/service.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..f079743d444acc7869dfda352a3275976bf0b976
+--- /dev/null
++++ b/memtrack/1.0/default/service.cpp
+@@ -0,0 +1,27 @@
++/*
++ * Copyright (C) 2016 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#define LOG_TAG "android.hardware.memtrack@1.0-service"
++
++#include <android/hardware/memtrack/1.0/IMemtrack.h>
++#include <hidl/LegacySupport.h>
++
++using android::hardware::memtrack::V1_0::IMemtrack;
++using android::hardware::defaultPassthroughServiceImplementation;
++
++int main() {
++    return defaultPassthroughServiceImplementation<IMemtrack>();
++}
+diff --git a/memtrack/1.0/types.hal b/memtrack/1.0/types.hal
+new file mode 100644
+index 0000000000000000000000000000000000000000..189312a53a5ebd4b0c1ed628bb771b477b754f03
+--- /dev/null
++++ b/memtrack/1.0/types.hal
+@@ -0,0 +1,87 @@
++/*
++ * Copyright (C) 2016 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package android.hardware.memtrack@1.0;
++
++/**
++ * SMAPS_ACCOUNTED/SMAPS_UNACCOUNTED
++ * Flags to differentiate memory that can already be accounted for in
++ * /proc/<pid>/smaps,
++ * (Shared_Clean + Shared_Dirty + Private_Clean + Private_Dirty = Size).
++ * In general, memory mapped in to a userspace process is accounted unless
++ * it was mapped with remap_pfn_range.
++ * Exactly one of these must be set.
++ *
++ * SHARED/SHARED_PSS/PRIVATE
++ * Flags to differentiate memory shared across multiple processes vs. memory
++ * used by a single process.
++ * If SHARED_PSS flags is used, the memory must be divided by the number of
++ * processes holding reference to it (shared / num_processes).
++ * Only zero or one of these may be set in a record.
++ * If none are set, record is assumed to count shared + private memory.
++ *
++ * SYSTEM/DEDICATED
++ * Flags to differentiate memory taken from the kernel's allocation pool vs.
++ * memory that is dedicated to non-kernel allocations, for example a carveout
++ * or separate video memory.  Only zero or one of these may be set in a record.
++ * If none are set, record is assumed to count system + dedicated memory.
++ *
++ * NONSECURE/SECURE
++ * Flags to differentiate memory accessible by the CPU in non-secure mode vs.
++ * memory that is protected.  Only zero or one of these may be set in a record.
++ * If none are set, record is assumed to count secure + nonsecure memory.
++ */
++enum MemtrackFlag : uint32_t {
++    SMAPS_ACCOUNTED = 1 << 1,
++    SMAPS_UNACCOUNTED = 1 << 2,
++    SHARED = 1 << 3,
++    SHARED_PSS = 1 << 4,
++    PRIVATE = 1 << 5,
++    SYSTEM = 1 << 6,
++    DEDICATED = 1 << 7,
++    NONSECURE = 1 << 8,
++    SECURE = 1 << 9,
++};
++
++/** Tags which define the usage of the memory buffers. */
++enum MemtrackType : uint32_t {
++    OTHER = 0,
++    GL = 1,
++    GRAPHICS = 2,
++    MULTIMEDIA = 3,
++    CAMERA = 4,
++    NUM_TYPES,
++};
++
++enum MemtrackStatus : uint32_t {
++    SUCCESS = 0,
++    MEMORY_TRACKING_NOT_SUPPORTED = 1,
++    TYPE_NOT_SUPPORTED = 2,
++};
++
++/* A vector of MemtrackRecord is returned by the function getMemory().
++ * Each record consists of the size of the memory used by the process and
++ * flags indicate the all the MemtrackFlag that are valid for this record.
++ * see getMemory() comments for further details.
++ */
++struct MemtrackRecord {
++    uint64_t sizeInBytes;
++    /**
++     * This is the bitfield for the MemtrackFlag indicating all the flags that
++     * are valid for this record.
++     */
++    uint32_t flags;
++};
+diff --git a/wifi/aidl/default/wifi_chip.cpp b/wifi/aidl/default/wifi_chip.cpp
+index 813cc8c4734044cb76e13b327742739c72bcadf6..ac1ea9c44f44ad3bf852415e48bc0e1da9082451 100644
+--- a/wifi/aidl/default/wifi_chip.cpp
++++ b/wifi/aidl/default/wifi_chip.cpp
+@@ -18,6 +18,7 @@
+ 
+ #include <android-base/logging.h>
+ #include <android-base/unique_fd.h>
++#include <algorithm>
+ #include <cutils/properties.h>
+ #include <fcntl.h>
+ #include <hardware_legacy/wifi_hal.h>
+@@ -253,6 +254,18 @@ WifiChip::WifiChip(int32_t chip_id, bool is_primary,
+ void WifiChip::retrieveDynamicIfaceCombination() {
+     if (using_dynamic_iface_combination_) return;
+ 
++    // V1 mode IDs also select STA/AP firmware. Replacing them with unified V3
++    // combinations skips WifiModeController::changeFirmwareMode on the next
++    // configuration and invalidates the already configured legacy mode ID.
++    // A matrix queried in one firmware mode cannot replace this mode contract.
++    if (std::any_of(modes_.begin(), modes_.end(), [](const IWifiChip::ChipMode& mode) {
++            return mode.id == feature_flags::chip_mode_ids::kV1Sta ||
++                   mode.id == feature_flags::chip_mode_ids::kV1Ap;
++        })) {
++        LOG(INFO) << "Preserving legacy firmware-switch chip modes";
++        return;
++    }
++
+     legacy_hal::wifi_iface_concurrency_matrix legacy_matrix;
+     legacy_hal::wifi_error legacy_status;
+ 
 diff --git a/automotive/audiocontrol/1.0/Android.bp b/automotive/audiocontrol/1.0/Android.bp
 new file mode 100644
 index 0000000000000000000000000000000000000000..53ed78b9501da1330eaaa9f24edc484404fab307
@@ -312,98 +1157,6 @@ index 0000000000000000000000000000000000000000..04d8d358c40132e0e77266ebcd2bfaf9
 +    NOTIFICATION,   /* Notifications */
 +    SYSTEM_SOUND,   /* User interaction sounds (button clicks, etc) */
 +};
-diff --git a/camera/provider/2.4/default/Android.bp b/camera/provider/2.4/default/Android.bp
-index c56b54d30ecb6ecc7c6d1b5d8328eb1b749ac11f..8923dc56f3d479e8c7251df535e06125d57a7940 100644
---- a/camera/provider/2.4/default/Android.bp
-+++ b/camera/provider/2.4/default/Android.bp
-@@ -183,6 +183,8 @@ cc_binary {
-     defaults: ["camera_service_defaults"],
-     compile_multilib: "32",
-     init_rc: ["android.hardware.camera.provider@2.4-service.rc"],
-+    cflags: ["-DTAB_S3_CAMERA_CRYPTO_KEEPALIVE"],
-+    shared_libs: ["libdl"],
- }
- 
- cc_binary {
-diff --git a/camera/provider/2.4/default/service.cpp b/camera/provider/2.4/default/service.cpp
-index 0a4f7874a674d4c2a2e599f29622dda6a6ad10c3..b6d8df57b556ae31209101b2560a45446b0fc913 100644
---- a/camera/provider/2.4/default/service.cpp
-+++ b/camera/provider/2.4/default/service.cpp
-@@ -26,6 +26,11 @@
- #include <hidl/LegacySupport.h>
- #include <malloc.h>
- 
-+#ifdef TAB_S3_CAMERA_CRYPTO_KEEPALIVE
-+#include <dlfcn.h>
-+#include <cstring>
-+#endif
-+
- using android::status_t;
- using android::hardware::defaultLazyPassthroughServiceImplementation;
- using android::hardware::defaultPassthroughServiceImplementation;
-@@ -37,6 +42,30 @@ const bool kLazyService = true;
- const bool kLazyService = false;
- #endif
- 
-+#ifdef TAB_S3_CAMERA_CRYPTO_KEEPALIVE
-+namespace {
-+void retainTabS3LegacyCameraCrypto() {
-+    char device[PROPERTY_VALUE_MAX] = {};
-+    property_get("ro.product.vendor.device", device, "");
-+    if (std::strcmp(device, "gts3lwifi") != 0) {
-+        return;
-+    }
-+
-+    // Compatibility experiment for the Tab S3 JPEG session-close failure.
-+    // Retain one reference to its existing vendor dependency for this provider
-+    // lifetime. This is intentionally never dlclosed; it changes neither the
-+    // vendor library bytes nor symbol visibility and is not a global preload.
-+    // Use target headers: Bionic's RTLD_NOW differs between LP32 and LP64.
-+    static void* const crypto = dlopen("/vendor/lib/libcrypto.so", RTLD_NOW | RTLD_LOCAL);
-+    if (crypto == nullptr) {
-+        ALOGE("Tab S3 camera vendor crypto retention failed: %s", dlerror());
-+    } else {
-+        ALOGI("Tab S3 camera vendor crypto reference retained for provider lifetime.");
-+    }
-+}
-+}  // namespace
-+#endif
-+
- int main()
- {
-     ALOGI("CameraProvider@2.4 legacy service is starting.");
-@@ -44,6 +73,10 @@ int main()
-     // /dev/vndbinder
-     android::ProcessState::initWithDriver("/dev/vndbinder");
- 
-+#ifdef TAB_S3_CAMERA_CRYPTO_KEEPALIVE
-+    retainTabS3LegacyCameraCrypto();
-+#endif
-+
-     // b/166675194
-     if (property_get_bool("ro.vendor.camera.provider24.disable_mem_init", false)) {
-         if (mallopt(M_BIONIC_ZERO_INIT, 0) == 0) {
-diff --git a/compatibility_matrices/Android.bp b/compatibility_matrices/Android.bp
-index 44901277185e181c8e38d1470fedf211e98d030b..2c476705ce30d1089ec33e76670d980037eafe69 100644
---- a/compatibility_matrices/Android.bp
-+++ b/compatibility_matrices/Android.bp
-@@ -81,6 +81,16 @@ phony {
-     }),
- }
- 
-+// SM-T820 retains the Android 10 HAL contract in the supplied vendor tree.
-+// Restore its real matrix for HAL validation rather than changing the vendor
-+// target level or disabling VINTF checks. This is a custom legacy-device port;
-+// it does not claim the Android 10 launch kernel requirements for Linux 3.18.
-+vintf_compatibility_matrix {
-+    name: "framework_compatibility_matrix.4.xml",
-+    stem: "compatibility_matrix.4.xml",
-+    srcs: ["compatibility_matrix.4.xml"],
-+}
-+
- ////////////////////////////////////////////
- // AUTO GENERATED MODULES
- // DO NOT ADD MORE MODULES BELOW THIS LINE
 diff --git a/compatibility_matrices/compatibility_matrix.4.xml b/compatibility_matrices/compatibility_matrix.4.xml
 new file mode 100644
 index 0000000000000000000000000000000000000000..952f53d19a005d35e8a129b1f070b26f19e3aee0
@@ -1562,34 +2315,3 @@ index 0000000000000000000000000000000000000000..1f996e9e675984760ac0f3d1ae11145f
 +  @exit
 +  setVrMode(bool enabled);
 +};
-diff --git a/wifi/aidl/default/wifi_chip.cpp b/wifi/aidl/default/wifi_chip.cpp
-index 7df168e3658acd09ecb7b6c7f5aaef7783807862..14a4ce2a2db305ca92f3b625be90e1217ac825d9 100644
---- a/wifi/aidl/default/wifi_chip.cpp
-+++ b/wifi/aidl/default/wifi_chip.cpp
-@@ -18,6 +18,7 @@
- 
- #include <android-base/logging.h>
- #include <android-base/unique_fd.h>
-+#include <algorithm>
- #include <cutils/properties.h>
- #include <fcntl.h>
- #include <hardware_legacy/wifi_hal.h>
-@@ -253,6 +254,18 @@ WifiChip::WifiChip(int32_t chip_id, bool is_primary,
- void WifiChip::retrieveDynamicIfaceCombination() {
-     if (using_dynamic_iface_combination_) return;
- 
-+    // V1 mode IDs also select STA/AP firmware. Replacing them with unified V3
-+    // combinations skips WifiModeController::changeFirmwareMode on the next
-+    // configuration and invalidates the already configured legacy mode ID.
-+    // A matrix queried in one firmware mode cannot replace this mode contract.
-+    if (std::any_of(modes_.begin(), modes_.end(), [](const IWifiChip::ChipMode& mode) {
-+            return mode.id == feature_flags::chip_mode_ids::kV1Sta ||
-+                   mode.id == feature_flags::chip_mode_ids::kV1Ap;
-+        })) {
-+        LOG(INFO) << "Preserving legacy firmware-switch chip modes";
-+        return;
-+    }
-+
-     legacy_hal::wifi_iface_concurrency_matrix legacy_matrix;
-     legacy_hal::wifi_error legacy_status;
- 

@@ -1,0 +1,270 @@
+diff --git a/Android.bp b/Android.bp
+index 869896adb851ba03055ff21cc57e1532077810df..c95ae2c5321f62c45148d9b5682eb29f91f144cd 100644
+--- a/Android.bp
++++ b/Android.bp
+@@ -1,6 +1,7 @@
+ soong_namespace {
+     imports: [
+         "hardware/google/pixel",
++        "hardware/google/pixel/usb",
+         "hardware/google/interfaces",
+     ],
+ }
+diff --git a/aidl/fingerprint/Legacy2Aidl.h b/aidl/fingerprint/Legacy2Aidl.h
+index c2e20cdde2be17618481821f902705b945ee5c63..8e61160a77cff5397873daad49c983284dd833c0 100644
+--- a/aidl/fingerprint/Legacy2Aidl.h
++++ b/aidl/fingerprint/Legacy2Aidl.h
+@@ -21,6 +21,8 @@ namespace biometrics {
+ namespace fingerprint {
+ 
+ inline void translate(const HardwareAuthToken& authToken, hw_auth_token_t& hat) {
++    hat = {};
++    hat.version = HW_AUTH_TOKEN_VERSION;
+     hat.challenge = authToken.challenge;
+     hat.user_id = authToken.userId;
+     hat.authenticator_id = authToken.authenticatorId;
+diff --git a/aidl/fingerprint/Session.cpp b/aidl/fingerprint/Session.cpp
+index 9b17f417960d70e58686a2a063613123dd65d771..0929d1202b4ff1f2a9f5337b67307e99bb96a074 100644
+--- a/aidl/fingerprint/Session.cpp
++++ b/aidl/fingerprint/Session.cpp
+@@ -13,8 +13,11 @@
+ 
+ #include <android-base/logging.h>
+ 
++#include <algorithm>
+ #include <dirent.h>
+ #include <endian.h>
++#include <errno.h>
++#include <sys/stat.h>
+ #include <thread>
+ 
+ using namespace ::android::fingerprint::samsung;
+@@ -26,6 +29,8 @@ namespace hardware {
+ namespace biometrics {
+ namespace fingerprint {
+ 
++static constexpr uint32_t kEnrollTimeoutSec = 60;
++
+ void onClientDeath(void* cookie) {
+     LOG(INFO) << "FingerprintService has died";
+     Session* session = static_cast<Session*>(cookie);
+@@ -39,16 +44,28 @@ Session::Session(LegacyHAL hal, int userId, std::shared_ptr<ISessionCallback> cb
+     : mHal(hal), mLockoutTracker(lockoutTracker), mUserId(userId), mCb(cb) {
+     mDeathRecipient = AIBinder_DeathRecipient_new(onClientDeath);
+ 
++    if (mkdir("/data/vendor/biometrics/fp", 0700) != 0 && errno != EEXIST) {
++        PLOG(ERROR) << "Failed to create fingerprint data root";
++    }
++
+     char filename[64];
+     snprintf(filename, sizeof(filename), FINGERPRINT_DATA_DIR, userId);
+-    mHal.ss_fingerprint_set_active_group(userId, filename);
++    if (mkdir(filename, 0700) != 0 && errno != EEXIST) {
++        PLOG(ERROR) << "Failed to create fingerprint data directory " << filename;
++    }
++
++    int32_t error = mHal.ss_fingerprint_set_active_group(userId, filename);
++    if (error) {
++        LOG(ERROR) << "ss_fingerprint_set_active_group failed: " << error;
++    }
+ }
+ 
+ ndk::ScopedAStatus Session::generateChallenge() {
+     LOG(INFO) << "generateChallenge";
+ 
+-    uint64_t challenge = mHal.ss_fingerprint_pre_enroll();
+-    mCb->onChallengeGenerated(challenge);
++    mEnrollmentChallenge = mHal.ss_fingerprint_pre_enroll();
++    LOG(INFO) << "Generated enrollment challenge: " << mEnrollmentChallenge;
++    mCb->onChallengeGenerated(mEnrollmentChallenge);
+ 
+     return ndk::ScopedAStatus::ok();
+ }
+@@ -74,7 +91,19 @@ ndk::ScopedAStatus Session::enroll(const HardwareAuthToken& hat,
+     hw_auth_token_t authToken;
+     translate(hat, authToken);
+ 
+-    int32_t error = mHal.ss_fingerprint_enroll(&authToken, mUserId, 0 /* timeoutSec */);
++    const bool macAllZero = std::all_of(hat.mac.begin(), hat.mac.end(), [](uint8_t byte) {
++        return byte == 0;
++    });
++    LOG(INFO) << "Enrollment HAT metadata: challenge=" << hat.challenge
++              << ", challengeMatches=" << (hat.challenge == mEnrollmentChallenge)
++              << ", userId=" << hat.userId << ", authenticatorId=" << hat.authenticatorId
++              << ", authenticatorType=" << static_cast<uint32_t>(hat.authenticatorType)
++              << ", timestampMs=" << hat.timestamp.milliSeconds
++              << ", macSize=" << hat.mac.size()
++              << ", macAllZero=" << macAllZero
++              << ", legacyVersion=" << static_cast<uint32_t>(authToken.version);
++
++    int32_t error = mHal.ss_fingerprint_enroll(&authToken, mUserId, kEnrollTimeoutSec);
+     if (error) {
+         LOG(ERROR) << "ss_fingerprint_enroll failed: " << error;
+         mCb->onError(Error::UNABLE_TO_PROCESS, error);
+diff --git a/aidl/fingerprint/Session.h b/aidl/fingerprint/Session.h
+index 8ef41b16de9321578e99f61dedcef0616c0e32b9..79334796162eca54f43d88120238292294d1f245 100644
+--- a/aidl/fingerprint/Session.h
++++ b/aidl/fingerprint/Session.h
+@@ -90,6 +90,10 @@ class Session : public BnSession {
+     // The user ID for which this session was created.
+     int32_t mUserId;
+ 
++    // The most recently generated enrollment challenge. Used to diagnose legacy HALs that reject
++    // an otherwise well-formed hardware authentication token.
++    uint64_t mEnrollmentChallenge = 0;
++
+     // Callback for talking to the framework. This callback must only be called from non-binder
+     // threads to prevent nested binder calls and consequently a binder thread exhaustion.
+     // Practically, it means that this callback should always be called from the worker thread.
+diff --git a/aidl/livedisplay/AdaptiveBacklight.cpp b/aidl/livedisplay/AdaptiveBacklight.cpp
+index 32d7fbc447d3380a8edeaa2dd20986c470ad820f..eaecfcfa43beaeece06f881bbcbe7ee95bce6d57 100644
+--- a/aidl/livedisplay/AdaptiveBacklight.cpp
++++ b/aidl/livedisplay/AdaptiveBacklight.cpp
+@@ -4,12 +4,14 @@
+  */
+ 
+ #include <android-base/file.h>
++#include <android-base/parseint.h>
+ #include <android-base/strings.h>
+ #include <livedisplay/samsung/AdaptiveBacklight.h>
+ 
+ #include <fstream>
+ 
+ using android::base::ReadFileToString;
++using android::base::ParseInt;
+ using android::base::Trim;
+ using android::base::WriteStringToFile;
+ 
+@@ -31,10 +33,9 @@ ndk::ScopedAStatus AdaptiveBacklight::getEnabled(bool* _aidl_return) {
+     std::string tmp;
+     int32_t contents = 0;
+ 
+-    if (!ReadFileToString(kBacklightPath, &tmp)) {
++    if (!ReadFileToString(kBacklightPath, &tmp) || !ParseInt(Trim(tmp), &contents)) {
+         return ndk::ScopedAStatus::fromExceptionCode(EX_UNSUPPORTED_OPERATION);
+     }
+-    contents = std::stoi(Trim(tmp));
+ 
+     *_aidl_return = contents > 0;
+     return ndk::ScopedAStatus::ok();
+diff --git a/aidl/livedisplay/DisplayColorCalibration.cpp b/aidl/livedisplay/DisplayColorCalibration.cpp
+index c3c2fbbd4c0f1824a2de92ff93faf57ec006c662..82d047d87993b95c57ca9d9737871ac0bcdd02b8 100644
+--- a/aidl/livedisplay/DisplayColorCalibration.cpp
++++ b/aidl/livedisplay/DisplayColorCalibration.cpp
+@@ -4,12 +4,14 @@
+  */
+ 
+ #include <android-base/file.h>
++#include <android-base/parseint.h>
+ #include <android-base/strings.h>
+ #include <livedisplay/samsung/DisplayColorCalibration.h>
+ 
+ #include <fstream>
+ 
+ using android::base::ReadFileToString;
++using android::base::ParseInt;
+ using android::base::Split;
+ using android::base::Trim;
+ using android::base::WriteStringToFile;
+@@ -42,20 +44,32 @@ ndk::ScopedAStatus DisplayColorCalibration::getCalibration(std::vector<int32_t>*
+     std::vector<int32_t> rgb;
+     std::string tmp;
+ 
+-    if (ReadFileToString(kRGBPath, &tmp)) {
+-        std::vector<std::string> colors = Split(Trim(tmp), " ");
+-        for (const std::string& color : colors) {
+-            rgb.push_back(std::stoi(color));
+-        }
+-    } else {
++    if (!ReadFileToString(kRGBPath, &tmp)) {
+         return ndk::ScopedAStatus::fromExceptionCode(EX_UNSUPPORTED_OPERATION);
+     }
+ 
++    std::vector<std::string> colors = Split(Trim(tmp), " ");
++    if (colors.size() != 3) {
++        return ndk::ScopedAStatus::fromExceptionCode(EX_UNSUPPORTED_OPERATION);
++    }
++
++    for (const std::string& color : colors) {
++        int32_t value;
++        if (!ParseInt(color, &value)) {
++            return ndk::ScopedAStatus::fromExceptionCode(EX_UNSUPPORTED_OPERATION);
++        }
++        rgb.push_back(value);
++    }
++
+     *_aidl_return = rgb;
+     return ndk::ScopedAStatus::ok();
+ }
+ 
+ ndk::ScopedAStatus DisplayColorCalibration::setCalibration(const std::vector<int32_t>& rgb) {
++    if (rgb.size() != 3) {
++        return ndk::ScopedAStatus::fromExceptionCode(EX_ILLEGAL_ARGUMENT);
++    }
++
+     std::string contents;
+ 
+     for (const int32_t& color : rgb) {
+diff --git a/aidl/livedisplay/SunlightEnhancement.cpp b/aidl/livedisplay/SunlightEnhancement.cpp
+index 47ff47e43cdbc7da13a71d079b7f15336c21bb99..467c94437e0843190c3a8dfca93fb79ad12a84c3 100644
+--- a/aidl/livedisplay/SunlightEnhancement.cpp
++++ b/aidl/livedisplay/SunlightEnhancement.cpp
+@@ -4,12 +4,14 @@
+  */
+ 
+ #include <android-base/file.h>
++#include <android-base/parseint.h>
+ #include <android-base/strings.h>
+ #include <livedisplay/samsung/SunlightEnhancement.h>
+ 
+ #include <fstream>
+ 
+ using android::base::ReadFileToString;
++using android::base::ParseInt;
+ using android::base::Trim;
+ using android::base::WriteStringToFile;
+ 
+@@ -32,10 +34,9 @@ ndk::ScopedAStatus SunlightEnhancement::getEnabled(bool* _aidl_return) {
+     std::string tmp;
+     int32_t contents = 0;
+ 
+-    if (!ReadFileToString(kSREPath, &tmp)) {
++    if (!ReadFileToString(kSREPath, &tmp) || !ParseInt(Trim(tmp), &contents)) {
+         return ndk::ScopedAStatus::fromExceptionCode(EX_UNSUPPORTED_OPERATION);
+     }
+-    contents = std::stoi(Trim(tmp));
+ 
+     *_aidl_return = contents == 1;
+     return ndk::ScopedAStatus::ok();
+diff --git a/aidl/livedisplay/SunlightEnhancementExynos.cpp b/aidl/livedisplay/SunlightEnhancementExynos.cpp
+index 1b670c94f77073ac576860f735a3f0ee30eb706b..f2161a5357b40301ce28c9da135de6425e0ee8b3 100644
+--- a/aidl/livedisplay/SunlightEnhancementExynos.cpp
++++ b/aidl/livedisplay/SunlightEnhancementExynos.cpp
+@@ -4,6 +4,7 @@
+  */
+ 
+ #include <android-base/file.h>
++#include <android-base/parseint.h>
+ #include <android-base/strings.h>
+ #include <livedisplay/samsung/SunlightEnhancementExynos.h>
+ 
+@@ -11,6 +12,7 @@
+ #include <fstream>
+ 
+ using android::base::ReadFileToString;
++using android::base::ParseInt;
+ using android::base::Trim;
+ using android::base::WriteStringToFile;
+ 
+@@ -32,10 +34,9 @@ ndk::ScopedAStatus SunlightEnhancementExynos::getEnabled(bool* _aidl_return) {
+     std::string tmp;
+     int32_t contents = 0;
+ 
+-    if (!ReadFileToString(kLUXPath, &tmp)) {
++    if (!ReadFileToString(kLUXPath, &tmp) || !ParseInt(Trim(tmp), &contents)) {
+         return ndk::ScopedAStatus::fromExceptionCode(EX_UNSUPPORTED_OPERATION);
+     }
+-    contents = std::stoi(Trim(tmp));
+ 
+     *_aidl_return = contents > 0;
+     return ndk::ScopedAStatus::ok();

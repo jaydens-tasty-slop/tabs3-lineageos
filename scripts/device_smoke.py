@@ -70,15 +70,15 @@ def main():
     require("SM-T820" in normalized or "GTS3LWIFI" in normalized,
             "Device identity is not SM-T820/gts3lwifi")
 
-    require(shell(serial, "getprop ro.build.version.sdk") == "36",
-            "Android API level is not 36")
+    require(shell(serial, "getprop ro.build.version.sdk") == "37",
+            "Android API level is not 37")
     require(shell(serial, "getprop sys.boot_completed") == "1",
             "Android has not completed boot")
     require(not shell(serial, "getprop ro.twrp.version"),
             "The device is in recovery, not Android")
     require(bool(shell(serial, "pidof system_server")),
             "system_server is not running")
-    print("Device identity and Android 16 boot: OK")
+    print("Device identity and Android 17 boot: OK")
 
     for service in ("activity", "package"):
         status = shell(serial, "service check " + service)

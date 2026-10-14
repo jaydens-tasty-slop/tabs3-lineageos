@@ -17,8 +17,8 @@ def main():
     os.umask(0o077)
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument("--serial",required=True)
     args=parser.parse_args();device=AdbDevice(args.serial)
-    require(not device.recovery and device.props.get("ro.build.version.sdk")=="36"
-            and device.props.get("sys.boot_completed")=="1","Booted Android 16 required")
+    require(not device.recovery and device.props.get("ro.build.version.sdk")=="37"
+            and device.props.get("sys.boot_completed")=="1","Booted Android 17 required")
     require(device.shell("id -u",check=True).stdout.strip()=="2000","Use ordinary Android shell UID 2000")
     artifact=ROOT / "artifacts/device-vulkan-validation";binary=artifact / "vulkan-compute"
     build=json.loads((artifact / "build.json").read_text())

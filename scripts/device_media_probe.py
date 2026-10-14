@@ -38,14 +38,14 @@ def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", required=True)
-    parser.add_argument("--suite", choices=("inventory", "gpu", "webview", "audio-route", "decode", "encode", "all"), default="all")
+    parser.add_argument("--suite", choices=("inventory", "drm", "gpu", "webview", "audio-route", "decode", "encode", "all"), default="all")
     parser.add_argument("--case", action="append", help="Limit decoding to these fixture names")
     parser.add_argument("--fixtures", type=pathlib.Path, default=ROOT / "artifacts/device-media-fixtures-v2")
     parser.add_argument("--keep-app", action="store_true", help="Keep this diagnostic package for follow-up probes")
     args = parser.parse_args()
     device = AdbDevice(args.serial)
-    require(not device.recovery and device.props.get("ro.build.version.sdk") == "36"
-            and device.props.get("sys.boot_completed") == "1", "Requires this tablet booted into Android 16")
+    require(not device.recovery and device.props.get("ro.build.version.sdk") == "37"
+            and device.props.get("sys.boot_completed") == "1", "Requires this tablet booted into Android 17")
     require(device.shell("am get-started-user-state 0", check=True).stdout.strip() == "RUNNING_UNLOCKED",
             "Unlock Android user 0 with its normal PIN/pattern after reboot before running app probes")
     payloads = ROOT / "artifacts/device-media-validation"
@@ -186,6 +186,9 @@ def main():
             }
         else:
             codecs = []
+        if args.suite in ("drm", "all"):
+            item = invoke("drm", "drm", timeout=30)
+            report["results"].append({"name": "drm", **item})
         if args.suite in ("gpu", "all"):
             item = invoke("gpu", "gpu")
             report["results"].append({"name": "gpu", **item})

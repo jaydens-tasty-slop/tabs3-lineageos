@@ -1,8 +1,8 @@
 diff --git a/services/inputflinger/reader/EventHub.cpp b/services/inputflinger/reader/EventHub.cpp
-index c6054e7b800c9aab525aa48104ed5646618826a7..d2e72cd2996be8e1e7134e89fe3c4089ba25e7cc 100644
+index ca79fc5ef2fd93aacb7e9466c9eee103bf651c53..f2dd899e5a201bdae7493475c27d251eff6694bf 100644
 --- a/services/inputflinger/reader/EventHub.cpp
 +++ b/services/inputflinger/reader/EventHub.cpp
-@@ -2011,6 +2011,14 @@ std::vector<RawEvent> EventHub::getEvents(int timeoutMillis) {
+@@ -2122,6 +2122,14 @@ std::vector<RawEvent> EventHub::getEvents(int timeoutMillis) {
                      const size_t count = size_t(readSize) / sizeof(struct input_event);
                      for (size_t i = 0; i < count; i++) {
                          struct input_event& iev = readBuffer[i];

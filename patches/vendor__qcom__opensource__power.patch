@@ -1,0 +1,73 @@
+diff --git a/Android.bp b/Android.bp
+index 6579bd3a4f965fd309ae55125ca914831bdf6b93..e11def8f68788630848d7439d2e41eb104922067 100644
+--- a/Android.bp
++++ b/Android.bp
+@@ -71,13 +71,7 @@ cc_binary {
+         "libfmq",
+         "libutils",
+         "libbinder_ndk",
+-    ] + select(soong_config_variable("qtidisplay", "libdisplayconfig_qti_namespace"), {
+-        any @ flag_val: ["//" + flag_val + ":libdisplayconfig.qti"],
+-        default: [],
+-    }) + select(soong_config_variable("qtidisplay", "headers_namespace"), {
+-        any @ flag_val: ["//" + flag_val + ":vendor.qti.hardware.display.config-V12-ndk"],
+-        default: [],
+-    }),
++    ],
+ 
+     static_libs: select(soong_config_variable("qtipower", "mode_ext_lib"), {
+         any @ lib: [lib],
+diff --git a/PowerHintSession.cpp b/PowerHintSession.cpp
+index 0b04feeacf26784a4d3d9ce6e8cc082ea2912798..025e658330cfc6e33d9ebc5c5ac0950d9f7d99e8 100644
+--- a/PowerHintSession.cpp
++++ b/PowerHintSession.cpp
+@@ -6,9 +6,7 @@
+ #define LOG_TAG "QTI PowerHAL"
+ 
+ #include "PowerHintSession.h"
+-#include <aidl/vendor/qti/hardware/display/config/IDisplayConfig.h>
+ #include <android-base/logging.h>
+-#include <android/binder_manager.h>
+ #include <dlfcn.h>
+ #include <algorithm>
+ #include <cmath>
+@@ -17,9 +15,6 @@
+ #include "performance.h"
+ #include "utils.h"
+ 
+-using aidl::vendor::qti::hardware::display::config::DisplayType;
+-using aidl::vendor::qti::hardware::display::config::IDisplayConfig;
+-
+ #define VENDOR_FEEDBACK_WORKLOAD_TYPE 0x00001601
+ #define VENDOR_FEEDBACK_TOPAPP_NAME 0x00001611
+ #define VENDOR_HINT_PICARD_TOP_APP 0x0000104A
+@@ -208,26 +203,9 @@ bool initTopAppInfo(std::string& topAppName) {
+ }
+ 
+ void initSupportedFps(std::vector<int32_t>& supportedFps) {
+-    ndk::SpAIBinder binder(AServiceManager_checkService(
+-            "vendor.qti.hardware.display.config.IDisplayConfig/default"));
+-    if (binder.get() == nullptr) {
+-        LOG(ERROR) << "DisplayConfig AIDL is not available";
+-        return;
+-    }
+-    auto aidlDisplayConfigIntf = IDisplayConfig::fromBinder(binder);
+-    if (aidlDisplayConfigIntf == nullptr) {
+-        LOG(ERROR) << "Failed to obtain DisplayConfig interface";
+-        return;
+-    }
+-    ndk::ScopedAStatus status = aidlDisplayConfigIntf->getSupportedDisplayRefreshRates(
+-            DisplayType::PRIMARY, &supportedFps);
+-    if (!status.isOk()) {
+-        LOG(ERROR) << "Failed to get supported display refresh rates";
+-        return;
+-    }
+-    std::sort(supportedFps.begin(), supportedFps.end());
+-    LOG(INFO) << "Supported display refresh rates: "
+-              << printValues(supportedFps, static_cast<int>(supportedFps.size()));
++    // The msm8996 display stack predates DisplayConfig AIDL. The Tab S3 panel
++    // has one fixed 60 Hz mode, so expose that directly to ADPF.
++    supportedFps = {60};
+ }
+ 
+ PowerHintSessionImpl::PowerHintSessionImpl(int32_t tgid, int32_t uid,

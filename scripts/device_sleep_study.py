@@ -174,8 +174,8 @@ def wakeup_deltas(start_directory, finish_directory):
 
 def capture(serial, output, final_anchor, clock_helper=None):
     device = ready(serial)
-    require(not device.recovery and device.props.get("ro.build.version.sdk") == "36"
-            and device.props.get("sys.boot_completed") == "1", "Booted Android 16 required")
+    require(not device.recovery and device.props.get("ro.build.version.sdk") == "37"
+            and device.props.get("sys.boot_completed") == "1", "Booted Android 17 required")
     original_uid = device.shell("id -u", check=True).stdout.strip()
     require(original_uid in ("0", "2000"), "Unexpected ADB identity")
     stay = device.shell("settings get global stay_on_while_plugged_in", check=True).stdout.strip()

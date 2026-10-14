@@ -25,10 +25,22 @@ index a2eccb7c74f7b97f72b63e63b823b7cc557f2f99..a652cdc2b82b6f467d657554cfe20eff
  $(call inherit-product, device/samsung/gts3l-common/gts3l.mk)
 \ No newline at end of file
 diff --git a/lineage_gts3lwifi.mk b/lineage_gts3lwifi.mk
-index f4efefc17c1dfc56d86c639232115347162d432e..b3ad7fa3d8920e820dcd4f3e0cea252f8ab02ccd 100644
+index f4efefc17c1dfc56d86c639232115347162d432e..479ba6c3937ef29fa1f02f99517dd553e6cf0ee3 100644
 --- a/lineage_gts3lwifi.mk
 +++ b/lineage_gts3lwifi.mk
-@@ -37,8 +37,6 @@ PRODUCT_GMS_CLIENTID_BASE := android-samsung
+@@ -24,6 +24,11 @@ $(call inherit-product, device/samsung/gts3lwifi/device.mk)
+ # Inherit some common Lineage stuff.
+ $(call inherit-product, vendor/lineage/config/common_full_tablet_wifionly.mk)
+ 
++# The 3.18 kernel has neither userfaultfd nor MREMAP_DONTUNMAP. Set this in
++# the final product, after the inherited ART defaults, so they cannot replace
++# the device choice with Android 17's default of true.
++PRODUCT_ENABLE_UFFD_GC := false
++
+ # Device identifier. This must come after all inclusions
+ PRODUCT_DEVICE := gts3lwifi
+ PRODUCT_NAME := lineage_gts3lwifi
+@@ -37,8 +42,6 @@ PRODUCT_GMS_CLIENTID_BASE := android-samsung
  
  # Use the latest approved GMS identifiers
  PRODUCT_BUILD_PROP_OVERRIDES += \

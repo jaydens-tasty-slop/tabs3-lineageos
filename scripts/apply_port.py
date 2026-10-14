@@ -28,7 +28,7 @@ for change in index["changes"]:
     if subprocess.check_output(prefix + ["status", "--porcelain"]):
         raise SystemExit("Refusing to overwrite changes in " + change["path"])
     subprocess.run(prefix + ["apply", "--check", str(patch)], check=True)
-    branch = "tabs3/lineage-23.2"
+    branch = "tabs3/lineage-24.0"
     exists = subprocess.run(prefix + ["show-ref", "--verify", "--quiet", "refs/heads/" + branch])
     if exists.returncode == 0:
         subprocess.run(prefix + ["checkout", branch], check=True)

@@ -34,7 +34,7 @@ def one_property(path, name):
 
 version = one_property(product_prop, "ro.lineage.version")
 build_timestamp = one_property(system_prop, "ro.build.date.utc")
-match = re.fullmatch(r"23\.2-(\d{8})(?:_(\d{6}))?-UNOFFICIAL-gts3lwifi", version)
+match = re.fullmatch(r"24\.0-(\d{8})(?:_(\d{6}))?-UNOFFICIAL-gts3lwifi", version)
 if not match:
     raise SystemExit(f"noncanonical or unexpected Lineage version: {version!r}")
 try:

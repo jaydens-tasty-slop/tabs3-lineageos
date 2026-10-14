@@ -1,8 +1,8 @@
 diff --git a/core/Makefile b/core/Makefile
-index b8c418940c5d580d87c501e9485389355e6533ba..3ca3b3067ae28dfb700f7b9766304b4b5bb20ef8 100644
+index 65c45cb835d01281314fd418cc4f52947e337d92..4b870861c1e8e6ed2152699b9ce4e72cc59bb4fd 100644
 --- a/core/Makefile
 +++ b/core/Makefile
-@@ -6451,7 +6451,7 @@ define copy-image-and-generate-map
+@@ -6537,7 +6537,7 @@ define copy-image-and-generate-map
      $(if $(filter $(_supported_fs_for_map_file_generator),$(_map_fs_type))$(_no_map_file),\
        mkdir -p $(2); \
        cp $(1) $(2); \

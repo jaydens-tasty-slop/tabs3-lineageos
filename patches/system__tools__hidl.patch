@@ -1,0 +1,12 @@
+diff --git a/build/hidl_interface.go b/build/hidl_interface.go
+index b517e84318eb6ea82df31f0290769108c4a7fcf4..47c443239dd79f9a05a0b04ff7c6671cd69eea78 100644
+--- a/build/hidl_interface.go
++++ b/build/hidl_interface.go
+@@ -898,6 +898,7 @@ var allAospHidlInterfaces = map[string]bool{
+ 	"android.frameworks.cameraservice.service@2.0": true,
+ 	"android.frameworks.cameraservice.service@2.1": true,
+ 	"android.frameworks.cameraservice.service@2.2": true,
++	"android.frameworks.displayservice@1.0":        true,
+ 	"android.frameworks.sensorservice@1.0":         true,
+ 	"android.frameworks.stats@1.0":                 true,
+ 	"android.frameworks.vr.composer@1.0":           true,
