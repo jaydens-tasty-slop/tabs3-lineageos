@@ -77,14 +77,23 @@ def test_bounded_fdroid_stress(run_probe):
 
 
 @pytest.mark.browser
+def test_fennec_known_transparent_video_canvas_limit(run_probe):
+    run_probe("device_fdroid_validation.py", "--phase", "browser",
+              "--browser-suite", "fixture",
+              "--accept-fennec-transparent-video-canvas", timeout=600)
+
+
+@pytest.mark.browser
 def test_browser_hardware_acceleration_fixture(run_probe):
     run_probe("device_fdroid_validation.py", "--phase", "browser",
+              "--browser-package", "de.baumann.browser",
               "--browser-suite", "fixture", timeout=600)
 
 
 @pytest.mark.browser
 def test_browser_public_https(run_probe):
     run_probe("device_fdroid_validation.py", "--phase", "browser",
+              "--browser-package", "de.baumann.browser",
               "--browser-suite", "full", timeout=900)
 
 

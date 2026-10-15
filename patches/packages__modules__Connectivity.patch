@@ -99,96 +99,6 @@ index 7122d678124a483c42b3c7504f011b850f73db13..756e9ec95f127a163a8a8b94c19945dd
      ],
      static_libs: [
          "libmodules-utils-build",
-diff --git a/bpf/netd/LegacyPolicy.cpp b/bpf/netd/LegacyPolicy.cpp
-new file mode 100644
-index 0000000000000000000000000000000000000000..474ec988f174258eb595231a17d781ee481ed313
---- /dev/null
-+++ b/bpf/netd/LegacyPolicy.cpp
-@@ -0,0 +1,84 @@
-+/* Copyright (C) 2026 Tab S3 ROM Builder
-+ * SPDX-License-Identifier: Apache-2.0
-+ */
-+#include "NetdUpdatablePublic.h"
-+
-+#include <errno.h>
-+#include <array>
-+#include <map>
-+#include <mutex>
-+#include <set>
-+
-+namespace {
-+std::mutex policyLock;
-+std::array<std::set<uid_t>, 13> uidChains;
-+std::map<uid_t, int32_t> uidPermissions;
-+uint32_t enabledChains = 0;
-+bool dataSaver = false;
-+bool policyReady = false;
-+
-+bool allowlist(int chain) {
-+    return chain == 1 || chain == 3 || chain == 4 || chain == 5 || chain == 6 || chain == 10;
-+}
-+}
-+
-+int libnetd_updatable_legacy_setUidChain(int32_t chain, const int32_t* uids, size_t count) {
-+    if (chain < 1 || chain > 12 || (count && !uids)) return -EINVAL;
-+    std::set<uid_t> replacement;
-+    for (size_t i = 0; i < count; i++) {
-+        if (uids[i] < 0) return -EINVAL;
-+        replacement.insert(static_cast<uid_t>(uids[i]));
-+    }
-+    std::lock_guard guard(policyLock);
-+    uidChains[chain] = std::move(replacement);
-+    return 0;
-+}
-+
-+int libnetd_updatable_legacy_setEnabledChains(uint32_t enabled) {
-+    if (enabled & ~0x3feU) return -EINVAL; // Child chains 1 through 9.
-+    std::lock_guard guard(policyLock);
-+    enabledChains = enabled;
-+    return 0;
-+}
-+
-+void libnetd_updatable_legacy_setDataSaver(bool enabled) {
-+    std::lock_guard guard(policyLock);
-+    dataSaver = enabled;
-+}
-+
-+int libnetd_updatable_legacy_setUidPermission(int32_t uid, int32_t permission) {
-+    if (uid < 0 || (permission != -1 && (permission & ~12))) return -EINVAL;
-+    std::lock_guard guard(policyLock);
-+    // The Android permission map is indexed by appId, shared across users.
-+    uid_t appId = static_cast<uid_t>(uid) % 100000;
-+    if (permission == 0 || permission == -1) uidPermissions.erase(appId);
-+    else uidPermissions[appId] = permission;
-+    return 0;
-+}
-+
-+bool libnetd_updatable_legacy_canTagOtherUid(uid_t uid) {
-+    if (uid < 10000) return true;
-+    std::lock_guard guard(policyLock);
-+    auto permission = uidPermissions.find(uid % 100000);
-+    return permission != uidPermissions.end() && (permission->second & 8); // UPDATE_DEVICE_STATS.
-+}
-+
-+void libnetd_updatable_legacy_setReady(bool ready) {
-+    std::lock_guard guard(policyLock);
-+    policyReady = ready;
-+}
-+
-+int libnetd_updatable_legacy_isUidNetworkingBlocked(uid_t uid, bool metered) {
-+    std::lock_guard guard(policyLock);
-+    if (!policyReady) return -EUNATCH;
-+    // Match the system UID exemption in the installed xt_owner chains.
-+    if (uid < 10000) return 0;
-+    for (int chain = 1; chain <= 9; chain++) {
-+        if (!(enabledChains & (1U << chain))) continue;
-+        bool present = uidChains[chain].count(uid);
-+        if (present != allowlist(chain)) return 1;
-+    }
-+    if (metered && (uidChains[11].count(uid) || uidChains[12].count(uid) ||
-+                   (dataSaver && !uidChains[10].count(uid)))) return 1;
-+    return 0;
-+}
 diff --git a/bpf/netd/NetdUpdatable.cpp b/bpf/netd/NetdUpdatable.cpp
 index 8b2b4dccbb74a28f7e28c8345af05e3da6772567..6b918ddd55d82145af9142a022baf4aab7d366cb 100644
 --- a/bpf/netd/NetdUpdatable.cpp
@@ -482,133 +392,6 @@ index d569b78d15729e2ba7eb30ffc111e6366a3115ff..f732add219abc213b2eb684aaf56d401
          try {
              final InterfaceMapValue value = mIndexToIfaceBpfMap.getValue(new S32(index));
              if (value == null) {
-diff --git a/service-t/src/com/android/server/net/LegacyNetworkStats.java b/service-t/src/com/android/server/net/LegacyNetworkStats.java
-new file mode 100644
-index 0000000000000000000000000000000000000000..ec01be74c9694c58b374a2f385432678317c0fe7
---- /dev/null
-+++ b/service-t/src/com/android/server/net/LegacyNetworkStats.java
-@@ -0,0 +1,121 @@
-+/* Copyright (C) 2026 Tab S3 ROM Builder
-+ * SPDX-License-Identifier: Apache-2.0
-+ */
-+package com.android.server.net;
-+
-+import android.net.NetworkStats;
-+import android.os.SystemClock;
-+import android.os.SystemProperties;
-+import android.system.ErrnoException;
-+import android.system.OsConstants;
-+import java.io.BufferedReader;
-+import java.io.FileReader;
-+import java.io.FileOutputStream;
-+import java.io.IOException;
-+import java.nio.charset.StandardCharsets;
-+import java.util.HashSet;
-+
-+/** Reads the cumulative xt_qtaguid counters instead of absent eBPF maps. */
-+final class LegacyNetworkStats {
-+    static boolean enabled() {
-+        return !SystemProperties.getBoolean("ro.kernel.ebpf.supported", true);
-+    }
-+
-+    static void writeCounterSet(int uid, int set) throws ErrnoException {
-+        if (uid < 0 || set < 0 || set > 1) throw new ErrnoException("qtaguid counter set", OsConstants.EINVAL);
-+        try (FileOutputStream output = new FileOutputStream("/proc/net/xt_qtaguid/ctrl")) {
-+            output.write(("s " + set + " " + uid).getBytes(StandardCharsets.US_ASCII));
-+        } catch (IOException e) {
-+            throw new ErrnoException("qtaguid counter set", OsConstants.EIO, e);
-+        }
-+    }
-+
-+    static void deleteUid(int uid) throws IOException {
-+        if (uid < 0) throw new IOException("Invalid accounting UID");
-+        try (FileOutputStream output = new FileOutputStream("/proc/net/xt_qtaguid/ctrl")) {
-+            output.write(("d 0 " + uid).getBytes(StandardCharsets.US_ASCII));
-+        }
-+    }
-+
-+    private static long counter(String value) throws IOException {
-+        try {
-+            long result = Long.parseLong(value);
-+            if (result < 0) throw new NumberFormatException("negative counter");
-+            return result;
-+        } catch (NumberFormatException e) {
-+            throw new IOException("Invalid xt_qtaguid counter", e);
-+        }
-+    }
-+
-+    static NetworkStats detail() throws IOException {
-+        NetworkStats stats = new NetworkStats(SystemClock.elapsedRealtime(), 0);
-+        try (BufferedReader input = new BufferedReader(new FileReader("/proc/net/xt_qtaguid/stats"))) {
-+            String header = input.readLine();
-+            if (header == null || !header.startsWith("idx iface ")) throw new IOException("Invalid xt_qtaguid header");
-+            String line;
-+            long lastIndex = 1;
-+            while ((line = input.readLine()) != null) {
-+                String[] fields = line.trim().split("\\s+");
-+                if (fields.length < 9) throw new IOException("Truncated xt_qtaguid stats row");
-+                long index = counter(fields[0]);
-+                if (index != lastIndex + 1) throw new IOException("Inconsistent xt_qtaguid index");
-+                lastIndex = index;
-+                NetworkStats.Entry entry = new NetworkStats.Entry();
-+                entry.iface = fields[1];
-+                entry.uid = Math.toIntExact(counter(fields[3]));
-+                entry.set = Math.toIntExact(counter(fields[4]));
-+                entry.tag = NetworkStatsFactory.kernelToTag(fields[2]);
-+                entry.rxBytes = counter(fields[5]);
-+                entry.rxPackets = counter(fields[6]);
-+                entry.txBytes = counter(fields[7]);
-+                entry.txPackets = counter(fields[8]);
-+                stats.combineValues(entry);
-+            }
-+        } catch (NumberFormatException | ArithmeticException e) {
-+            throw new IOException("Invalid xt_qtaguid stats row", e);
-+        }
-+        return stats;
-+    }
-+
-+    static NetworkStats interfaces() throws IOException {
-+        NetworkStats stats = new NetworkStats(SystemClock.elapsedRealtime(), 6);
-+        try (BufferedReader input = new BufferedReader(new FileReader("/proc/net/xt_qtaguid/iface_stat_all"))) {
-+            String line;
-+            while ((line = input.readLine()) != null) {
-+                String[] fields = line.trim().split("\\s+");
-+                if (fields.length < 10) throw new IOException("Truncated xt_qtaguid interface row");
-+                NetworkStats.Entry entry = new NetworkStats.Entry();
-+                entry.iface = fields[0];
-+                entry.uid = NetworkStats.UID_ALL;
-+                entry.set = NetworkStats.SET_ALL;
-+                entry.tag = NetworkStats.TAG_NONE;
-+                entry.rxBytes = counter(fields[2]);
-+                entry.rxPackets = counter(fields[3]);
-+                entry.txBytes = counter(fields[4]);
-+                entry.txPackets = counter(fields[5]);
-+                if (counter(fields[1]) != 0) {
-+                    entry.rxBytes += counter(fields[6]);
-+                    entry.rxPackets += counter(fields[7]);
-+                    entry.txBytes += counter(fields[8]);
-+                    entry.txPackets += counter(fields[9]);
-+                }
-+                stats.combineValues(entry);
-+            }
-+        }
-+        return stats;
-+    }
-+
-+    static NetworkStats.Entry total(String iface, int uid) {
-+        try {
-+            if (uid >= 0) return detail().getTotal(null, uid);
-+            NetworkStats stats = interfaces();
-+            if (iface == null) return stats.getTotal(null);
-+            HashSet<String> names = new HashSet<>();
-+            names.add(iface);
-+            return stats.getTotal(null, names);
-+        } catch (IOException e) {
-+            android.util.Log.e("LegacyNetworkStats", "Unable to read kernel traffic counters", e);
-+            return null; // TrafficStats' existing unsupported/error result.
-+        }
-+    }
-+}
 diff --git a/service-t/src/com/android/server/net/NetworkStatsFactory.java b/service-t/src/com/android/server/net/NetworkStatsFactory.java
 index 7d48b71d7564a373e568b22ad0d71b5483bbdfbd..c442c7543f378e64eff82771379818eba5f8568a 100644
 --- a/service-t/src/com/android/server/net/NetworkStatsFactory.java
@@ -1109,6 +892,368 @@ index 7682d5082635aeaa6f36c555c51f0ab2c17932c6..ba8d948399a12a844b2cf730934f940c
      @Override
      public void replaceFirewallChain(final int chain, final int[] uids) {
          enforceNetworkStackOrSettingsPermission();
+diff --git a/service/src/com/android/server/connectivity/ClatCoordinator.java b/service/src/com/android/server/connectivity/ClatCoordinator.java
+index 8266a87212735cf0b71aacd725936be90d1971e0..c403f693221d2062a930dc2e290c1169345ed888 100644
+--- a/service/src/com/android/server/connectivity/ClatCoordinator.java
++++ b/service/src/com/android/server/connectivity/ClatCoordinator.java
+@@ -34,6 +34,7 @@ import android.os.Build;
+ import android.os.ParcelFileDescriptor;
+ import android.os.RemoteException;
+ import android.os.ServiceSpecificException;
++import android.os.SystemProperties;
+ import android.system.ErrnoException;
+ import android.util.Log;
+ 
+@@ -69,6 +70,10 @@ import java.util.Objects;
+ @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+ public class ClatCoordinator {
+     private static final String TAG = ClatCoordinator.class.getSimpleName();
++    private ParcelFileDescriptor mLegacyTagSocket;
++    private static boolean legacyNetworking() {
++        return !SystemProperties.getBoolean("ro.kernel.ebpf.supported", true);
++    }
+ 
+     // Sync from system/core/libcutils/include/private/android_filesystem_config.h
+     @VisibleForTesting
+@@ -255,6 +260,7 @@ public class ClatCoordinator {
+         /** Get ingress6 BPF map. */
+         @Nullable
+         public IBpfMap<ClatIngress6Key, ClatIngress6Value> getBpfIngress6Map() {
++            if (legacyNetworking()) return null; // Use the existing userspace translator.
+             try {
+                 // written from clatd.c
+                 return new BpfMap<>(CLAT_INGRESS6_MAP_PATH,
+@@ -268,6 +274,7 @@ public class ClatCoordinator {
+         /** Get egress4 BPF map. */
+         @Nullable
+         public IBpfMap<ClatEgress4Key, ClatEgress4Value> getBpfEgress4Map() {
++            if (legacyNetworking()) return null;
+             try {
+                 // written from clatd.c
+                 return new BpfMap<>(CLAT_EGRESS4_MAP_PATH,
+@@ -281,6 +288,7 @@ public class ClatCoordinator {
+         /** Get cookie tag map */
+         @Nullable
+         public IBpfMap<S64, CookieTagMapValue> getBpfCookieTagMap() {
++            if (legacyNetworking()) return null;
+             try {
+                 // also read and written from other locations
+                 return new BpfMap<>(COOKIE_TAG_MAP_PATH,
+@@ -548,6 +556,18 @@ public class ClatCoordinator {
+     }
+ 
+     private void untagSocket(long cookie) throws IOException {
++        if (legacyNetworking()) {
++            ParcelFileDescriptor socket = mLegacyTagSocket;
++            mLegacyTagSocket = null;
++            if (socket != null) {
++                try {
++                    native_tagLegacySocket(socket.getFileDescriptor(), false);
++                } finally {
++                    socket.close();
++                }
++            }
++            return;
++        }
+         if (mCookieTagMap == null) {
+             throw new IOException("Cookie tag map is not initialized");
+         }
+@@ -628,8 +648,13 @@ public class ClatCoordinator {
+             // Start translating packets to the new prefix.
+             mDeps.addAnycastSetsockopt(writeSock6.getFileDescriptor(), v6Str, ifIndex);
+             // Tag socket as AID_CLAT to avoid duplicated CLAT data usage accounting.
+-            cookie = mDeps.getSocketCookie(writeSock6.getFileDescriptor());
+-            tagSocketAsClat(cookie);
++            if (legacyNetworking()) {
++                mLegacyTagSocket = ParcelFileDescriptor.dup(writeSock6.getFileDescriptor());
++                native_tagLegacySocket(mLegacyTagSocket.getFileDescriptor(), true);
++            } else {
++                cookie = mDeps.getSocketCookie(writeSock6.getFileDescriptor());
++                tagSocketAsClat(cookie);
++            }
+             isSocketTagged = true;
+             // Update our packet socket filter to reflect the new 464xlat IP address.
+             mDeps.configurePacketSocket(readSock6.getFileDescriptor(), v6Str, ifIndex);
+@@ -676,7 +701,7 @@ public class ClatCoordinator {
+             return v6Str;
+         } catch (IOException | RemoteException | ServiceSpecificException | ClassCastException
+                  | IllegalArgumentException | NullPointerException e) {
+-            if (isSocketTagged) {
++            if (isSocketTagged || mLegacyTagSocket != null) {
+                 try {
+                     untagSocket(cookie);
+                 } catch (IOException e2) {
+@@ -880,4 +905,6 @@ public class ClatCoordinator {
+             throws IOException;
+     private static native void native_stopClatd(int pid) throws IOException;
+     private static native long native_getSocketCookie(FileDescriptor sock) throws IOException;
++    private static native void native_tagLegacySocket(FileDescriptor sock, boolean tag)
++            throws IOException;
+ }
+diff --git a/service/src/com/android/server/connectivity/PermissionMonitor.java b/service/src/com/android/server/connectivity/PermissionMonitor.java
+index 0f88270c297c0a673f984a35cd6a100e0b9ec1fe..d63baf8e523fbb3056ab341a82ebd4c4fc79583f 100755
+--- a/service/src/com/android/server/connectivity/PermissionMonitor.java
++++ b/service/src/com/android/server/connectivity/PermissionMonitor.java
+@@ -345,8 +345,8 @@ public class PermissionMonitor {
+          */
+         public boolean isOptedInToLocalNetworkRestrictions(int uid) {
+             // TODO(b/394567896): Update compat change checks for enforcement
+-            return isAtLeastB()
+-                    && CompatChanges.isChangeEnabled(RESTRICT_LOCAL_NETWORK, uid);
++            return BpfNetMaps.supportsLocalNetworkRestrictions() &&
++                    CompatChanges.isChangeEnabled(RESTRICT_LOCAL_NETWORK, uid);
+         }
+ 
+         /**
+@@ -420,8 +420,9 @@ public class PermissionMonitor {
+     }
+ 
+     private boolean shouldEnforceLocalNetRestrictions(int uid) {
+-        return mDeps.isOptedInToLocalNetworkRestrictions(uid)
+-            || mDeps.isAccessLocalNetworkPermissionEnabled();
++        return BpfNetMaps.supportsLocalNetworkRestrictions()
++                && (mDeps.isOptedInToLocalNetworkRestrictions(uid)
++                    || mDeps.isAccessLocalNetworkPermissionEnabled());
+     }
+ 
+     private static class MultiSet<T> {
+@@ -476,7 +477,8 @@ public class PermissionMonitor {
+         mBpfNetMaps = bpfNetMaps;
+         mThread = thread;
+         mIsLoopbackPermissionEnabled = mDeps.isLoopbackPermissionEnabled();
+-        if (isAtLeastB() && !mBpfNetMaps.isPermissionPropagationEnabled()) {
++        if (BpfNetMaps.supportsLocalNetworkRestrictions()
++                && !mBpfNetMaps.isPermissionPropagationEnabled()) {
+             // Local net restrictions is supported as a developer opt-in starting in Android B.
+             // This listener should finish registration by the time the system has completed
+             // boot setup such that any changes to runtime permissions for local network
+@@ -1323,7 +1325,8 @@ public class PermissionMonitor {
+                     + ", tPerm=" + permissionToString(trafficPermission));
+         }
+ 
+-        if (isAtLeastB() && !mBpfNetMaps.isPermissionPropagationEnabled()) {
++        if (BpfNetMaps.supportsLocalNetworkRestrictions()
++                && !mBpfNetMaps.isPermissionPropagationEnabled()) {
+             mBpfNetMaps.removeUidFromLocalNetBlockMap(uid);
+             if (hasSdkSandbox(uid)) mBpfNetMaps.removeUidFromLocalNetBlockMap(
+                     Process.toSdkSandboxUid(uid));
+diff --git a/bpf/netd/LegacyPolicy.cpp b/bpf/netd/LegacyPolicy.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..474ec988f174258eb595231a17d781ee481ed313
+--- /dev/null
++++ b/bpf/netd/LegacyPolicy.cpp
+@@ -0,0 +1,84 @@
++/* Copyright (C) 2026 Tab S3 ROM Builder
++ * SPDX-License-Identifier: Apache-2.0
++ */
++#include "NetdUpdatablePublic.h"
++
++#include <errno.h>
++#include <array>
++#include <map>
++#include <mutex>
++#include <set>
++
++namespace {
++std::mutex policyLock;
++std::array<std::set<uid_t>, 13> uidChains;
++std::map<uid_t, int32_t> uidPermissions;
++uint32_t enabledChains = 0;
++bool dataSaver = false;
++bool policyReady = false;
++
++bool allowlist(int chain) {
++    return chain == 1 || chain == 3 || chain == 4 || chain == 5 || chain == 6 || chain == 10;
++}
++}
++
++int libnetd_updatable_legacy_setUidChain(int32_t chain, const int32_t* uids, size_t count) {
++    if (chain < 1 || chain > 12 || (count && !uids)) return -EINVAL;
++    std::set<uid_t> replacement;
++    for (size_t i = 0; i < count; i++) {
++        if (uids[i] < 0) return -EINVAL;
++        replacement.insert(static_cast<uid_t>(uids[i]));
++    }
++    std::lock_guard guard(policyLock);
++    uidChains[chain] = std::move(replacement);
++    return 0;
++}
++
++int libnetd_updatable_legacy_setEnabledChains(uint32_t enabled) {
++    if (enabled & ~0x3feU) return -EINVAL; // Child chains 1 through 9.
++    std::lock_guard guard(policyLock);
++    enabledChains = enabled;
++    return 0;
++}
++
++void libnetd_updatable_legacy_setDataSaver(bool enabled) {
++    std::lock_guard guard(policyLock);
++    dataSaver = enabled;
++}
++
++int libnetd_updatable_legacy_setUidPermission(int32_t uid, int32_t permission) {
++    if (uid < 0 || (permission != -1 && (permission & ~12))) return -EINVAL;
++    std::lock_guard guard(policyLock);
++    // The Android permission map is indexed by appId, shared across users.
++    uid_t appId = static_cast<uid_t>(uid) % 100000;
++    if (permission == 0 || permission == -1) uidPermissions.erase(appId);
++    else uidPermissions[appId] = permission;
++    return 0;
++}
++
++bool libnetd_updatable_legacy_canTagOtherUid(uid_t uid) {
++    if (uid < 10000) return true;
++    std::lock_guard guard(policyLock);
++    auto permission = uidPermissions.find(uid % 100000);
++    return permission != uidPermissions.end() && (permission->second & 8); // UPDATE_DEVICE_STATS.
++}
++
++void libnetd_updatable_legacy_setReady(bool ready) {
++    std::lock_guard guard(policyLock);
++    policyReady = ready;
++}
++
++int libnetd_updatable_legacy_isUidNetworkingBlocked(uid_t uid, bool metered) {
++    std::lock_guard guard(policyLock);
++    if (!policyReady) return -EUNATCH;
++    // Match the system UID exemption in the installed xt_owner chains.
++    if (uid < 10000) return 0;
++    for (int chain = 1; chain <= 9; chain++) {
++        if (!(enabledChains & (1U << chain))) continue;
++        bool present = uidChains[chain].count(uid);
++        if (present != allowlist(chain)) return 1;
++    }
++    if (metered && (uidChains[11].count(uid) || uidChains[12].count(uid) ||
++                   (dataSaver && !uidChains[10].count(uid)))) return 1;
++    return 0;
++}
+diff --git a/service-t/src/com/android/server/net/LegacyNetworkStats.java b/service-t/src/com/android/server/net/LegacyNetworkStats.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..ec01be74c9694c58b374a2f385432678317c0fe7
+--- /dev/null
++++ b/service-t/src/com/android/server/net/LegacyNetworkStats.java
+@@ -0,0 +1,121 @@
++/* Copyright (C) 2026 Tab S3 ROM Builder
++ * SPDX-License-Identifier: Apache-2.0
++ */
++package com.android.server.net;
++
++import android.net.NetworkStats;
++import android.os.SystemClock;
++import android.os.SystemProperties;
++import android.system.ErrnoException;
++import android.system.OsConstants;
++import java.io.BufferedReader;
++import java.io.FileReader;
++import java.io.FileOutputStream;
++import java.io.IOException;
++import java.nio.charset.StandardCharsets;
++import java.util.HashSet;
++
++/** Reads the cumulative xt_qtaguid counters instead of absent eBPF maps. */
++final class LegacyNetworkStats {
++    static boolean enabled() {
++        return !SystemProperties.getBoolean("ro.kernel.ebpf.supported", true);
++    }
++
++    static void writeCounterSet(int uid, int set) throws ErrnoException {
++        if (uid < 0 || set < 0 || set > 1) throw new ErrnoException("qtaguid counter set", OsConstants.EINVAL);
++        try (FileOutputStream output = new FileOutputStream("/proc/net/xt_qtaguid/ctrl")) {
++            output.write(("s " + set + " " + uid).getBytes(StandardCharsets.US_ASCII));
++        } catch (IOException e) {
++            throw new ErrnoException("qtaguid counter set", OsConstants.EIO, e);
++        }
++    }
++
++    static void deleteUid(int uid) throws IOException {
++        if (uid < 0) throw new IOException("Invalid accounting UID");
++        try (FileOutputStream output = new FileOutputStream("/proc/net/xt_qtaguid/ctrl")) {
++            output.write(("d 0 " + uid).getBytes(StandardCharsets.US_ASCII));
++        }
++    }
++
++    private static long counter(String value) throws IOException {
++        try {
++            long result = Long.parseLong(value);
++            if (result < 0) throw new NumberFormatException("negative counter");
++            return result;
++        } catch (NumberFormatException e) {
++            throw new IOException("Invalid xt_qtaguid counter", e);
++        }
++    }
++
++    static NetworkStats detail() throws IOException {
++        NetworkStats stats = new NetworkStats(SystemClock.elapsedRealtime(), 0);
++        try (BufferedReader input = new BufferedReader(new FileReader("/proc/net/xt_qtaguid/stats"))) {
++            String header = input.readLine();
++            if (header == null || !header.startsWith("idx iface ")) throw new IOException("Invalid xt_qtaguid header");
++            String line;
++            long lastIndex = 1;
++            while ((line = input.readLine()) != null) {
++                String[] fields = line.trim().split("\\s+");
++                if (fields.length < 9) throw new IOException("Truncated xt_qtaguid stats row");
++                long index = counter(fields[0]);
++                if (index != lastIndex + 1) throw new IOException("Inconsistent xt_qtaguid index");
++                lastIndex = index;
++                NetworkStats.Entry entry = new NetworkStats.Entry();
++                entry.iface = fields[1];
++                entry.uid = Math.toIntExact(counter(fields[3]));
++                entry.set = Math.toIntExact(counter(fields[4]));
++                entry.tag = NetworkStatsFactory.kernelToTag(fields[2]);
++                entry.rxBytes = counter(fields[5]);
++                entry.rxPackets = counter(fields[6]);
++                entry.txBytes = counter(fields[7]);
++                entry.txPackets = counter(fields[8]);
++                stats.combineValues(entry);
++            }
++        } catch (NumberFormatException | ArithmeticException e) {
++            throw new IOException("Invalid xt_qtaguid stats row", e);
++        }
++        return stats;
++    }
++
++    static NetworkStats interfaces() throws IOException {
++        NetworkStats stats = new NetworkStats(SystemClock.elapsedRealtime(), 6);
++        try (BufferedReader input = new BufferedReader(new FileReader("/proc/net/xt_qtaguid/iface_stat_all"))) {
++            String line;
++            while ((line = input.readLine()) != null) {
++                String[] fields = line.trim().split("\\s+");
++                if (fields.length < 10) throw new IOException("Truncated xt_qtaguid interface row");
++                NetworkStats.Entry entry = new NetworkStats.Entry();
++                entry.iface = fields[0];
++                entry.uid = NetworkStats.UID_ALL;
++                entry.set = NetworkStats.SET_ALL;
++                entry.tag = NetworkStats.TAG_NONE;
++                entry.rxBytes = counter(fields[2]);
++                entry.rxPackets = counter(fields[3]);
++                entry.txBytes = counter(fields[4]);
++                entry.txPackets = counter(fields[5]);
++                if (counter(fields[1]) != 0) {
++                    entry.rxBytes += counter(fields[6]);
++                    entry.rxPackets += counter(fields[7]);
++                    entry.txBytes += counter(fields[8]);
++                    entry.txPackets += counter(fields[9]);
++                }
++                stats.combineValues(entry);
++            }
++        }
++        return stats;
++    }
++
++    static NetworkStats.Entry total(String iface, int uid) {
++        try {
++            if (uid >= 0) return detail().getTotal(null, uid);
++            NetworkStats stats = interfaces();
++            if (iface == null) return stats.getTotal(null);
++            HashSet<String> names = new HashSet<>();
++            names.add(iface);
++            return stats.getTotal(null, names);
++        } catch (IOException e) {
++            android.util.Log.e("LegacyNetworkStats", "Unable to read kernel traffic counters", e);
++            return null; // TrafficStats' existing unsupported/error result.
++        }
++    }
++}
 diff --git a/service/src/com/android/server/LegacyNetworkPolicy.java b/service/src/com/android/server/LegacyNetworkPolicy.java
 new file mode 100644
 index 0000000000000000000000000000000000000000..cd0c19ff82e520211c5ec4a52d30dae05176878f
@@ -1278,151 +1423,6 @@ index 0000000000000000000000000000000000000000..cd0c19ff82e520211c5ec4a52d30dae0
 +        });
 +    }
 +}
-diff --git a/service/src/com/android/server/connectivity/ClatCoordinator.java b/service/src/com/android/server/connectivity/ClatCoordinator.java
-index 8266a87212735cf0b71aacd725936be90d1971e0..c403f693221d2062a930dc2e290c1169345ed888 100644
---- a/service/src/com/android/server/connectivity/ClatCoordinator.java
-+++ b/service/src/com/android/server/connectivity/ClatCoordinator.java
-@@ -34,6 +34,7 @@ import android.os.Build;
- import android.os.ParcelFileDescriptor;
- import android.os.RemoteException;
- import android.os.ServiceSpecificException;
-+import android.os.SystemProperties;
- import android.system.ErrnoException;
- import android.util.Log;
- 
-@@ -69,6 +70,10 @@ import java.util.Objects;
- @RequiresApi(Build.VERSION_CODES.TIRAMISU)
- public class ClatCoordinator {
-     private static final String TAG = ClatCoordinator.class.getSimpleName();
-+    private ParcelFileDescriptor mLegacyTagSocket;
-+    private static boolean legacyNetworking() {
-+        return !SystemProperties.getBoolean("ro.kernel.ebpf.supported", true);
-+    }
- 
-     // Sync from system/core/libcutils/include/private/android_filesystem_config.h
-     @VisibleForTesting
-@@ -255,6 +260,7 @@ public class ClatCoordinator {
-         /** Get ingress6 BPF map. */
-         @Nullable
-         public IBpfMap<ClatIngress6Key, ClatIngress6Value> getBpfIngress6Map() {
-+            if (legacyNetworking()) return null; // Use the existing userspace translator.
-             try {
-                 // written from clatd.c
-                 return new BpfMap<>(CLAT_INGRESS6_MAP_PATH,
-@@ -268,6 +274,7 @@ public class ClatCoordinator {
-         /** Get egress4 BPF map. */
-         @Nullable
-         public IBpfMap<ClatEgress4Key, ClatEgress4Value> getBpfEgress4Map() {
-+            if (legacyNetworking()) return null;
-             try {
-                 // written from clatd.c
-                 return new BpfMap<>(CLAT_EGRESS4_MAP_PATH,
-@@ -281,6 +288,7 @@ public class ClatCoordinator {
-         /** Get cookie tag map */
-         @Nullable
-         public IBpfMap<S64, CookieTagMapValue> getBpfCookieTagMap() {
-+            if (legacyNetworking()) return null;
-             try {
-                 // also read and written from other locations
-                 return new BpfMap<>(COOKIE_TAG_MAP_PATH,
-@@ -548,6 +556,18 @@ public class ClatCoordinator {
-     }
- 
-     private void untagSocket(long cookie) throws IOException {
-+        if (legacyNetworking()) {
-+            ParcelFileDescriptor socket = mLegacyTagSocket;
-+            mLegacyTagSocket = null;
-+            if (socket != null) {
-+                try {
-+                    native_tagLegacySocket(socket.getFileDescriptor(), false);
-+                } finally {
-+                    socket.close();
-+                }
-+            }
-+            return;
-+        }
-         if (mCookieTagMap == null) {
-             throw new IOException("Cookie tag map is not initialized");
-         }
-@@ -628,8 +648,13 @@ public class ClatCoordinator {
-             // Start translating packets to the new prefix.
-             mDeps.addAnycastSetsockopt(writeSock6.getFileDescriptor(), v6Str, ifIndex);
-             // Tag socket as AID_CLAT to avoid duplicated CLAT data usage accounting.
--            cookie = mDeps.getSocketCookie(writeSock6.getFileDescriptor());
--            tagSocketAsClat(cookie);
-+            if (legacyNetworking()) {
-+                mLegacyTagSocket = ParcelFileDescriptor.dup(writeSock6.getFileDescriptor());
-+                native_tagLegacySocket(mLegacyTagSocket.getFileDescriptor(), true);
-+            } else {
-+                cookie = mDeps.getSocketCookie(writeSock6.getFileDescriptor());
-+                tagSocketAsClat(cookie);
-+            }
-             isSocketTagged = true;
-             // Update our packet socket filter to reflect the new 464xlat IP address.
-             mDeps.configurePacketSocket(readSock6.getFileDescriptor(), v6Str, ifIndex);
-@@ -676,7 +701,7 @@ public class ClatCoordinator {
-             return v6Str;
-         } catch (IOException | RemoteException | ServiceSpecificException | ClassCastException
-                  | IllegalArgumentException | NullPointerException e) {
--            if (isSocketTagged) {
-+            if (isSocketTagged || mLegacyTagSocket != null) {
-                 try {
-                     untagSocket(cookie);
-                 } catch (IOException e2) {
-@@ -880,4 +905,6 @@ public class ClatCoordinator {
-             throws IOException;
-     private static native void native_stopClatd(int pid) throws IOException;
-     private static native long native_getSocketCookie(FileDescriptor sock) throws IOException;
-+    private static native void native_tagLegacySocket(FileDescriptor sock, boolean tag)
-+            throws IOException;
- }
-diff --git a/service/src/com/android/server/connectivity/PermissionMonitor.java b/service/src/com/android/server/connectivity/PermissionMonitor.java
-index 0f88270c297c0a673f984a35cd6a100e0b9ec1fe..d63baf8e523fbb3056ab341a82ebd4c4fc79583f 100755
---- a/service/src/com/android/server/connectivity/PermissionMonitor.java
-+++ b/service/src/com/android/server/connectivity/PermissionMonitor.java
-@@ -345,8 +345,8 @@ public class PermissionMonitor {
-          */
-         public boolean isOptedInToLocalNetworkRestrictions(int uid) {
-             // TODO(b/394567896): Update compat change checks for enforcement
--            return isAtLeastB()
--                    && CompatChanges.isChangeEnabled(RESTRICT_LOCAL_NETWORK, uid);
-+            return BpfNetMaps.supportsLocalNetworkRestrictions() &&
-+                    CompatChanges.isChangeEnabled(RESTRICT_LOCAL_NETWORK, uid);
-         }
- 
-         /**
-@@ -420,8 +420,9 @@ public class PermissionMonitor {
-     }
- 
-     private boolean shouldEnforceLocalNetRestrictions(int uid) {
--        return mDeps.isOptedInToLocalNetworkRestrictions(uid)
--            || mDeps.isAccessLocalNetworkPermissionEnabled();
-+        return BpfNetMaps.supportsLocalNetworkRestrictions()
-+                && (mDeps.isOptedInToLocalNetworkRestrictions(uid)
-+                    || mDeps.isAccessLocalNetworkPermissionEnabled());
-     }
- 
-     private static class MultiSet<T> {
-@@ -476,7 +477,8 @@ public class PermissionMonitor {
-         mBpfNetMaps = bpfNetMaps;
-         mThread = thread;
-         mIsLoopbackPermissionEnabled = mDeps.isLoopbackPermissionEnabled();
--        if (isAtLeastB() && !mBpfNetMaps.isPermissionPropagationEnabled()) {
-+        if (BpfNetMaps.supportsLocalNetworkRestrictions()
-+                && !mBpfNetMaps.isPermissionPropagationEnabled()) {
-             // Local net restrictions is supported as a developer opt-in starting in Android B.
-             // This listener should finish registration by the time the system has completed
-             // boot setup such that any changes to runtime permissions for local network
-@@ -1323,7 +1325,8 @@ public class PermissionMonitor {
-                     + ", tPerm=" + permissionToString(trafficPermission));
-         }
- 
--        if (isAtLeastB() && !mBpfNetMaps.isPermissionPropagationEnabled()) {
-+        if (BpfNetMaps.supportsLocalNetworkRestrictions()
-+                && !mBpfNetMaps.isPermissionPropagationEnabled()) {
-             mBpfNetMaps.removeUidFromLocalNetBlockMap(uid);
-             if (hasSdkSandbox(uid)) mBpfNetMaps.removeUidFromLocalNetBlockMap(
-                     Process.toSdkSandboxUid(uid));
 diff --git a/staticlibs/device/com/android/net/module/util/MemoryBpfMap.java b/staticlibs/device/com/android/net/module/util/MemoryBpfMap.java
 new file mode 100644
 index 0000000000000000000000000000000000000000..4ad5962072b7c16e242bbd560ebdd46596288db7

@@ -129,7 +129,11 @@ def media_apk_current():
     if record.get("tools", actual_tools) != actual_tools:
         return False
     permissions = MEDIA_APK / "permissions.txt"
-    return permissions.is_file() and "uses-permission:" not in permissions.read_text()
+    if not permissions.is_file():
+        return False
+    requested = [line.strip() for line in permissions.read_text().splitlines()
+                 if line.strip().startswith("uses-permission:")]
+    return requested == ["uses-permission: name='android.permission.INTERNET'"]
 
 
 def ensure_media_apk():

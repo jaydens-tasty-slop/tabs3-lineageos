@@ -16,7 +16,8 @@ REPO = "https://f-droid.org/repo"
 # Published by https://f-droid.org/docs/Release_Channels_and_Signing_Keys/
 REPO_SIGNER = "43238d512c1e5eb2d6569f4a3afbf5523418b82e0a3ed1552770abb9a9c9ccab"
 DEFAULT_PACKAGES = ("org.fdroid.fdroid", "org.mozilla.fennec_fdroid",
-                    "com.kgurgul.cpuinfo", "net.tlfoxhuman.droidstress")
+                    "com.kgurgul.cpuinfo", "net.tlfoxhuman.droidstress",
+                    "de.baumann.browser")
 
 
 def sha256(path):
@@ -68,11 +69,17 @@ def main():
     parser.add_argument("--abi", default="arm64-v8a")
     parser.add_argument("--package", action="append")
     parser.add_argument("--mirror", default=REPO, help="An HTTPS mirror present in the signed index")
+    parser.add_argument("--reuse-from", type=pathlib.Path,
+                        help="Reuse exact APK bytes from an older verified artifacts directory")
     args = parser.parse_args()
     directory = args.output.resolve()
     if not directory.is_relative_to(ROOT / "artifacts"):
         raise ValueError("Keep payloads under artifacts")
     directory.mkdir(parents=True, exist_ok=False, mode=0o700)
+    reuse = args.reuse_from.resolve() if args.reuse_from else None
+    if reuse is not None and (not reuse.is_relative_to(ROOT / "artifacts")
+                              or not reuse.is_dir() or reuse.is_symlink()):
+        raise ValueError("Reuse only a real directory under artifacts")
     report = {"complete": False, "repository": REPO, "repo_signer_sha256": REPO_SIGNER,
               "signer_reference": "https://f-droid.org/docs/Release_Channels_and_Signing_Keys/",
               "selection": "Latest stable compatible APK, matching preferred signer",
@@ -134,6 +141,16 @@ def main():
             version = max(candidates, key=lambda v: v["manifest"]["versionCode"])
             manifest = version["manifest"]
             print("Downloading " + package + " " + manifest["versionName"], flush=True)
+            reused = False
+            if reuse is not None:
+                target_name = version["file"]["name"][1:]
+                candidate = reuse / target_name
+                target = directory / target_name
+                if (candidate.is_file() and not candidate.is_symlink()
+                        and candidate.stat().st_size == version["file"]["size"]
+                        and sha256(candidate) == version["file"]["sha256"]):
+                    os.link(candidate, target)
+                    reused = True
             apk = download(version["file"], directory, mirror)
             signature = run(["java", "-Xmx256m", "-jar", str(apksigner), "verify", "--verbose", "--print-certs",
                              "--min-sdk-version", str(args.sdk), "--max-sdk-version", str(args.sdk), str(apk)],
@@ -152,7 +169,8 @@ def main():
                       "download_url": mirror + version["file"]["name"],
                       "source_code": app["metadata"].get("sourceCode"),
                       "native_code": manifest.get("nativecode", []),
-                      "signature_verified": True, "signed_index_hash_verified": True}
+                      "signature_verified": True, "signed_index_hash_verified": True,
+                      "reused_exact_apk": reused}
             report["packages"].append(record)
             print("Verified " + package, flush=True)
         report["complete"] = True

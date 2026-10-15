@@ -1,6 +1,7 @@
 import os
 import json
 import pathlib
+import re
 import subprocess
 import sys
 
@@ -14,11 +15,13 @@ def install_probe(device, result_root, package, apk, label):
     build = json.loads((apk.parent / "build.json").read_text())
     if file_hash(apk) != build["apk_sha256"]:
         pytest.fail(label + " diagnostic APK differs from its build record")
-    if device.shell("pm path " + package).stdout.strip():
-        return False
+    preexisting = bool(device.shell("pm path " + package).stdout.strip())
     log = result_root / (label + "-probe-install.log")
+    install_args = ["install", "--no-streaming"]
+    if preexisting:
+        install_args.append("-r")
     try:
-        completed = subprocess.run(device.command + ["install", "--no-streaming", str(apk)],
+        completed = subprocess.run(device.command + install_args + [str(apk)],
                                    text=True, stdout=subprocess.PIPE,
                                    stderr=subprocess.STDOUT, timeout=180)
         output = completed.stdout
@@ -32,7 +35,7 @@ def install_probe(device, result_root, package, apk, label):
     log.write_text(output)
     if completed.returncode or "Success" not in output:
         pytest.fail(label + " probe install failed; see " + log.name)
-    return True
+    return not preexisting
 
 
 def remove_probe(device, result_root, package, label):
@@ -47,6 +50,8 @@ def remove_probe(device, result_root, package, label):
 def pytest_addoption(parser):
     parser.addoption("--serial", help="ADB serial; omitted only when exactly one device is authorized")
     parser.addoption("--result-root", required=True, help="Existing private result directory")
+    parser.addoption("--provision-widevine", action="store_true",
+                     help="Allow one HTTPS Widevine provisioning request if required")
 
 
 @pytest.fixture(scope="session")
@@ -61,6 +66,29 @@ def serial(pytestconfig):
     if device.props.get("sys.boot_completed") != "1":
         pytest.fail("Android has not completed boot")
     return device.serial
+
+
+@pytest.fixture(scope="session", autouse=True)
+def preserve_usb_stay_awake(serial):
+    """Keep a normally unlocked screen awake across the complete test session."""
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from adb_device import AdbDevice
+    device = AdbDevice(serial)
+    original = device.shell("settings get global stay_on_while_plugged_in", check=True).stdout.strip()
+    if original != "null" and re.fullmatch(r"[0-7]", original) is None:
+        pytest.fail("Unexpected USB stay-awake setting: " + original)
+    try:
+        device.shell("settings put global stay_on_while_plugged_in 2", check=True)
+        if device.shell("settings get global stay_on_while_plugged_in", check=True).stdout.strip() != "2":
+            pytest.fail("Could not enable USB stay-awake for qualification")
+        yield
+    finally:
+        command = ("settings delete global stay_on_while_plugged_in" if original == "null"
+                   else "settings put global stay_on_while_plugged_in " + original)
+        restored = device.shell(command)
+        actual = device.shell("settings get global stay_on_while_plugged_in").stdout.strip()
+        if restored.returncode != 0 or actual != original:
+            pytest.fail("Could not restore USB stay-awake setting after qualification")
 
 
 @pytest.fixture(scope="session")
@@ -114,10 +142,12 @@ def camera_probe_app(serial, result_root):
 
 
 @pytest.fixture
-def run_probe(request, serial, result_root):
+def run_probe(request, serial, result_root, pytestconfig):
     def run(script, *arguments, timeout=900):
         command = [sys.executable, str(ROOT / "scripts" / script), "--serial", serial,
                    *map(str, arguments)]
+        if script == "device_media_probe.py" and pytestconfig.getoption("provision_widevine"):
+            command.append("--provision-widevine")
         environment = os.environ.copy()
         environment["PYTHONDONTWRITEBYTECODE"] = "1"
         log = result_root / "logs" / (request.node.name + ".log")

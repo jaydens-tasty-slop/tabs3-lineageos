@@ -70,6 +70,12 @@ def main():
     require("SM-T820" in normalized or "GTS3LWIFI" in normalized,
             "Device identity is not SM-T820/gts3lwifi")
 
+    lineage_version = shell(serial, "getprop ro.lineage.version")
+    require(re.fullmatch(r"24\.0-\d{8}(?:_\d{6})?-UNOFFICIAL-gts3lwifi",
+                         lineage_version) is not None,
+            "Lineage version is not an Android 17 gts3lwifi build")
+    require(shell(serial, "getprop ro.build.version.release") == "17",
+            "Android release is not 17")
     require(shell(serial, "getprop ro.build.version.sdk") == "37",
             "Android API level is not 37")
     require(shell(serial, "getprop sys.boot_completed") == "1",
@@ -79,6 +85,15 @@ def main():
     require(bool(shell(serial, "pidof system_server")),
             "system_server is not running")
     print("Device identity and Android 17 boot: OK")
+
+    require(shell(serial, "getprop ro.secure") == "1", "ro.secure is not 1")
+    require(shell(serial, "getprop ro.adb.secure") == "1", "ro.adb.secure is not 1")
+    require(shell(serial, "getprop ro.debuggable") == "0", "ro.debuggable is not 0")
+    require(shell(serial, "id -u") == "2000", "ADB is not an ordinary shell account")
+    stats_hash = shell(serial, "sha256sum /vendor/lib/libmmcamera2_stats_modules.so").split()[0]
+    require(stats_hash == "f5cbd6361e5539bd30e84461d95e35ab01facabe905ee6e57c7ed1622d6ca273",
+            "Installed camera stats library is not the combined AF/AEC/set-parameter repair")
+    print("Secure ADB and packaged camera repair: OK")
 
     for service in ("activity", "package"):
         status = shell(serial, "service check " + service)
@@ -113,9 +128,11 @@ def main():
     crash_buffer = shell(serial, "logcat -b crash -d -t 200")
     crash_lines = [line for line in crash_buffer.splitlines()
                    if line.strip() and not line.startswith("--------- beginning of ")]
-    require(not crash_lines,
-            "Crash buffer has %d non-header output lines; log text was not printed or saved"
-            % len(crash_lines))
+    if crash_lines:
+        print("Crash buffer (full text follows):", file=sys.stderr)
+        print(crash_buffer, file=sys.stderr)
+        fail("Crash buffer has %d non-header output lines; full text was printed above"
+             % len(crash_lines))
     print("Last 200 crash-buffer log entries: clear")
     print("Read-only smoke passed; no device files or partitions were changed")
 

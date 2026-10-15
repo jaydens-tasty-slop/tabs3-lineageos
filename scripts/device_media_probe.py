@@ -45,6 +45,8 @@ def main():
     parser.add_argument("--serial", required=True)
     parser.add_argument("--suite", choices=("inventory", "drm", "gpu", "webview", "audio-route", "decode", "secure-decode", "encode", "all"), default="all")
     parser.add_argument("--case", action="append", help="Limit decoding to these fixture names")
+    parser.add_argument("--provision-widevine", action="store_true",
+                        help="Allow one HTTPS Widevine device-provisioning request if needed")
     parser.add_argument("--fixtures", type=pathlib.Path, default=ROOT / "artifacts/device-media-fixtures-v2")
     parser.add_argument("--keep-app", action="store_true", help="Keep this diagnostic package for follow-up probes")
     args = parser.parse_args()
@@ -198,7 +200,7 @@ def main():
         else:
             codecs = []
         if args.suite in ("drm", "all"):
-            item = invoke("drm", "drm", timeout=30)
+            item = invoke("drm", "drm", {"provision_widevine": str(args.provision_widevine).lower()}, timeout=30)
             report["results"].append({"name": "drm", **item})
         if args.suite in ("gpu", "all"):
             item = invoke("gpu", "gpu")
@@ -290,7 +292,10 @@ def main():
                 for component in components:
                     label = case["name"] + "-" + component.replace(".", "_")
                     command = "secure_decode" if secure else "decode"
-                    item = invoke(command, label, {"input": target_dir + "/" + file.name, "codec": component},
+                    invoke_extra = {"input": target_dir + "/" + file.name, "codec": component}
+                    if secure:
+                        invoke_extra["provision_widevine"] = str(args.provision_widevine).lower()
+                    item = invoke(command, label, invoke_extra,
                                   timeout=40 if secure else 120)
                     item["name"] = label
                     item["requested_component"] = component

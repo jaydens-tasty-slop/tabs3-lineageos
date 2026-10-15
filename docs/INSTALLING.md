@@ -32,10 +32,13 @@ before changing a tablet that contains data you want to retain.
    The build's signing certificate is absent from this legacy TWRP's
    trust store; independently verify the checksum and leave TWRP's optional
    ZIP-signature verification unchecked for this install.
-5. If wanted, flash a compatible Android 17 ARM64 Google Apps ZIP now, before
-   the first Android boot. No Android 17 package has yet been qualified by this
-   project; do not flash the previously recorded Android 16 package. Google
-   Apps are optional and are not included in the ROM ZIP.
+5. If wanted, flash the official Android 17 ARM64 package tested with the
+   candidate, `MindTheGapps-17.0.0-arm64-20261006_111038.zip`, now, before the
+   first Android boot. Its SHA-256 is
+   `6b38929ec345d96b6d64ad82f391869b7a60b3260efb0661b543b109b3ce646d`.
+   Obtain it from the MindTheGapps GitHub release and verify the checksum;
+   Google Apps are optional and are not included in the ROM ZIP. Do not flash
+   the previously recorded Android 16 package.
 6. Reboot to System only after the installers succeed. Complete initial setup.
    USB debugging and host authorization must be enabled normally if wanted;
    no authorization keys or forced ADB activation are included.
@@ -51,6 +54,7 @@ Keep the same ROM signing identity for later builds. No Android 17 dirty-update
 path has yet been qualified. Migration from Android 16, another Android major
 version, or a different signing identity requires a clean installation.
 
-Google account setup, Play Store certification/downloads, and broad Google Apps
-behavior remain unqualified. See [known issues](KNOWN_ISSUES.md),
+Google account setup, Play Store downloads, and basic Google services have been
+exercised on the candidate; certification and broad Google Apps behavior remain
+unqualified. See [known issues](KNOWN_ISSUES.md),
 [build instructions](BUILDING.md), and [signing](SIGNING.md).

@@ -50,6 +50,7 @@ def main():
         manifest.write_text('''<manifest xmlns:android="http://schemas.android.com/apk/res/android"
             package="org.tabs3.validation.media" android:versionCode="1" android:versionName="1.0">
           <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="36"/>
+          <uses-permission android:name="android.permission.INTERNET"/>
           <application android:label="Tab S3 media and GPU probe" android:allowBackup="false"
               android:debuggable="true" android:theme="@android:style/Theme.Material.Light.NoActionBar">
             <activity android:name="org.tabs3.validation.media.MainActivity" android:exported="true">
@@ -69,15 +70,17 @@ def main():
         verified = subprocess.check_output([str(x) for x in [*SIGNER, "verify", "--verbose", "--print-certs", apk]], text=True)
         (output / "signature.txt").write_text(verified)
         permissions = subprocess.check_output([str(TOOLS / "aapt2"), "dump", "permissions", str(apk)], text=True)
-        if "uses-permission:" in permissions:
-            raise ValueError("Media diagnostic must not request permissions")
+        requested = [line.strip() for line in permissions.splitlines()
+                     if line.strip().startswith("uses-permission:")]
+        if requested != ["uses-permission: name='android.permission.INTERNET'"]:
+            raise ValueError("Media diagnostic must request only INTERNET")
         (output / "permissions.txt").write_text(permissions)
         (output / "build.json").write_text(json.dumps({
             "sdk": 36, "apk_sha256": digest(apk), "sources": {str(p.relative_to(ROOT)): digest(p) for p in sources},
             "android_jar_sha256": digest(JAR), "tool_jars": {p.name: digest(p) for p in (TOOLS.parent / "lib/d8.jar", TOOLS.parent / "lib/apksigner.jar")},
             "tools": {name: digest(TOOLS / name) for name in ("aapt2", "d8", "zipalign", "apksigner")},
             "builder_sha256": digest(pathlib.Path(__file__)),
-            "scope": "Ordinary signed app, no permissions, debuggable only to retrieve its own JSON reports",
+            "scope": "Ordinary signed app with INTERNET only for first-use Widevine provisioning; debuggable only to retrieve its own JSON reports",
             "hardware_tested": False}, indent=2) + "\n")
         (output / "SHA256SUMS").write_text(digest(apk) + "  " + apk.name + "\n")
     print("Built and verified media diagnostic: " + str(apk), flush=True)

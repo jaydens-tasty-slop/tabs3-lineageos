@@ -455,15 +455,17 @@ z-wOXpj`zOI;!l9cN>cvB_`p+6eEx;_z*lv?;2Yv9>WTM%aXHOh2qOKA)j#z&ZtITH
 IfojhG13AXNbN~PV
 
 diff --git a/gts3l-common/proprietary/vendor/lib/libmmcamera2_stats_modules.so b/gts3l-common/proprietary/vendor/lib/libmmcamera2_stats_modules.so
-index 3e34ef5c2f170a61e6278e2bbfbdf49bd63ba879..0728d03cd8fdbfc9bfb2c5fe1a66a5011fe516f0 100644
+index 3e34ef5c2f170a61e6278e2bbfbdf49bd63ba879..b83b09f9ec49c43fdb1136551f58db85837d2429 100644
 GIT binary patch
-delta 74
-zcmccfN&3zw>4p}@EldKMjI*Z;YBC8k-kz?i$rQ|ZyS-AAX?vw6vm!g2Nd~hGlg{)7
-c2Fx-n3T_Ph+YcBp12GE_vu;0Nz&7Uu0GJFIDgXcg
+delta 99
+zcmccfN&3zw>4p}@EldKMjI*Z;YBC8k-kz?i$rQ|ZdwZoO)6ac;sTqoHoL^5ET==2E
+z!?1sP!wV)oCJndk8(uKIa%VHiV76h>nZCe)S%yWyjbVTL0Rv_rW&vW>?FS6l=9~Zk
+DNLD1F
 
-delta 74
-zcmccfN&3zw>4p}@EldKMjI*W-YBC8k-kPqe$rQ|ZtG!Z_X?vw6vm!g2K?bu0lg9J~
-a2Fx-nAa?r!17;v*0b<te2MpNeoB#ljRu{<t
+delta 99
+zcmccfN&3zw>4p}@EldKMjI*W-YBC8k-kPqe$rQ|ZYkQ?8)6ac;p5HVa6x|MdVq}Q?
+z!N4%R;RTZ(Q$oh}4KJ8pxw9E$Fk3KbOkZHYEW-j~w;wQI24WT<X5D_kfNjnR041Cw
+A#{d8T
 
 diff --git a/gts3l-common/proprietary/vendor/lib64/libbauthserver.so b/gts3l-common/proprietary/vendor/lib64/libbauthserver.so
 index 04cd622f45c2f9b1436e81559f1e2eabf16a0a65..071fa383a5dc16947c2e2b5c4f59c1c00894628c 100644

@@ -10,7 +10,12 @@ single opaque exit code.
 The suite never embeds an ADB key, account credential, device serial or licensed
 media. APKs and video fixtures are generated locally from published source.
 Probe APKs use a throwaway local key and are removed when the individual probe
-installed them. Tests preserve and restore the USB stay-awake setting.
+installed them. The media probe requests only the Android `INTERNET` permission.
+With explicit operator opt-in, a clean data partition may send the Widevine
+HAL's vendor-generated provisioning request to the vendor-provided HTTPS
+endpoint. That request may contain a device-specific DRM credential or
+identifier. The probe records only the host/status/byte counts and never
+requests a media license. Tests preserve and restore the USB stay-awake setting.
 
 ## Quick release gate
 
@@ -24,7 +29,17 @@ make test-quick
 This builds the small synthetic payload set and checks platform identity/core
 services, Widevine capabilities, generated AVC/HEVC/AAC decode, GLES, WebView,
 an AudioTrack route and Vulkan compute. It requires ordinary shell ADB, not root
-ADB.
+ADB. On the first run after a data wipe, the DRM check reports that provisioning
+is required without transmitting the request. After reviewing the disclosure
+above, explicitly allow vendor provisioning requests with working Internet:
+
+```sh
+TAB_S3_PROVISION_WIDEVINE=1 make test-quick
+```
+
+A successful request normally persists in the HAL, so later runs do not need
+the opt-in. A failed attempt can be retried by a later DRM probe while opt-in
+remains enabled.
 
 ## Full generated-media and camera suite
 
@@ -45,7 +60,7 @@ not replace licensed streaming tests.
 
 ## Browser and ordinary-app profile
 
-This profile downloads four APKs through F-Droid's signed index, verifies their
+This profile downloads five APKs through F-Droid's signed index, verifies their
 hashes and signatures, and leaves those ordinary apps installed for the owner.
 It requires a shared Wi-Fi LAN between host and tablet and uses three public
 Internet pages:
@@ -55,8 +70,13 @@ make test-browser
 ```
 
 It runs CPU Info launch/inventory, a one-minute bounded DroidStress workload,
-generated browser video fixtures, public HTTPS pages, and warm app/home frame
-statistics. The local fixture records JavaScript frame results and observes the
+generated browser video fixtures in both Fennec and FOSS Browser, public HTTPS
+pages, and warm app/home frame statistics. Fennec's documented Android
+video-to-Canvas limitation is accepted only when both videos finish with
+bounded drops and no media error, all non-video checks pass, and every sampled
+video pixel is exactly transparent; the report calls this limitation out and
+does not claim per-frame hardware decoding. FOSS Browser must independently
+pass opaque generated-video pixel checks. The local fixture also observes the
 Qualcomm video device descriptor when permissions allow. The harness does not
 log into an account or submit personal data. If more than one device is
 connected, add `SERIAL=<adb-serial>` to any command.
@@ -73,6 +93,15 @@ separately and never counted as passes.
 
 The `test-*` targets rebuild their small tools images through Podman's cache, so
 a pulled dependency change cannot silently reuse an older test environment.
+An exclusive buildroot lock rejects concurrent qualification runs before they
+can compete over temporary APK installation.
+
+During an incomplete first boot, Android 17's upstream Device Diagnostics may
+advertise a restricted Trade-In Mode ADB transport. It intentionally rejects
+ordinary shell commands and is not Developer Options debugging. The wrapper
+detects the missing UID-2000 shell and explains that setup/connectivity must be
+completed before enabling normal USB debugging; toggling debugging off/on also
+clears a stale host transport.
 
 ## Manual release checks
 
@@ -80,9 +109,10 @@ Automation cannot establish physical speaker quality, microphone audibility,
 touch alignment, fingerprint enrollment UX, flashlight output, licensed DRM
 policy, HDR appearance, or camera image quality. Record those separately for the
 exact candidate. In particular, test Aperture front/rear still capture, 1080p
-video and its resolution menu; stock firmware's 4K30 capability is an explicit
-open target. Test licensed Widevine playback without publishing account data or
-copyrighted content.
+video and its resolution menu. Candidate source restores stock firmware's 4K30
+mode and a development build recorded it successfully, but the exact
+clean-installed package still needs that manual UHD30 check. Test licensed
+Widevine playback without publishing account data or copyrighted content.
 
 Generated APKs, fixtures, downloaded F-Droid packages and all results remain in
 ignored `artifacts/`, `state/` and `diagnostics/` paths. See

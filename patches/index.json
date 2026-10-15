@@ -78,7 +78,7 @@
         "github": "https://github.com/awesometic/android_device_samsung_gts3l-common"
       },
       "patch": "device__samsung__gts3l-common.patch",
-      "sha256": "290d6ed1fafa490744a7d4d3cc11cdadb2ad3dee6b8904d9ab98103d0f241681",
+      "sha256": "7a89d8ea20a1a8a5864e2ae1b6bcabc899dffbd0484a3b3a59f4deeb0fed2db5",
       "untracked_files": [
         "bootimg.mk",
         "configs/apexd-recovery.rc",
@@ -101,6 +101,7 @@
         "legacy/wifiloader/Android.mk",
         "legacy/wifiloader/wifiloader.c",
         "patch_camera_stats_aec_uaf.py",
+        "patch_camera_stats_af_setparm_uaf.py",
         "patch_camera_stats_af_uaf.py",
         "rootdir/etc/fstab.ramdisk.qcom",
         "sepolicy/ion.te",
@@ -143,8 +144,10 @@
         "github": "https://github.com/LineageOS/android_frameworks_av"
       },
       "patch": "frameworks__av.patch",
-      "sha256": "bb754544043ff605d8ab23ed1d4e62c05db6650b77e7998c3f008a93618b775f",
-      "untracked_files": []
+      "sha256": "cacf3e3c0cd8cf2cc3ab1f56a60b53557dd3e7a85606fcd0f8e22bfee06fc6a3",
+      "untracked_files": [
+        "media/module/mpeg2ts/test/Gts3Mpeg2ColorHostTest.cpp"
+      ]
     },
     {
       "path": "frameworks/base",
@@ -164,13 +167,19 @@
       "upstream_name": "platform/frameworks/hardware/interfaces",
       "base": "9de6d032a248523c22d0bd86e224d1762355c41e",
       "head": "9de6d032a248523c22d0bd86e224d1762355c41e",
-      "branch": null,
+      "branch": "tabs3/lineage-24.0",
       "remotes": {
         "aosp": "https://android.googlesource.com/platform/frameworks/hardware/interfaces"
       },
       "patch": "frameworks__hardware__interfaces.patch",
       "sha256": "0f54f33ba0f8c1642dd60a9459ce145647e6df1c9493c830175e62dd8dec2873",
-      "untracked_files": []
+      "untracked_files": [
+        "displayservice/1.0/Android.bp",
+        "displayservice/1.0/IDisplayEventReceiver.hal",
+        "displayservice/1.0/IDisplayService.hal",
+        "displayservice/1.0/IEventCallback.hal",
+        "displayservice/1.0/types.hal"
+      ]
     },
     {
       "path": "frameworks/native",
@@ -195,12 +204,20 @@
         "github": "https://github.com/LineageOS/android_hardware_interfaces"
       },
       "patch": "hardware__interfaces.patch",
-      "sha256": "56d588f7fe54c7f8d958314a93243b0b7e68e31d771d3627910c481424892baa",
+      "sha256": "869c6936ba11e3c7595e60b7866cb04154982830ac774c51bedd779f8e59768c",
       "untracked_files": [
         "automotive/audiocontrol/1.0/Android.bp",
         "automotive/audiocontrol/1.0/IAudioControl.hal",
         "automotive/audiocontrol/1.0/types.hal",
         "compatibility_matrices/compatibility_matrix.4.xml",
+        "memtrack/1.0/Android.bp",
+        "memtrack/1.0/IMemtrack.hal",
+        "memtrack/1.0/default/Android.bp",
+        "memtrack/1.0/default/Memtrack.cpp",
+        "memtrack/1.0/default/Memtrack.h",
+        "memtrack/1.0/default/android.hardware.memtrack@1.0-service.rc",
+        "memtrack/1.0/default/service.cpp",
+        "memtrack/1.0/types.hal",
         "vibrator/1.0/Android.bp",
         "vibrator/1.0/IVibrator.hal",
         "vibrator/1.0/types.hal",
@@ -327,7 +344,7 @@
       "upstream_name": "LineageOS/android_hardware_samsung",
       "base": "5d20e3541d147494e074bf710d35b1960a6ed0a2",
       "head": "5d20e3541d147494e074bf710d35b1960a6ed0a2",
-      "branch": null,
+      "branch": "tabs3/lineage-24.0",
       "remotes": {
         "github": "https://github.com/LineageOS/android_hardware_samsung"
       },
@@ -376,7 +393,7 @@
       "upstream_name": "LineageOS/android_lineage-sdk",
       "base": "a5135bf1b689e73e508e61643410b9d63209b567",
       "head": "a5135bf1b689e73e508e61643410b9d63209b567",
-      "branch": null,
+      "branch": "tabs3/lineage-24.0",
       "remotes": {
         "github": "https://github.com/LineageOS/android_lineage-sdk"
       },
@@ -389,7 +406,7 @@
       "upstream_name": "LineageOS/android_packages_apps_Aperture",
       "base": "36b3be3487b5154b1950ed2120225acdca6c51de",
       "head": "36b3be3487b5154b1950ed2120225acdca6c51de",
-      "branch": null,
+      "branch": "tabs3/lineage-24.0",
       "remotes": {
         "github": "https://github.com/LineageOS/android_packages_apps_Aperture"
       },
@@ -407,15 +424,20 @@
         "github": "https://github.com/LineageOS/android_packages_modules_Connectivity"
       },
       "patch": "packages__modules__Connectivity.patch",
-      "sha256": "32baf3ebf346031a0b9251e7e7da33cbf175d3ebe0533614f88a1c17c7d5f59b",
-      "untracked_files": []
+      "sha256": "1392b70e234ec3a54fec8e0259f5a304b4abe0319061334ff75754606030888f",
+      "untracked_files": [
+        "bpf/netd/LegacyPolicy.cpp",
+        "service-t/src/com/android/server/net/LegacyNetworkStats.java",
+        "service/src/com/android/server/LegacyNetworkPolicy.java",
+        "staticlibs/device/com/android/net/module/util/MemoryBpfMap.java"
+      ]
     },
     {
       "path": "packages/modules/DnsResolver",
       "upstream_name": "platform/packages/modules/DnsResolver",
       "base": "0aeaf9d222ec761b9e0443a01c7a06590b9d1b4f",
       "head": "0aeaf9d222ec761b9e0443a01c7a06590b9d1b4f",
-      "branch": null,
+      "branch": "tabs3/lineage-24.0",
       "remotes": {
         "aosp": "https://android.googlesource.com/platform/packages/modules/DnsResolver"
       },
@@ -467,7 +489,7 @@
       "upstream_name": "platform/system/librustutils",
       "base": "7fbb3e4aaf608e51eaa210cf6ba94df5cb782bbc",
       "head": "7fbb3e4aaf608e51eaa210cf6ba94df5cb782bbc",
-      "branch": null,
+      "branch": "tabs3/lineage-24.0",
       "remotes": {
         "aosp": "https://android.googlesource.com/platform/system/librustutils"
       },
@@ -519,7 +541,7 @@
       "upstream_name": "platform/system/tools/hidl",
       "base": "5d0e05e6535fea94a674a359102bdd42944714f4",
       "head": "5d0e05e6535fea94a674a359102bdd42944714f4",
-      "branch": null,
+      "branch": "tabs3/lineage-24.0",
       "remotes": {
         "aosp": "https://android.googlesource.com/platform/system/tools/hidl"
       },
@@ -558,7 +580,7 @@
       "upstream_name": "LineageOS/android_vendor_qcom_opensource_power",
       "base": "e6325f33fed4c5bdf43182344d97c1691138a7ac",
       "head": "e6325f33fed4c5bdf43182344d97c1691138a7ac",
-      "branch": null,
+      "branch": "tabs3/lineage-24.0",
       "remotes": {
         "github": "https://github.com/LineageOS/android_vendor_qcom_opensource_power"
       },
@@ -576,7 +598,7 @@
         "github": "https://github.com/awesometic/proprietary_vendor_samsung"
       },
       "patch": "vendor__samsung.patch",
-      "sha256": "29619eeff60aac3f5f383b6c7ae3fb838534848b0291fa79e823feabdc2942ac",
+      "sha256": "97bca091df9251aba55d3258b79e5f41f57dc65d871eb55f448d1feae058817f",
       "untracked_files": []
     }
   ],

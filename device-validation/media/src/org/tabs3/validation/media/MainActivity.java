@@ -13,7 +13,9 @@ import android.webkit.WebViewClient;
 import android.widget.TextView;
 import org.json.*;
 import java.io.*;
+import java.net.*;
 import java.nio.*;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -30,7 +32,7 @@ public final class MainActivity extends Activity {
         JSONObject result=new JSONObject().put("command",command).put("sdk",Build.VERSION.SDK_INT);
         try {
         if("inventory".equals(command))inventory(result);
-        else if("drm".equals(command))drm(result);
+        else if("drm".equals(command))drm(result,false);
         else if("gpu".equals(command))gpu(result);
         else if("audio_route".equals(command))audioRoute(result,null);
         else if("offload_caps".equals(command))offloadCapabilities(result);
@@ -69,7 +71,8 @@ public final class MainActivity extends Activity {
                 result.put("sdk", Build.VERSION.SDK_INT);
                 result.put("fingerprint", Build.FINGERPRINT);
                 if ("inventory".equals(command)) inventory(result);
-                else if ("drm".equals(command)) drm(result);
+                else if ("drm".equals(command)) drm(result,
+                        Boolean.parseBoolean(intent.getStringExtra("provision_widevine")));
                 else if ("gpu".equals(command)) gpu(result);
                 else if ("decode".equals(command)) decode(result, intent);
                 else if ("encode".equals(command)) encode(result, intent);
@@ -139,7 +142,15 @@ public final class MainActivity extends Activity {
             if(stripCsd)for(int i=0;i<4;i++)format.removeKey("csd-"+i);
             format.setFeatureEnabled(MediaCodecInfo.CodecCapabilities.FEATURE_SecurePlayback,true);
             UUID widevine=new UUID(0xedef8ba979d64aceL,0xa3c827dcd51d21edL);
-            drm=new MediaDrm(widevine);session=drm.openSession();crypto=new MediaCrypto(widevine,session);
+            drm=new MediaDrm(widevine);
+            try{session=drm.openSession();}
+            catch(NotProvisionedException unprovisioned){
+                result.put("provisioning_required",true);
+                if(!Boolean.parseBoolean(intent.getStringExtra("provision_widevine")))
+                    throw new IllegalStateException("Widevine provisioning requires explicit host opt-in",unprovisioned);
+                provisionWidevine(drm,result);session=drm.openSession();
+            }
+            crypto=new MediaCrypto(widevine,session);
             codec=MediaCodec.createByCodecName(name);
             result.put("command","secure_decode").put("input",file.getName()).put("component",name)
                     .put("format",format.toString()).put("strip_csd",stripCsd).put("manual_csd",manualCsd)
@@ -283,7 +294,7 @@ public final class MainActivity extends Activity {
         result.put("limits", "Inventory describes advertised support; it does not prove decoding or hardware execution.");
     }
 
-    private static void drm(JSONObject result) throws Exception {
+    private static void drm(JSONObject result, boolean allowProvisioning) throws Exception {
         UUID widevine = new UUID(0xedef8ba979d64aceL, 0xa3c827dcd51d21edL);
         result.put("widevine_uuid", widevine.toString());
         result.put("scheme_supported", MediaDrm.isCryptoSchemeSupported(widevine));
@@ -293,7 +304,7 @@ public final class MainActivity extends Activity {
                                      MediaDrm.SECURITY_LEVEL_HW_SECURE_CRYPTO,
                                      MediaDrm.SECURITY_LEVEL_HW_SECURE_DECODE,
                                      MediaDrm.SECURITY_LEVEL_HW_SECURE_ALL }) {
-            try { levels.put(Integer.toString(level), MediaDrm.isCryptoSchemeSupported(widevine, null, level)); }
+            try { levels.put(Integer.toString(level), MediaDrm.isCryptoSchemeSupported(widevine, "video/mp4", level)); }
             catch (Throwable error) { levels.put(Integer.toString(level), "error: " + error); }
         }
         result.put("supported_security_levels", levels);
@@ -303,7 +314,7 @@ public final class MainActivity extends Activity {
             JSONObject properties = new JSONObject();
             for (String property : new String[] { MediaDrm.PROPERTY_VENDOR, MediaDrm.PROPERTY_VERSION,
                                                   MediaDrm.PROPERTY_DESCRIPTION, MediaDrm.PROPERTY_ALGORITHMS,
-                                                  "securityLevel", "systemId" }) {
+                                                  "securityLevel", "systemId", "provisioningModel" }) {
                 try { properties.put(property, drm.getPropertyString(property)); }
                 catch (Throwable error) { properties.put(property, "error: " + error); }
             }
@@ -314,7 +325,14 @@ public final class MainActivity extends Activity {
             catch (Throwable error) { result.put("connected_hdcp_level_error", error.toString()); }
             try { result.put("max_hdcp_level", drm.getMaxHdcpLevel()); }
             catch (Throwable error) { result.put("max_hdcp_level_error", error.toString()); }
-            session = drm.openSession();
+            try { session = drm.openSession(); }
+            catch (NotProvisionedException unprovisioned) {
+                result.put("provisioning_required", true);
+                if (!allowProvisioning)
+                    throw new IllegalStateException("Widevine provisioning requires explicit host opt-in", unprovisioned);
+                provisionWidevine(drm, result);
+                session = drm.openSession();
+            }
             result.put("session_opened", true);
             try { result.put("session_security_level", drm.getSecurityLevel(session)); }
             catch (Throwable error) { result.put("session_security_level_error", error.toString()); }
@@ -323,7 +341,55 @@ public final class MainActivity extends Activity {
             if (session != null) try { drm.closeSession(session); } catch (Throwable ignored) {}
             drm.close();
         }
-        result.put("limits", "Reports framework/HAL capabilities and session creation; it does not request a license or prove that any streaming service accepts the device.");
+        result.put("limits", "Reports framework/HAL capabilities and session creation. On a clean install it may send the vendor-generated Widevine provisioning request to the vendor HTTPS endpoint; it does not request a media license or prove that any streaming service accepts the device.");
+    }
+
+    private static void provisionWidevine(MediaDrm drm, JSONObject result) throws Exception {
+        MediaDrm.ProvisionRequest request = drm.getProvisionRequest();
+        byte[] requestData = request.getData();
+        URL url = new URL(request.getDefaultUrl() + "&signedRequest="
+                + new String(requestData, StandardCharsets.US_ASCII));
+        if (!"https".equalsIgnoreCase(url.getProtocol()))
+            throw new IOException("Refusing non-HTTPS Widevine provisioning URL");
+        result.put("provisioning_host", url.getHost());
+        result.put("provisioning_request_bytes", requestData.length);
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        try {
+            connection.setRequestMethod("POST");
+            connection.setDoOutput(false);
+            connection.setDoInput(true);
+            connection.setConnectTimeout(20000);
+            connection.setReadTimeout(20000);
+            connection.setRequestProperty("Accept", "*/*");
+            connection.setRequestProperty("User-Agent", "Widevine CDM v1.0");
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setRequestProperty("Connection", "close");
+            int status = connection.getResponseCode();
+            result.put("provisioning_http_status", status);
+            if (status != HttpURLConnection.HTTP_OK)
+                throw new IOException("Widevine provisioning returned HTTP " + status);
+            byte[] response = readLimited(connection.getInputStream(), 4 * 1024 * 1024);
+            if (response.length == 0) throw new IOException("Empty Widevine provisioning response");
+            drm.provideProvisionResponse(response);
+            result.put("provisioning_response_bytes", response.length);
+            result.put("provisioned_by_probe", true);
+        } finally {
+            connection.disconnect();
+        }
+    }
+
+    private static byte[] readLimited(InputStream input, int maximum) throws IOException {
+        try (InputStream stream = new BufferedInputStream(input);
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[8192];
+            int count;
+            while ((count = stream.read(buffer)) != -1) {
+                if (output.size() + count > maximum)
+                    throw new IOException("Widevine provisioning response exceeds limit");
+                output.write(buffer, 0, count);
+            }
+            return output.toByteArray();
+        }
     }
 
     private static FloatBuffer floats(float[] values) {

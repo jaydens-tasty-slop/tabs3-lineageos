@@ -5,17 +5,21 @@ SM-T825/LTE is unsupported. Google Apps are optional and separately installed.
 
 ## Android 17 candidate status
 
-The final Android 17 package is not yet published. Iterative development builds
-have booted through setup and exercised touch, rotation, Wi-Fi, Bluetooth,
-fingerprint enrollment, flashlight, speakers, microphone, front/rear still
-capture and 1080p recording. These observations do not qualify the forthcoming
-cleanly reconstructed package.
+The final Android 17 package is not yet published. A package reconstructed from
+the public source lock and patches has passed ROM/GApps installation, boot, the
+complete generated-media/camera qualification profile, and the browser/app
+profile. Some physical and interactive checks below remain before publication;
+the latest camera-race rebuild was installed as a data-preserving update over
+the clean candidate and still needs the final clean-install repetition.
 
 Widevine remains L1 in development testing. After a Qualcomm secure-HEVC CSD
 compatibility repair, generated protected streams and licensed Apple TV
 playback—including 1080p SDR and cached HDR content—played without the prior
-Venus decoder corruption. The repair still needs confirmation from the baked
-final package. Stock firmware's 4K30 camera mode has not been restored.
+Venus decoder corruption. The baked package passed generated L1 secure-HEVC
+Main/Main10 controls; licensed Apple TV playback still needs the final manual
+repeat. Stock firmware's 4K30 camera mode is restored in candidate source and
+passed on a development build; the exact latest package still needs the manual
+UHD30 recording check.
 
 The release gate requires `ro.secure=1`, `ro.adb.secure=1`,
 `ro.debuggable=0`, no embedded host ADB authorization key, matching built and
@@ -56,6 +60,12 @@ complete qualification to a new package.
 | Graphics | GLES2/3 drawing, ES3.1 and Vulkan compute; Chrome WebGL on Adreno 530 | Vulkan presentation, games and sustained workloads are not qualified |
 | Web | Local WebView/Chrome JavaScript and media fixtures | Browser frame drops remain; frame counters do not prove hardware decode for every frame |
 
+The exact latest package passed the public FOSS Browser generated-video,
+WebGL 1/2 and HTTPS controls. Fennec 157 played both generated videos to
+completion but reproduced its inherited Android video-to-Canvas transparent
+pixel limitation; the harness accepts only that exact bounded profile and
+reports it explicitly.
+
 The decoder suite passed 32 executions across 19 generated cases and nine
 additional moving AVC/HEVC clips. The strict component inventory remains
 incomplete: 16 of 21 expected vendor components are advertised, with four
@@ -90,10 +100,10 @@ nonsecure and one secure legacy VC-1/DivX component missing.
 
 ## Google Apps and inherited limits
 
-A prior signed Android 16 clean install with MindTheGapps booted. No Android 17
-Google Apps package has been qualified; do not reuse the Android 16 package.
-Google account setup, sign-in, Play Store certification/downloads and broad
-interactive Google Apps behavior remain unqualified.
+The clean candidate boots with the unmodified official Android 17 MindTheGapps
+package. Google account setup, sign-in, Play Store certification, downloads and
+broad interactive Google Apps behavior remain only partially qualified; do not
+reuse the Android 16 package.
 
 SELinux is **permissive**, Data encryption is **unsupported**, and Android
 Verified Boot is **disabled**. Samsung/Qualcomm kernel and vendor components
