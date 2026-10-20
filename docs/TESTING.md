@@ -54,6 +54,14 @@ permission enforcement and UID accounting, Camera2 preview/JPEG/direct/drained
 close cycles on both cameras, and a two-minute framework stability window. It
 can take substantially longer and needs the screen to remain normally unlocked.
 
+The network-policy check intentionally runs immediately after platform smoke.
+On this legacy adbd, ordinary shell ADB can remain healthy while reverse TCP
+forwarding stops accepting connections after sustained media/camera workloads.
+If a previously interrupted or standalone reverse test leaves that path stale,
+the report explains that the tablet must be rebooted before retrying. Diagnostic
+APKs always use non-streaming installs to avoid Android 17 Package Installer
+session hangs.
+
 The secure controls use clear synthetic samples through an L1 MediaCrypto
 session and protected surface. They exercise the secure decoder/CSD path but do
 not replace licensed streaming tests.
@@ -80,6 +88,11 @@ pass opaque generated-video pixel checks. The local fixture also observes the
 Qualcomm video device descriptor when permissions allow. The harness does not
 log into an account or submit personal data. If more than one device is
 connected, add `SERIAL=<adb-serial>` to any command.
+
+Fresh-install automation handles only the specifically recognized Fennec and
+FOSS Browser welcome screens. It never accepts permission, default-browser,
+certificate or TLS prompts. USB stay-awake is applied for the run and restored
+afterward, but the owner profile must be normally unlocked before preflight.
 
 ## Reading results
 
@@ -110,9 +123,10 @@ touch alignment, fingerprint enrollment UX, flashlight output, licensed DRM
 policy, HDR appearance, or camera image quality. Record those separately for the
 exact candidate. In particular, test Aperture front/rear still capture, 1080p
 video and its resolution menu. Candidate source restores stock firmware's 4K30
-mode and a development build recorded it successfully, but the exact
-clean-installed package still needs that manual UHD30 check. Test licensed
-Widevine playback without publishing account data or copyrighted content.
+mode; the exact candidate recorded and played a valid nominal-30-fps UHD clip
+before the final clean install. Repeat that check after a clean install. Test
+licensed Widevine playback without publishing account data or copyrighted
+content.
 
 Generated APKs, fixtures, downloaded F-Droid packages and all results remain in
 ignored `artifacts/`, `state/` and `diagnostics/` paths. See

@@ -6,24 +6,34 @@ SM-T825/LTE is unsupported. Google Apps are optional and separately installed.
 ## Android 17 candidate status
 
 The final Android 17 package is not yet published. A package reconstructed from
-the public source lock and patches has passed ROM/GApps installation, boot, the
-complete generated-media/camera qualification profile, and the browser/app
-profile. Some physical and interactive checks below remain before publication;
-the latest camera-race rebuild was installed as a data-preserving update over
-the clean candidate and still needs the final clean-install repetition.
+the public source lock and patches was clean-installed with Android 17 GApps and
+has passed boot, the complete generated-media/camera qualification profile, and
+the browser/app profile. Some physical and interactive checks below remain
+before publication.
 
 Widevine remains L1 in development testing. After a Qualcomm secure-HEVC CSD
 compatibility repair, generated protected streams and licensed Apple TV
 playback—including 1080p SDR and cached HDR content—played without the prior
 Venus decoder corruption. The baked package passed generated L1 secure-HEVC
-Main/Main10 controls; licensed Apple TV playback still needs the final manual
-repeat. Stock firmware's 4K30 camera mode is restored in candidate source and
-passed on a development build; the exact latest package still needs the manual
-UHD30 recording check.
+Main/Main10 controls and licensed Apple TV playback adapted across multiple
+protected 1080p-class representations without the prior decoder failure; the
+owner reported clean picture and audio. Stock firmware's 4K30 camera mode is
+restored: the exact candidate opened its resolution menu without crashing and
+recorded a valid H.264 3840x2160, nominal-29.92-fps clip with stereo AAC. The
+owner reported clean playback, and an independent FFmpeg decode completed
+without error.
 
 The release gate requires `ro.secure=1`, `ro.adb.secure=1`,
 `ro.debuggable=0`, no embedded host ADB authorization key, matching built and
 OTA Boot/System payloads, and a successful clean installation.
+
+The tablet's legacy adbd can keep ordinary shell ADB working while a reverse
+TCP mapping silently stops forwarding after sustained media/camera workloads.
+The public full suite runs its reverse-dependent network-policy check before
+those workloads and reports an explicit reboot instruction if stale reverse
+state is detected. This affects host-side test ordering, not normal device
+networking; the same clean-installed candidate passed ordinary-app INTERNET
+permission enforcement, UID accounting, browser LAN fixtures and public HTTPS.
 
 ## Historical Android 16 checks
 
@@ -55,7 +65,7 @@ complete qualification to a new package.
 | Input | Touch, S-Pen, fingerprint, buttons and haptics; owner reports | Palm rejection and every accessory transition are not fully qualified |
 | Connectivity | Wi-Fi traffic/reconnect; owner verified Bluetooth pairing | All access points, profiles and prolonged sessions are not qualified |
 | Audio | Speaker/headphone playback, microphone capture; owner reports and bounded probes | Voice/video-call routing, all DSP paths and current-release audibility are not fully qualified |
-| Video | Generated AVC/HEVC decoder cases, 1080p60/4K30 decode fixtures, protected HEVC controls and licensed Widevine L1 playback on development builds | Final-package secure playback, paced 60 fps and sustained performance are not qualified |
+| Video | Generated AVC/HEVC decoder cases, 1080p60/4K30 decode fixtures, protected HEVC controls and licensed Widevine L1 playback on the exact candidate | Paced 60 fps, sustained protected playback and HDR output are not qualified |
 | Encoding | Qualcomm AVC and HEVC encoders produced 30-frame outputs verified by independent host decoding | Long recordings and every rate/profile are not qualified |
 | Graphics | GLES2/3 drawing, ES3.1 and Vulkan compute; Chrome WebGL on Adreno 530 | Vulkan presentation, games and sustained workloads are not qualified |
 | Web | Local WebView/Chrome JavaScript and media fixtures | Browser frame drops remain; frame counters do not prove hardware decode for every frame |

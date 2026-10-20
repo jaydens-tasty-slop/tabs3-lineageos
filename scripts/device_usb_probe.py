@@ -111,7 +111,12 @@ def main():
             raise ValueError("Probe server did not start")
         for package, apk in PACKAGES.items():
             installed.append(package)
-            command(["install", str(ROOT / "artifacts/device-validation" / apk)])
+            # Android 17's streamed Package Installer sessions are unreliable on this
+            # legacy device and can hang after repeated probe runs.  Keep this probe
+            # consistent with the rest of the qualification harness by staging the
+            # complete APK before asking Package Installer to commit it.
+            command(["install", "--no-streaming",
+                     str(ROOT / "artifacts/device-validation" / apk)], timeout=120)
         if args.transport=="usb":
             reversed_port = True
             command(["reverse", "--no-rebind", port, port])
@@ -140,7 +145,12 @@ def main():
             time.sleep(1)
         require(len(report["results"]) == 2, "Both probe results were not received")
         net, blocked = (report["results"][name] for name in PACKAGES)
-        requests = [json.loads(line) for line in (directory / "requests.jsonl").read_text().splitlines()]
+        requests_file = directory / "requests.jsonl"
+        require(requests_file.is_file(),
+                "ADB reverse accepted the mapping but no HTTP request reached the host; "
+                "this legacy adbd can retain stale reverse state after a prior probe, so "
+                "reboot the tablet and rerun the qualification profile")
+        requests = [json.loads(line) for line in requests_file.read_text().splitlines()]
         report["checks"] = {
             "internet_http": bool(net.get("internet_permission") and net.get("http_success")
                                   and net.get("body_bytes") == 262144

@@ -6,6 +6,15 @@ def test_platform_smoke(run_probe):
     run_probe("device_smoke.py")
 
 
+@pytest.mark.full
+def test_app_network_permission_and_uid_accounting(run_probe):
+    # Run this before sustained media/camera work.  The Tab S3's legacy adbd can
+    # keep ordinary shell ADB alive while its reverse-forwarding path stops
+    # accepting connections after those workloads.
+    run_probe("device_usb_probe.py", "--expected-sdk", "37", "--transport", "usb",
+              timeout=300)
+
+
 @pytest.mark.quick
 def test_media_framework_and_generated_decode(run_probe, media_probe_app):
     run_probe("device_media_probe.py", "--suite", "all")
@@ -39,12 +48,6 @@ def test_widevine_l1_secure_hevc(run_probe, media_probe_app):
 @pytest.mark.full
 def test_camera_microphone_and_sensors(run_probe):
     run_probe("device_io_probe.py", "--suite", "all", timeout=900)
-
-
-@pytest.mark.full
-def test_app_network_permission_and_uid_accounting(run_probe):
-    run_probe("device_usb_probe.py", "--expected-sdk", "37", "--transport", "usb",
-              timeout=300)
 
 
 @pytest.mark.full

@@ -178,7 +178,8 @@ def browser(device, directory, report, args):
             if not events and onboarding < 8:
                 tree = ui(device, directory, 'browser-onboarding-' + str(onboarding))
                 buttons = [n for n in tree.iter('node') if n.get('package') == browser_package
-                           and n.get('text', '').lower() in ('start browsing', 'not now', 'skip')]
+                           and n.get('text', '').lower() in
+                           ('continue', 'start browsing', 'not now', 'skip')]
                 default_prompt = any(n.get('package') == 'com.android.permissioncontroller'
                                      and n.get('text') == 'Set Fennec as your default browser app?'
                                      for n in tree.iter('node'))
@@ -242,6 +243,21 @@ def browser(device, directory, report, args):
         for i, url in enumerate(('https://example.com/', 'https://www.wikipedia.org/', 'https://f-droid.org/')):
             if browser_package == 'de.baumann.browser':
                 tree = ui(device, directory, 'before-public-page-' + str(i))
+                welcome = any(n.get('package') == browser_package
+                              and n.get('text', '').startswith(
+                                  'Thanks for using FOSS Browser!')
+                              for n in tree.iter('node'))
+                if welcome:
+                    confirmations = [n for n in tree.iter('node')
+                                     if n.get('package') == browser_package
+                                     and n.get('resource-id') == 'android:id/button1'
+                                     and n.get('text') == 'OK']
+                    require(len(confirmations) == 1,
+                            'Unique FOSS Browser first-run confirmation not found')
+                    tap_node(device, confirmations[0])
+                    report['foss_browser_first_run_confirmed'] = True
+                    time.sleep(1)
+                    tree = ui(device, directory, 'after-first-run-' + str(i))
                 local_warning = any(n.get('package') == browser_package
                                     and n.get('text', '').startswith('Website uses unsecured connection')
                                     for n in tree.iter('node'))
