@@ -5,11 +5,12 @@ SM-T825/LTE is unsupported. Google Apps are optional and separately installed.
 
 ## Android 17 candidate status
 
-The final Android 17 package is not yet published. A package reconstructed from
-the public source lock and patches was clean-installed with Android 17 GApps and
-has passed boot, the complete generated-media/camera qualification profile, and
-the browser/app profile. Some physical and interactive checks below remain
-before publication.
+The final maintainer-signed Android 17 package was reconstructed from the public
+source lock and patches, clean-installed with Android 17 GApps, and passed boot
+plus the complete 13/13 generated-media/camera qualification profile. The
+identical-source predecessor passed the browser/app profile 6/6; the owner
+waived repeating that profile for the signing-only final package. Some physical
+and interactive paths listed below remain outside the release gate.
 
 Widevine remains L1 in development testing. After a Qualcomm secure-HEVC CSD
 compatibility repair, generated protected streams and licensed Apple TV
