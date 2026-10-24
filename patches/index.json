@@ -1,7 +1,7 @@
 {
   "base_manifest": "manifests/base-source-lock.xml",
-  "base_manifest_sha256": "ba493890718b8669a8d9eaa274b8c40b87b9368fc1a76e00bf01e3d03a6926d6",
-  "source_projects": 1251,
+  "base_manifest_sha256": "6d033a272941b4e83854efa18bf341d56c563e6458391d1b41b7d4beec51cab0",
+  "source_projects": 1252,
   "changes": [
     {
       "path": "bionic",
@@ -52,7 +52,7 @@
         "github": "https://github.com/LineageOS/android_build"
       },
       "patch": "build__make.patch",
-      "sha256": "97ae35f30e8b19278ca2c8d6dcb19b79c93dc579c3d6bd45a4848df35d4eb869",
+      "sha256": "2ad41bf2c6991b67b7f74db5576d34f817aeef619448ddb270b2f4443324c4c2",
       "untracked_files": []
     },
     {
@@ -72,50 +72,38 @@
       "path": "device/samsung/gts3l-common",
       "upstream_name": "awesometic/android_device_samsung_gts3l-common",
       "base": "92f1916339caec063b885beddd3742e63ddfe55f",
-      "head": "92f1916339caec063b885beddd3742e63ddfe55f",
+      "head": "1df47e00d285432e4bf8dfc56b39f9dfad2084fb",
       "branch": "tabs3/lineage-24.0",
       "remotes": {
-        "github": "https://github.com/awesometic/android_device_samsung_gts3l-common"
+        "github": "https://github.com/awesometic/android_device_samsung_gts3l-common",
+        "publish": "https://github.com/jaydens-tasty-slop/tabs3-android_device_samsung_gts3l-common.git"
       },
       "patch": "device__samsung__gts3l-common.patch",
-      "sha256": "7a89d8ea20a1a8a5864e2ae1b6bcabc899dffbd0484a3b3a59f4deeb0fed2db5",
-      "untracked_files": [
-        "bootimg.mk",
-        "configs/apexd-recovery.rc",
-        "configs/cgroups.json",
-        "configs/firmware-mountpoint",
-        "configs/task_profiles.json",
-        "fixup_elf_phdr.py",
-        "framework_compatibility_matrix.xml",
-        "keylayout/Vendor_04e8_Product_a035.kl",
-        "legacy/Android.mk",
-        "legacy/libaac/Android.mk",
-        "legacy/libaac/aacDecode.cpp",
-        "legacy/libaac/aacDecode.h",
-        "legacy/libaac/aacEncode.cpp",
-        "legacy/libaac/aacEncode.h",
-        "legacy/libmemtrack/Android.mk",
-        "legacy/libmemtrack/kgsl.c",
-        "legacy/libmemtrack/memtrack_msm.c",
-        "legacy/libmemtrack/memtrack_msm.h",
-        "legacy/wifiloader/Android.mk",
-        "legacy/wifiloader/wifiloader.c",
-        "patch_camera_stats_aec_uaf.py",
-        "patch_camera_stats_af_setparm_uaf.py",
-        "patch_camera_stats_af_uaf.py",
-        "rootdir/etc/fstab.ramdisk.qcom",
-        "sepolicy/ion.te",
-        "write_samsung_boot_id.py"
-      ]
+      "sha256": "c8a81d5b68b99f270aab31b55856fabcbdc77ff5e5b230beeda57dbd0d77c8cc",
+      "untracked_files": []
+    },
+    {
+      "path": "device/samsung/gts3llte",
+      "upstream_name": "awesometic/android_device_samsung_gts3llte",
+      "base": "543f95cb56b58717c94393ea537f7b5eb1d64ba2",
+      "head": "9cc1b59bf6844b62f48e22797bb68e836c7aa92f",
+      "branch": "tabs3/lineage-24.0",
+      "remotes": {
+        "github": "https://github.com/awesometic/android_device_samsung_gts3llte"
+      },
+      "patch": "device__samsung__gts3llte.patch",
+      "sha256": "79ba3dcdc6d2c7316b6367d9a53fb937a8c0653b0924f37901b61b8d933f00dc",
+      "untracked_files": []
     },
     {
       "path": "device/samsung/gts3lwifi",
       "upstream_name": "awesometic/android_device_samsung_gts3lwifi",
       "base": "7e56fa7ef736dc3e30d667881c7f0c2de351961e",
-      "head": "7e56fa7ef736dc3e30d667881c7f0c2de351961e",
+      "head": "605c9176b6ad94b27dcebb159e2f5f016d938859",
       "branch": "tabs3/lineage-24.0",
       "remotes": {
-        "github": "https://github.com/awesometic/android_device_samsung_gts3lwifi"
+        "github": "https://github.com/awesometic/android_device_samsung_gts3lwifi",
+        "publish": "https://github.com/jaydens-tasty-slop/tabs3-android_device_samsung_gts3lwifi.git"
       },
       "patch": "device__samsung__gts3lwifi.patch",
       "sha256": "fc403fd350171f6b4d35e8ecdcc614c0a630954c5718bb26fa664b52584036bd",
@@ -204,7 +192,7 @@
         "github": "https://github.com/LineageOS/android_hardware_interfaces"
       },
       "patch": "hardware__interfaces.patch",
-      "sha256": "869c6936ba11e3c7595e60b7866cb04154982830ac774c51bedd779f8e59768c",
+      "sha256": "152c9d6b06985cfdbf62d1c21bc20ba18be41bb1286648a000308326baac71d9",
       "untracked_files": [
         "automotive/audiocontrol/1.0/Android.bp",
         "automotive/audiocontrol/1.0/IAudioControl.hal",
@@ -349,44 +337,25 @@
         "github": "https://github.com/LineageOS/android_hardware_samsung"
       },
       "patch": "hardware__samsung.patch",
-      "sha256": "111a94279e12c329704d687e1e92c3b8177bc950b4f48dc4dca23c533fd2734c",
-      "untracked_files": []
+      "sha256": "94703915ced40825061ebadbf6d9c6eb3aedadb9078971d46f8598135f4533e1",
+      "untracked_files": [
+        "interfaces/radio/configsvc/1.0/Android.bp",
+        "interfaces/radio/configsvc/1.0/IConfigSvc.hal"
+      ]
     },
     {
       "path": "kernel/samsung/msm8996",
       "upstream_name": "awesometic/android_kernel_samsung_msm8996",
       "base": "42e410d4389e09a12ddb4c1d0e5e88abcbf03396",
-      "head": "42e410d4389e09a12ddb4c1d0e5e88abcbf03396",
+      "head": "46470330ef8368332de28da15d766f72309c4461",
       "branch": "tabs3/lineage-24.0",
       "remotes": {
-        "github": "https://github.com/awesometic/android_kernel_samsung_msm8996"
+        "github": "https://github.com/awesometic/android_kernel_samsung_msm8996",
+        "publish": "https://github.com/jaydens-tasty-slop/tabs3-android_kernel_samsung_msm8996.git"
       },
       "patch": "kernel__samsung__msm8996.patch",
-      "sha256": "2c7352a91ece710ebabaa159df110d77523fad43ea021906c1c7acf998bbff0a",
-      "untracked_files": [
-        "Documentation/filesystems/erofs.txt",
-        "fs/erofs/Kconfig",
-        "fs/erofs/Makefile",
-        "fs/erofs/compress.h",
-        "fs/erofs/data.c",
-        "fs/erofs/decompressor.c",
-        "fs/erofs/dir.c",
-        "fs/erofs/erofs_fs.h",
-        "fs/erofs/inode.c",
-        "fs/erofs/internal.h",
-        "fs/erofs/namei.c",
-        "fs/erofs/pcpubuf.c",
-        "fs/erofs/super.c",
-        "fs/erofs/tagptr.h",
-        "fs/erofs/utils.c",
-        "fs/erofs/xattr.c",
-        "fs/erofs/xattr.h",
-        "fs/erofs/zdata.c",
-        "fs/erofs/zdata.h",
-        "fs/erofs/zmap.c",
-        "fs/erofs/zpvec.h",
-        "include/trace/events/erofs.h"
-      ]
+      "sha256": "ad1c38bcb5905d4113128c33ba6b4496067278ca38b96f8210608707689d3543",
+      "untracked_files": []
     },
     {
       "path": "lineage-sdk",
@@ -572,7 +541,7 @@
         "github": "https://github.com/LineageOS/android_vendor_lineage"
       },
       "patch": "vendor__lineage.patch",
-      "sha256": "8616d4b028364cf10f596b086d30a6b0ddc8713c4312b5cdfecdf9a792bf4e95",
+      "sha256": "5531507d4b32e425a942adb3240ade1088866da0c54da0bd1419c81f79f64703",
       "untracked_files": []
     },
     {
@@ -592,10 +561,11 @@
       "path": "vendor/samsung",
       "upstream_name": "awesometic/proprietary_vendor_samsung",
       "base": "526da53500135cd9727cef923903fb6f4ce87dbb",
-      "head": "526da53500135cd9727cef923903fb6f4ce87dbb",
+      "head": "336c9bceb72daadd4da6f99fcde5414578a2c135",
       "branch": "tabs3/lineage-24.0",
       "remotes": {
-        "github": "https://github.com/awesometic/proprietary_vendor_samsung"
+        "github": "https://github.com/awesometic/proprietary_vendor_samsung",
+        "publish": "https://github.com/jaydens-tasty-slop/tabs3-proprietary_vendor_samsung.git"
       },
       "patch": "vendor__samsung.patch",
       "sha256": "97bca091df9251aba55d3258b79e5f41f57dc65d871eb55f448d1feae058817f",

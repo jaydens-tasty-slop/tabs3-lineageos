@@ -326,7 +326,7 @@ def check_apexes(system, kernel):
     return checked
 
 
-def check_ota(path, expected_sdk):
+def check_ota(path, expected_sdk, device="gts3lwifi"):
     with zipfile.ZipFile(path) as archive:
         names = archive.namelist()
         require(len(names) == len(set(names)), "duplicate ZIP entries")
@@ -336,7 +336,7 @@ def check_ota(path, expected_sdk):
         require("payload.bin" not in names, "A/B payload is incompatible with this target")
         metadata = archive.read("META-INF/com/android/metadata").decode()
         values = dict(line.split("=", 1) for line in metadata.splitlines() if "=" in line)
-        require(values.get("pre-device") == "gts3lwifi", "OTA metadata is not Wi-Fi Tab S3")
+        require(values.get("pre-device") == device, f"OTA metadata is not {device}")
         require(values.get("ota-type") == "BLOCK", "OTA is not a non-A/B block installer")
         require(values.get("ota-wipe") != "yes", "OTA requests a data wipe")
         require(values.get("ota-retrofit-dynamic-partitions") != "yes",
@@ -344,13 +344,14 @@ def check_ota(path, expected_sdk):
         require(values.get("post-sdk-level") == str(expected_sdk),
                 f"OTA does not contain the expected Android SDK {expected_sdk}")
         script = archive.read("META-INF/com/google/android/updater-script").decode()
-        require(re.search(r'assert\([\s\S]{0,2000}getprop\("ro\.product\.device"\)\s*==\s*"gts3lwifi"',
-                          script) is not None, "missing explicit gts3lwifi device assertion")
+        require(re.search(r'assert\([\s\S]{0,2000}getprop\("ro\.product\.device"\)\s*==\s*"' + device + '"',
+                          script) is not None, f"missing explicit {device} device assertion")
         partitions = set(re.findall(r"/by-name/([A-Za-z0-9_-]+)", script))
         require(partitions and partitions <= ALLOWED_PARTITIONS,
                 f"unexpected installer partition references: {sorted(partitions)}")
         require(not re.search(r'format\([^;]*"/data"', script), "installer formats user data")
-        require("gts3llte" not in script, "installer assertion also accepts an LTE tablet")
+        other = "gts3llte" if device == "gts3lwifi" else "gts3lwifi"
+        require(other not in script, f"installer assertion also accepts {other}")
         require(not re.search(r'package_extract_file\("recovery\.img"\s*,', script),
                 "installer writes a recovery image")
         require(not re.search(r'\b(?:update_dynamic_partitions|reboot_now|set_stage)\(', script),
@@ -407,8 +408,9 @@ def main():
                         help="Build output system directory, to check installed init services")
     parser.add_argument("--report", type=pathlib.Path, required=True)
     parser.add_argument("--expected-sdk", type=int, default=37)
+    parser.add_argument("--device", choices=("gts3lwifi", "gts3llte"), default="gts3lwifi")
     args = parser.parse_args()
-    report = check_ota(args.zip, args.expected_sdk)
+    report = check_ota(args.zip, args.expected_sdk, args.device)
     require(report["boot"]["kernel_sha256"] == file_sha256(args.kernel_image),
             "ZIP kernel differs from the final built kernel payload")
     init_files = list((args.installed_system / "etc/init").rglob("*.rc"))

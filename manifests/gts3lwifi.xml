@@ -8,6 +8,9 @@
   <project name="awesometic/android_device_samsung_gts3l-common"
            path="device/samsung/gts3l-common" remote="github"
            revision="92f1916339caec063b885beddd3742e63ddfe55f" />
+  <project name="awesometic/android_device_samsung_gts3llte"
+           path="device/samsung/gts3llte" remote="github"
+           revision="543f95cb56b58717c94393ea537f7b5eb1d64ba2" />
   <project name="awesometic/android_device_samsung_gts3lwifi"
            path="device/samsung/gts3lwifi" remote="github"
            revision="7e56fa7ef736dc3e30d667881c7f0c2de351961e" />

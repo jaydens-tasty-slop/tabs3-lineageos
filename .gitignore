@@ -71,6 +71,8 @@
 !/scripts/apply_port.py
 !/scripts/build_env.sh
 !/scripts/build_rom.sh
+!/scripts/build_all_devices.sh
+!/scripts/build_device.sh
 !/scripts/package_rom.sh
 !/scripts/finalize_rom.sh
 !/scripts/audit_release_adb.py

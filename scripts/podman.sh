@@ -104,7 +104,7 @@ case "$task_action" in
             --cpus=24 --memory="$task_build_memory" --memory-swap="$task_build_memory_swap" \
             --pids-limit="$task_build_pids_limit" \
             --security-opt=no-new-privileges --cap-drop=ALL \
-            --env PYTHONDONTWRITEBYTECODE=1 \
+            --env PYTHONDONTWRITEBYTECODE=1 --env TAB_S3_DEVICES --env TAB_S3_UNTESTED_DEVICES \
             --volume "$task_workspace:/workspace" --workdir /workspace \
             "$task_image" bash -c \
             'set -o pipefail; bash "$1" 2>&1 | tee logs/build-rom.log; result=${PIPESTATUS[0]}; printf "%s\n" "$result" > state/build-rom.exit; exit "$result"' \

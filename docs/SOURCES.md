@@ -1,7 +1,7 @@
 # Source distribution
 
 The canonical reconstruction uses `manifests/base-source-lock.xml` and
-`patches/index.json`: **1,251 pinned base projects and 34 patch entries**.
+`patches/index.json`: **1,252 pinned base projects and 35 patch entries**.
 Every patch carries a checksum and an exact upstream base. Setup fetches the
 projects as Git clones through Android `repo`, verifies the patches, and
 applies them. There are no Git submodules.
@@ -32,9 +32,19 @@ Our commits use `jaydens-tasty-slop` and
 identity changed commit IDs without changing source trees or patch contents;
 frozen ROM provenance retains the original IDs.
 
-These four branches cover device, kernel and vendor changes. The remaining
+The Android 17 `tabs3/lineage-24.0` branches are the current ones: the device
+common, Wi-Fi and LTE trees, the kernel (its `gts3llte_defconfig` mirrors the
+Wi-Fi changes) and the vendor tree. The table's commits are the historical
+Android 16 results. The LTE device is
+[`tabs3-android_device_samsung_gts3llte`](https://github.com/jaydens-tasty-slop/tabs3-android_device_samsung_gts3llte),
+a fork of `awesometic`'s `lineage-21.0` branch, at
+`9cc1b59bf6844b62f48e22797bb68e836c7aa92f`; the kernel Android 17 tip with the
+LTE defconfig is `46470330ef8368332de28da15d766f72309c4461`. Both are untested
+on hardware.
+
+These branches cover device, kernel and vendor changes. The remaining
 Android framework, platform and build changes are in the complete patch set.
-Use the pinned manifest and all 34 patches together when building this release;
+Use the pinned manifest and all 35 patches together when building this release;
 four fork checkouts alone are insufficient.
 
 The common-device fork removes the temporary forced-ADB rule. The kernel

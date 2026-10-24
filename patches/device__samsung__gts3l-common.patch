@@ -315,885 +315,6 @@ index 740fca26d8b7f6dd8f2a2aeb90dd34c07b92c832..b6f31c6187dd6f5f4b3d20e49f6d7e6f
  
      defaults: [
          "android_hardware_audio_config_defaults",
-diff --git a/extract-files.sh b/extract-files.sh
-index 92600a51af5f3e91488f9f0b9a0bd865a4297b68..8bb4ef7340ea024f76617206381334c37ee151d8 100755
---- a/extract-files.sh
-+++ b/extract-files.sh
-@@ -69,6 +69,12 @@ function blob_fixup() {
-     vendor/lib/hw/camera.msm8996.so)
-         "${PATCHELF}" --replace-needed "libcamera_client.so" "libcamera_metadata_helper.so" "${2}"
-         ;;
-+    vendor/lib/libbauthserver.so|vendor/lib64/libbauthserver.so)
-+        case "$("${PATCHELF}" --print-needed "${2}")" in
-+            *libbauthtzcommon_shim.so*) ;;
-+            *) "${PATCHELF}" --add-needed "libbauthtzcommon_shim.so" "${2}" ;;
-+        esac
-+        ;;
-     vendor/lib/libwvhidl.so)
-         "${PATCHELF}" --replace-needed "libprotobuf-cpp-lite.so" "libprotobuf-cpp-lite-v29.so" "${2}"
-         ;;
-@@ -78,9 +84,18 @@ function blob_fixup() {
-     vendor/lib/libmmcamera2_stats_modules.so)
-         "${PATCHELF}" --replace-needed "libandroid.so" "libsensorndkbridge.so" "${2}"
-         "${PATCHELF}" --replace-needed "libgui.so" "libgui_vendor.so" "${2}"
-+        python3 "${MY_DIR}/patch_camera_stats_af_uaf.py" "${2}"
-+        python3 "${MY_DIR}/patch_camera_stats_aec_uaf.py" "${2}"
-+        python3 "${MY_DIR}/patch_camera_stats_af_setparm_uaf.py" "${2}"
-         ;;
-     vendor/lib/hw/audio.primary.msm8996.so)
-         "${PATCHELF}" --replace-needed "libcutils.so" "libprocessgroup.so" "${2}"
-+        case "$("${PATCHELF}" --print-needed "${2}")" in
-+            *libaudioprimary_shim.so*) ;;
-+            *) "${PATCHELF}" --add-needed "libaudioprimary_shim.so" "${2}" ;;
-+        esac
-+        # patchelf can relocate PT_PHDR incorrectly for this ELF's nonzero base.
-+        python3 "${MY_DIR}/fixup_elf_phdr.py" "${2}"
-         ;;
-     vendor/lib/hw/android.hardware.gnss@1.0-impl-qti.so)
-         "${PATCHELF}" --replace-needed "libcutils.so" "libprocessgroup.so" "${2}"
-diff --git a/gts3l.mk b/gts3l.mk
-index 9ab1835767b1b4c47ce77eca04ca655f6d58a095..ac8101140ced821a60fc5a1f06b636319f16e945 100755
---- a/gts3l.mk
-+++ b/gts3l.mk
-@@ -18,6 +18,31 @@
- $(call inherit-product, $(SRC_TARGET_DIR)/product/product_launched_with_n.mk)
- $(call inherit-product, $(SRC_TARGET_DIR)/product/non_ab_device.mk)
- 
-+# Android 16 no longer supports flattened APEX packages. Avoid compression
-+# on this old loop/dm-verity implementation while keeping packaged APEXes.
-+PRODUCT_COMPRESSED_APEX := false
-+
-+# The vendor manifest keeps FCM 4 even when the platform's unfrozen AIDL
-+# selection installs a newer default set of framework matrices.
-+PRODUCT_PACKAGES += framework_compatibility_matrix.4.xml
-+
-+# Android 17 removed first-stage parsing of the legacy device-tree fstab.
-+# Materialize the equivalent System entry in the boot ramdisk.
-+PRODUCT_COPY_FILES += \
-+    $(LOCAL_PATH)/rootdir/etc/fstab.ramdisk.qcom:$(TARGET_COPY_OUT_RAMDISK)/fstab.qcom
-+
-+# Kernel 3.18 has cgroup v1 controllers, including memory and cpuacct.
-+PRODUCT_COPY_FILES += \
-+    $(LOCAL_PATH)/configs/cgroups.json:$(TARGET_COPY_OUT_VENDOR)/etc/cgroups.json \
-+    $(LOCAL_PATH)/configs/task_profiles.json:$(TARGET_COPY_OUT_VENDOR)/etc/task_profiles.json
-+
-+# Keep early APEX failures reachable through recovery USB during bring-up.
-+# Sort after apexd.rc and stay on the System side of init's Treble boundary.
-+ifneq ($(filter eng userdebug,$(TARGET_BUILD_VARIANT)),)
-+PRODUCT_COPY_FILES += \
-+    $(LOCAL_PATH)/configs/apexd-recovery.rc:$(TARGET_COPY_OUT_SYSTEM)/etc/init/zz-gts3l-apexd-recovery.rc
-+endif
-+
- # Get non-open-source specific aspects
- $(call inherit-product-if-exists, vendor/samsung/gts3l-common/gts3l-common-vendor.mk)
- 
-@@ -42,6 +67,12 @@ PRODUCT_CHARACTERISTICS := tablet
- # Exclude AudioFX
- TARGET_EXCLUDES_AUDIOFX := true
- 
-+# Retain required firmware mount directories in the read-only Vendor image.
-+PRODUCT_COPY_FILES += \
-+    $(LOCAL_PATH)/configs/firmware-mountpoint:$(TARGET_COPY_OUT_VENDOR)/dsp/.mountpoint \
-+    $(LOCAL_PATH)/configs/firmware-mountpoint:$(TARGET_COPY_OUT_VENDOR)/firmware_mnt/.mountpoint \
-+    $(LOCAL_PATH)/configs/firmware-mountpoint:$(TARGET_COPY_OUT_VENDOR)/firmware-modem/.mountpoint
-+
- # Permissions
- PRODUCT_COPY_FILES += \
-     frameworks/native/data/etc/android.hardware.audio.low_latency.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.hardware.audio.low_latency.xml \
-@@ -76,13 +107,12 @@ PRODUCT_COPY_FILES += \
-     frameworks/native/data/etc/android.software.vulkan.deqp.level-2020-03-01.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.software.vulkan.deqp.level.xml \
-     frameworks/native/data/etc/handheld_core_hardware.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/handheld_core_hardware.xml
- 
--# Additional native libraries
- PRODUCT_COPY_FILES += \
-     $(LOCAL_PATH)/configs/public.libraries.txt:$(TARGET_COPY_OUT_VENDOR)/etc/public.libraries.txt
- 
- # ANT+
- PRODUCT_PACKAGES += \
--    AntHalService
-+    AntHalService-Soong
- 
- # Audio
- PRODUCT_PACKAGES += \
-@@ -104,7 +134,6 @@ PRODUCT_PACKAGES += \
-     libvolumelistener \
-     tinymix \
-     libaudioprimary_shim \
--    libstdc++_vendor \
-     AudioRotationMonitor \
-     set-audio-rotation \
-     SamsungDAP
-@@ -160,7 +189,7 @@ PRODUCT_PACKAGES += \
-     android.hardware.memtrack@1.0-service \
-     vendor.display.config@2.0 \
-     gralloc.msm8996 \
--    hwcomposer.msm8996 \
-+    hwcomposer.qcom \
-     memtrack.msm8996 \
-     libdisplayconfig \
-     libqdMetaData \
-@@ -184,9 +213,8 @@ PRODUCT_PACKAGES += \
-     android.hardware.drm@1.0.vendor \
-     android.hardware.drm@1.1.vendor
- 
--# FastCharge
--PRODUCT_PACKAGES += \
--    vendor.lineage.fastcharge@1.0-service.samsung
-+# The former Lineage fast-charge toggle HAL was removed upstream. Charging
-+# continues to use the device's unchanged kernel and charger configuration.
- 
- # Fingerprint
- PRODUCT_PACKAGES += \
-@@ -246,6 +274,7 @@ PRODUCT_COPY_FILES += \
-     $(LOCAL_PATH)/keylayout/Vendor_04e8_Product_a000.kl:$(TARGET_COPY_OUT_VENDOR)/usr/keylayout/Vendor_04e8_Product_a000.kl \
-     $(LOCAL_PATH)/keylayout/Vendor_04e8_Product_a005.kl:$(TARGET_COPY_OUT_VENDOR)/usr/keylayout/Vendor_04e8_Product_a005.kl \
-     $(LOCAL_PATH)/keylayout/Vendor_04e8_Product_a006.kl:$(TARGET_COPY_OUT_VENDOR)/usr/keylayout/Vendor_04e8_Product_a006.kl \
-+    $(LOCAL_PATH)/keylayout/Vendor_04e8_Product_a035.kl:$(TARGET_COPY_OUT_SYSTEM)/usr/keylayout/Vendor_04e8_Product_a035.kl \
-     $(LOCAL_PATH)/keylayout/Vendor_04e8_Product_a009.kl:$(TARGET_COPY_OUT_VENDOR)/usr/keylayout/Vendor_04e8_Product_a009.kl \
-     $(LOCAL_PATH)/idc/Vendor_04e8_Product_a035.idc:$(TARGET_COPY_OUT_VENDOR)/usr/idc/Vendor_04e8_Product_a035.idc \
-     $(LOCAL_PATH)/idc/sec_e-pen.idc:$(TARGET_COPY_OUT_VENDOR)/usr/idc/sec_e-pen.idc
-@@ -261,7 +290,7 @@ PRODUCT_PACKAGES += \
- 
- # LiveDisplay
- PRODUCT_PACKAGES += \
--    vendor.lineage.livedisplay@2.0-service.samsung-qcom
-+    vendor.lineage.livedisplay-service.samsung-qcom
- 
- # Media
- PRODUCT_COPY_FILES += \
-@@ -289,6 +318,7 @@ PRODUCT_PACKAGES += \
-     libOmxAacEnc \
-     libOmxAmrEnc \
-     libOmxCore \
-+    libmm-omxcore \
-     libOmxEvrcEnc \
-     libOmxG711Enc \
-     libOmxQcelp13Enc \
-@@ -306,11 +336,6 @@ PRODUCT_PACKAGES += \
- PRODUCT_COPY_FILES += \
-     $(LOCAL_PATH)/configs/powerhint.xml:$(TARGET_COPY_OUT_VENDOR)/etc/powerhint.xml
- 
--# Profiles for cgroups, task_profiles
--PRODUCT_COPY_FILES += \
--    system/core/libprocessgroup/profiles/cgroups_28.json:$(TARGET_COPY_OUT_VENDOR)/etc/cgroups.json \
--    system/core/libprocessgroup/profiles/task_profiles_28.json:$(TARGET_COPY_OUT_VENDOR)/etc/task_profiles.json
--
- # Qualcomm
- PRODUCT_PACKAGES += \
-     libqti_vndfwk_detect \
-@@ -321,6 +346,7 @@ PRODUCT_COPY_FILES += \
-     $(LOCAL_PATH)/configs/qti_whitelist.xml:$(TARGET_COPY_OUT_SYSTEM_EXT)/etc/sysconfig/qti_whitelist.xml
- 
- PRODUCT_DEFAULT_PROPERTY_OVERRIDES += \
-+    ro.surface_flinger.primary_display_orientation=ORIENTATION_270 \
-     ro.vendor.qti.va_aosp.support=1
- 
- # QMI
-@@ -339,7 +365,7 @@ PRODUCT_PACKAGES += \
-     init.qcom.sh \
-     init.qcom.usb.rc \
-     init.qcom.usb.sh \
--    init.usb.configfs.rc \
-+    init.usb.configfs.gts3l.rc \
-     init.samsung.rc \
-     init.target.rc \
-     ueventd.qcom.rc \
-@@ -396,7 +422,7 @@ PRODUCT_COPY_FILES += \
- 
- # Touch
- PRODUCT_PACKAGES += \
--    vendor.lineage.touch@1.0-service.gts3l
-+    vendor.lineage.touch-service.gts3l
- 
- # USB
- PRODUCT_PACKAGES += \
-@@ -404,22 +430,34 @@ PRODUCT_PACKAGES += \
- 
- # Vibrator
- PRODUCT_PACKAGES += \
--    android.hardware.vibrator@1.0-impl \
--    android.hardware.vibrator@1.0-service
-+    android.hardware.vibrator-service.legacy \
-+    vibrator.default
- 
--# VNDK
--PRODUCT_COPY_FILES += \
--    prebuilts/vndk/v32/arm64/arch-arm-armv8-a/shared/vndk-sp/libhidlbase.so:$(TARGET_COPY_OUT_VENDOR)/lib/libhidlbase-v32.so \
--    prebuilts/vndk/v32/arm64/arch-arm64-armv8-a/shared/vndk-sp/libhidlbase.so:$(TARGET_COPY_OUT_VENDOR)/lib64/libhidlbase-v32.so \
--    prebuilts/vndk/v32/arm64/arch-arm64-armv8-a/shared/vndk-sp/libhidlbase.so:$(TARGET_COPY_OUT_SYSTEM)/lib64/libhidlbase-v32.so \
--    prebuilts/vndk/v33/arm64/arch-arm64-armv8-a/shared/vndk-sp/libutils.so:$(TARGET_COPY_OUT_VENDOR)/lib64/libutils-v33.so \
--    prebuilts/vndk/v29/arm64/arch-arm64-armv8-a/shared/vndk-sp/libcutils.so:$(TARGET_COPY_OUT_SYSTEM_EXT)/lib64/libcutils-v29.so \
--    prebuilts/vndk/v29/arm64/arch-arm-armv8-a/shared/vndk-core/libprotobuf-cpp-lite.so:$(TARGET_COPY_OUT_VENDOR)/lib/libprotobuf-cpp-lite-v29.so \
--    prebuilts/vndk/v29/arm64/arch-arm64-armv8-a/shared/vndk-core/libprotobuf-cpp-full.so:$(TARGET_COPY_OUT_VENDOR)/lib64/libprotobuf-cpp-full-v29.so
-+# Legacy ABI libraries are supplied as explicit Lineage compatibility modules.
-+PRODUCT_PACKAGES += \
-+    libhidlbase-v32 \
-+    libutils-v33 \
-+    libcutils-v29 \
-+    libprotobuf-cpp-lite-v29 \
-+    libprotobuf-cpp-full-v29
-+
-+# Blobs reference these through ELF dependencies/dlopen, outside Soong's
-+# declared dependencies. Install vendor variants for the isolated vendor
-+# namespace; a System/SystemExt copy alone is not visible there.
-+PRODUCT_PACKAGES += \
-+    libaudioroute.vendor \
-+    libhidlbase-v32.vendor \
-+    libcutils-v29.vendor \
-+    libexpat.vendor \
-+    libion.vendor \
-+    libpower.vendor \
-+    libprocessgroup.vendor \
-+    libsqlite.vendor \
-+    libutilscallstack.vendor
- 
- # WiFi
- PRODUCT_PACKAGES += \
--    android.hardware.wifi@1.0-service.legacy \
-+    android.hardware.wifi-service \
-     libwpa_client \
-     hostapd \
-     wpa_supplicant \
-diff --git a/manifest.xml b/manifest.xml
-index f092ef8608610adac5cc1d0c3481088f06d598c5..cc98b43623f827687f9aba5056f5fbeb404e818d 100644
---- a/manifest.xml
-+++ b/manifest.xml
-@@ -1,3 +1,4 @@
-+<?xml version='1.0' encoding='UTF-8'?>
- <manifest version="1.0" type="device" target-level="4">
-     <hal format="hidl">
-         <name>android.hardware.audio</name>
-@@ -133,15 +134,6 @@
-             <instance>default</instance>
-         </interface>
-     </hal>
--    <!--hal format="hidl">
--        <name>android.hardware.media.c2</name>
--        <transport>hwbinder</transport>
--        <version>1.0</version>
--        <interface>
--            <name>IComponentStore</name>
--            <instance>default</instance>
--        </interface>
--    </hal-->
-     <hal format="hidl">
-         <name>android.hardware.media.omx</name>
-         <transport>hwbinder</transport>
-@@ -182,15 +174,6 @@
-             <instance>default</instance>
-         </interface>
-     </hal>
--    <hal format="hidl">
--        <name>android.hardware.vibrator</name>
--        <transport>hwbinder</transport>
--        <version>1.0</version>
--        <interface>
--            <name>IVibrator</name>
--            <instance>default</instance>
--        </interface>
--    </hal>
-     <hal format="hidl">
-         <name>com.qualcomm.qti.ant</name>
-         <transport>hwbinder</transport>
-@@ -244,20 +227,19 @@
-             <instance>default</instance>
-         </interface>
-     </hal>
--    <hal format="hidl">
-+    <hal format="aidl">
-         <name>vendor.lineage.livedisplay</name>
--        <transport>hwbinder</transport>
--        <version>2.0</version>
-+        <version>1</version>
-         <interface>
-             <name>IAdaptiveBacklight</name>
-             <instance>default</instance>
-         </interface>
-         <interface>
--            <name>IDisplayModes</name>
-+            <name>IDisplayColorCalibration</name>
-             <instance>default</instance>
-         </interface>
-         <interface>
--            <name>IReadingEnhancement</name>
-+            <name>IDisplayModes</name>
-             <instance>default</instance>
-         </interface>
-         <interface>
-diff --git a/overlay/frameworks/base/core/res/res/values/config.xml b/overlay/frameworks/base/core/res/res/values/config.xml
-index e49cd9ba18336787c346f7d084416a89bfd0fdbc..2d2f8184b43a0000f96307d7ed4b4fb3f21c1406 100644
---- a/overlay/frameworks/base/core/res/res/values/config.xml
-+++ b/overlay/frameworks/base/core/res/res/values/config.xml
-@@ -38,7 +38,8 @@
-          * The remote submix module "audio.r_submix.default" must be installed on the device.
-          * The device must be provisioned with HDCP keys (for protected content).
-     -->
--    <bool name="config_enableWifiDisplay">true</bool>
-+    <!-- Legacy WFD vendor components have unresolved baseline dependencies. -->
-+    <bool name="config_enableWifiDisplay">false</bool>
- 
-     <!-- Set to true if the wifi display supports compositing content stored
-          in gralloc protected buffers.  For this to be true, there must exist
-@@ -65,6 +66,11 @@
-          in hardware. -->
-     <bool name="config_setColorTransformAccelerated">true</bool>
- 
-+    <!-- Android 17 defaults to 1024 cached processes for devices with the
-+         modern cached-app freezer. Kernel 3.18 cannot provide that freezer,
-+         so bound idle process retention while preserving useful multitasking. -->
-+    <integer name="config_customizedMaxCachedProcesses">64</integer>
-+
-     <!-- Array of light sensor lux values to define our levels for auto backlight brightness support.
-          The N entries of this array define N + 1 control points as follows:
-          (1-based arrays)
-diff --git a/rootdir/Android.mk b/rootdir/Android.mk
-index 0fd8a9206529428203153bf9ced71126efc66771..a691c72ed12741e30c667765e7d9f10807d75552 100644
---- a/rootdir/Android.mk
-+++ b/rootdir/Android.mk
-@@ -61,7 +61,8 @@ LOCAL_MODULE_PATH  := $(TARGET_OUT_VENDOR_ETC)
- include $(BUILD_PREBUILT)
- 
- include $(CLEAR_VARS)
--LOCAL_MODULE       := init.usb.configfs.rc
-+LOCAL_MODULE       := init.usb.configfs.gts3l.rc
-+LOCAL_MODULE_STEM  := init.usb.configfs.rc
- LOCAL_MODULE_TAGS  := optional
- LOCAL_MODULE_CLASS := ETC
- LOCAL_SRC_FILES    := etc/init.usb.configfs.rc
-diff --git a/rootdir/bin/init.qcom.usb.sh b/rootdir/bin/init.qcom.usb.sh
-index eef0095875abf63bcdd8ed2d1a90998a32e6afdc..42dff81c6b061610bb6d7e6282585ffef6990997 100755
---- a/rootdir/bin/init.qcom.usb.sh
-+++ b/rootdir/bin/init.qcom.usb.sh
-@@ -77,63 +77,63 @@ fi
- if [ "$(getprop persist.vendor.usb.config)" == "" -a \
- 	"$(getprop init.svc.vendor.usb-gadget-hal-1-0)" != "running" ]; then
-       if [ "$esoc_link" != "" ]; then
--	  setprop persist.vendor.usb.config diag,diag_mdm,qdss,qdss_mdm,serial_cdev,dpl,rmnet,adb
-+	  setprop persist.vendor.usb.config diag,diag_mdm,qdss,qdss_mdm,serial_cdev,dpl,rmnet
-       else
- 	  case "$(getprop ro.baseband)" in
- 	      "apq")
--	          setprop persist.vendor.usb.config diag,adb
-+	          setprop persist.vendor.usb.config diag
- 	      ;;
- 	      *)
- 	      case "$soc_hwplatform" in
- 	          "Dragon" | "SBC")
--	              setprop persist.vendor.usb.config diag,adb
-+	              setprop persist.vendor.usb.config diag
- 	          ;;
-                   *)
- 		  soc_machine=${soc_machine:0:3}
- 		  case "$soc_machine" in
- 		    "SDA")
--	              setprop persist.vendor.usb.config diag,adb
-+	              setprop persist.vendor.usb.config diag
- 		    ;;
- 		    *)
- 	            case "$target" in
- 	              "msm8996")
--	                  setprop persist.vendor.usb.config diag,serial_cdev,serial_tty,rmnet_ipa,mass_storage,adb
-+	                  setprop persist.vendor.usb.config diag,serial_cdev,serial_tty,rmnet_ipa,mass_storage
- 		      ;;
- 	              "msm8909")
--		          setprop persist.vendor.usb.config diag,serial_smd,rmnet_qti_bam,adb
-+		          setprop persist.vendor.usb.config diag,serial_smd,rmnet_qti_bam
- 		      ;;
- 	              "msm8937")
- 			    if [ -d /config/usb_gadget ]; then
--				       setprop persist.vendor.usb.config diag,serial_cdev,rmnet,dpl,adb
-+				       setprop persist.vendor.usb.config diag,serial_cdev,rmnet,dpl
- 			    else
- 			               case "$soc_id" in
- 				               "313" | "320")
--				                  setprop persist.vendor.usb.config diag,serial_smd,rmnet_ipa,adb
-+				                  setprop persist.vendor.usb.config diag,serial_smd,rmnet_ipa
- 				               ;;
- 				               *)
--				                  setprop persist.vendor.usb.config diag,serial_smd,rmnet_qti_bam,adb
-+				                  setprop persist.vendor.usb.config diag,serial_smd,rmnet_qti_bam
- 				               ;;
- 			               esac
- 			    fi
- 		      ;;
- 	              "msm8953")
- 			      if [ -d /config/usb_gadget ]; then
--				      setprop persist.vendor.usb.config diag,serial_cdev,rmnet,dpl,adb
-+				      setprop persist.vendor.usb.config diag,serial_cdev,rmnet,dpl
- 			      else
--				      setprop persist.vendor.usb.config diag,serial_smd,rmnet_ipa,adb
-+				      setprop persist.vendor.usb.config diag,serial_smd,rmnet_ipa
- 			      fi
- 		      ;;
- 	              "msm8998" | "sdm660" | "apq8098_latv")
--		          setprop persist.vendor.usb.config diag,serial_cdev,rmnet,adb
-+		          setprop persist.vendor.usb.config diag,serial_cdev,rmnet
- 		      ;;
- 	              "sdm845" | "sdm710")
--		          setprop persist.vendor.usb.config diag,serial_cdev,rmnet,dpl,adb
-+		          setprop persist.vendor.usb.config diag,serial_cdev,rmnet,dpl
- 		      ;;
- 	              "msmnile" | "sm6150")
--			  setprop persist.vendor.usb.config diag,serial_cdev,rmnet,dpl,qdss,adb
-+			  setprop persist.vendor.usb.config diag,serial_cdev,rmnet,dpl,qdss
- 		      ;;
- 	              *)
--		          setprop persist.vendor.usb.config diag,adb
-+		          setprop persist.vendor.usb.config diag
- 		      ;;
-                     esac
- 		    ;;
-diff --git a/rootdir/etc/init.qcom.usb.rc b/rootdir/etc/init.qcom.usb.rc
-index 5a317465655ee9f085cabd6913a97190039088c0..71575b821ea2778a31edf29f78fa56c646834558 100644
---- a/rootdir/etc/init.qcom.usb.rc
-+++ b/rootdir/etc/init.qcom.usb.rc
-@@ -97,6 +97,11 @@ on boot
-     write /sys/class/android_usb/android0/f_ffs/aliases adb
-     enable qcom-usb-sh
- 
-+# If the user enabled ADB, restart it once APEX activation finishes so new
-+# shell processes inherit the complete runtime linker namespace.
-+on property:apexd.status=ready && property:sys.usb.config=adb
-+    restart adbd
-+
- service qcom-usb-sh /vendor/bin/init.qcom.usb.sh
-     class core
-     user root
-diff --git a/rootdir/etc/init.samsung.rc b/rootdir/etc/init.samsung.rc
-index be8a3d200735bde2e45281e52765773d6a81480a..19cb18a4e29009839cfd4acfb58d8ce6d00864ca 100644
---- a/rootdir/etc/init.samsung.rc
-+++ b/rootdir/etc/init.samsung.rc
-@@ -5,6 +5,23 @@
- #
- 
- on init
-+    # Mounting cgroup v1 hides the ownership set on the tmpfs mount point.
-+    # system_server creates isolated WebView/app-zygote process groups here.
-+    chown system system /dev/cpuacct
-+    chmod 0755 /dev/cpuacct
-+    chown system system /dev/cpuacct/cgroup.procs
-+    chown system system /dev/cpuacct/tasks
-+    chmod 0664 /dev/cpuacct/cgroup.procs
-+    chmod 0664 /dev/cpuacct/tasks
-+
-+    # Legacy traffic accounting: system_server has net_bw_stats/net_bw_acct.
-+    # App socket tagging is mediated by netd, rather than writable proc files.
-+    chown root net_bw_acct /proc/net/xt_qtaguid/ctrl
-+    chmod 0660 /proc/net/xt_qtaguid/ctrl
-+    chown root net_bw_stats /proc/net/xt_qtaguid/stats
-+    chmod 0640 /proc/net/xt_qtaguid/stats
-+    chown root net_bw_stats /proc/net/xt_qtaguid/iface_stat_all
-+    chmod 0640 /proc/net/xt_qtaguid/iface_stat_all
-     symlink /dev/block/bootdevice/by-name/persistent  /dev/block/persistent
-     symlink /dev/block/bootdevice/by-name/steady  /dev/block/steady
- 
-diff --git a/rootdir/etc/init.target.rc b/rootdir/etc/init.target.rc
-index 4b0c46085893ad11d825b61d560d0943a42924b7..f1da894f76893f7ff4e01533b72271a46e4c5eac 100644
---- a/rootdir/etc/init.target.rc
-+++ b/rootdir/etc/init.target.rc
-@@ -37,7 +37,16 @@ on early-init
- on fs
-     wait /dev/block/platform/soc/${ro.boot.bootdevice}
-     symlink /dev/block/platform/soc/${ro.boot.bootdevice} /dev/block/bootdevice
--    mount_all /vendor/etc/fstab.qcom
-+    # Data is latemount: mount it only in late-fs, after early HAL startup.
-+    mount_all /vendor/etc/fstab.qcom --early
-+
-+    # Cache is mounted above. Keep Android 16 flag storage across normal boots
-+    # without repartitioning or waiting for the latemount Data filesystem.
-+    # Wiping Cache also resets this metadata; aconfigd recreates build defaults.
-+    mkdir /cache/gts3l-metadata 0755 root root
-+    mount none /cache/gts3l-metadata /metadata bind
-+    restorecon_recursive /metadata
-+
-     setprop ro.crypto.fde_algorithm AES-256-XTS
-     swapon_all /vendor/etc/fstab.qcom
- 
-@@ -516,4 +525,3 @@ on property:vendor.sys.listeners.registered=*
- service vendor.wifiloader /vendor/bin/wifiloader
-     class main
-     oneshot
--
-diff --git a/rootdir/etc/ueventd.qcom.rc b/rootdir/etc/ueventd.qcom.rc
-index 3591b8171d13915c313fc4d818d2c47754c520e3..7484cc006241ff455e15a17d4c047887819f500d 100644
---- a/rootdir/etc/ueventd.qcom.rc
-+++ b/rootdir/etc/ueventd.qcom.rc
-@@ -166,7 +166,7 @@ firmware_directories /vendor/firmware_mnt/image/ /vendor/firmware-modem/image/
- /dev/msm_vidc_dec_sec     0660   system     audio
- /dev/msm_vidc_enc         0660   system     audio
- /dev/msm_rotator          0660   system     system
--/dev/hw_random            0600   root       root
-+/dev/hw_random            0400   prng_seeder prng_seeder
- /dev/sdsprpc-smd          0660   system     system
- 
- #permissions for audio
-diff --git a/sepolicy/file_contexts b/sepolicy/file_contexts
-index bd78eefa605931b7d53e683636a4aaaffc2bc428..4723654ff0e9da60410b925d3cc4c570e176187b 100644
---- a/sepolicy/file_contexts
-+++ b/sepolicy/file_contexts
-@@ -40,6 +40,7 @@
- /dev/dun                       u:object_r:dun_device:s0
- /dev/esfp[0-9]+                u:object_r:fp_sensor_device:s0
- /dev/gsm_.*                    u:object_r:radio_device:s0
-+/dev/ion                       u:object_r:ion_device:s0
- /dev/link_pm                   u:object_r:radio_device:s0
- /dev/mdm                       u:object_r:radio_device:s0
- /dev/network_latency           u:object_r:radio_device:s0
-@@ -177,9 +178,8 @@
- /(vendor|system/vendor)/bin/hw/android\.hardware\.health@2\.0-service\.samsung                     u:object_r:hal_health_default_exec:s0
- /(vendor|system/vendor)/bin/hw/android\.hardware\.keymaster@3\.0-service\.gts3l                    u:object_r:hal_keymaster_default_exec:s0
- /(vendor|system/vendor)/bin/hw/android\.hardware\.light-service\.gts3l                             u:object_r:hal_light_default_exec:s0
--/(vendor|system/vendor)/bin/hw/vendor\.lineage\.fastcharge@1\.0-service\.samsung                   u:object_r:hal_lineage_fastcharge_default_exec:s0
--/(vendor|system/vendor)/bin/hw/vendor\.lineage\.livedisplay@2\.0-service\.samsung-qcom             u:object_r:hal_lineage_livedisplay_sysfs_exec:s0
--/(vendor|system/vendor)/bin/hw/vendor\.lineage\.touch@1\.0-service\.gts3l                          u:object_r:hal_lineage_touch_default_exec:s0
-+/(vendor|system/vendor)/bin/hw/vendor\.lineage\.livedisplay-service\.samsung-qcom             u:object_r:hal_lineage_livedisplay_sysfs_exec:s0
-+/(vendor|system/vendor)/bin/hw/vendor\.lineage\.touch-service\.gts3l                          u:object_r:hal_lineage_touch_default_exec:s0
- /(vendor|system/vendor)/bin/hw/vendor\.samsung\.hardware\.miscpower@1\.0-service                   u:object_r:hal_power_default_exec:s0
- 
- # Rootfs
-diff --git a/sepolicy/gmscore_app.te b/sepolicy/gmscore_app.te
-index 5002e64142acdf373c43806ecf4b4593f8eccd65..5cdbc15b597337564c2ef06e5b86faedc80ce5e2 100644
---- a/sepolicy/gmscore_app.te
-+++ b/sepolicy/gmscore_app.te
-@@ -1,6 +1,3 @@
- binder_call(gmscore_app, hal_memtrack_default);
- 
--allow gmscore_app {
--    apexd_prop
--    apk_verity_prop
--}:file r_file_perms;
-+allow gmscore_app apexd_prop:file r_file_perms;
-diff --git a/sepolicy/hal_lineage_fastcharge_default.te b/sepolicy/hal_lineage_fastcharge_default.te
-deleted file mode 100644
-index 4420271e06942432dfbc6fe9a8089a0bca3e0ffa..0000000000000000000000000000000000000000
---- a/sepolicy/hal_lineage_fastcharge_default.te
-+++ /dev/null
-@@ -1,4 +0,0 @@
--allow hal_lineage_fastcharge_default sysfs_sec_switch:dir search;
--allow hal_lineage_fastcharge_default sysfs_sec_switch:file rw_file_perms;
--
--set_prop(hal_lineage_fastcharge, sec_fastcharge_prop)
-\ No newline at end of file
-diff --git a/sepolicy/set-audio-rotation.te b/sepolicy/set-audio-rotation.te
-index 14410e5433d1ac8cca793294fd2d48191b6434a0..88b3e1a26be2eb493954c5d91b2e2de203bff15e 100644
---- a/sepolicy/set-audio-rotation.te
-+++ b/sepolicy/set-audio-rotation.te
-@@ -1,5 +1,5 @@
- type set-audio-rotation, domain, coredomain;
--type set-audio-rotation_exec, exec_type, file_type;
-+type set-audio-rotation_exec, exec_type, file_type, system_file_type;
- 
- init_daemon_domain(set-audio-rotation)
- 
-diff --git a/shims/libcamera_client/CameraMetadata.cpp b/shims/libcamera_client/CameraMetadata.cpp
-index 04bfbae4582082b9567d0f4f5f37cf89d36d6dd0..aa294ea6156ad200c9e402fcedac30d7397dc423 100644
---- a/shims/libcamera_client/CameraMetadata.cpp
-+++ b/shims/libcamera_client/CameraMetadata.cpp
-@@ -270,7 +270,7 @@ status_t CameraMetadata::update(uint32_t tag,
-         return res;
-     }
-     // string.size() doesn't count the null termination character.
--    return updateImpl(tag, (const void*)string.string(), string.size() + 1);
-+    return updateImpl(tag, (const void*)string.c_str(), string.size() + 1);
- }
- 
- status_t CameraMetadata::update(const camera_metadata_ro_entry &entry) {
-diff --git a/shims/libcamera_client/CameraParameters.cpp b/shims/libcamera_client/CameraParameters.cpp
-index ac057246766646f3c2e829cbfba26b687b0c6534..f25271a93dfab945076c181c306b1c79912d7167 100644
---- a/shims/libcamera_client/CameraParameters.cpp
-+++ b/shims/libcamera_client/CameraParameters.cpp
-@@ -207,7 +207,7 @@ String8 CameraParameters::flatten() const
- 
- void CameraParameters::unflatten(const String8 &params)
- {
--    const char *a = params.string();
-+    const char *a = params.c_str();
-     const char *b;
- 
-     mMap.clear();
-@@ -273,7 +273,7 @@ const char *CameraParameters::get(const char *key) const
-     String8 v = mMap.valueFor(String8(key));
-     if (v.length() == 0)
-         return 0;
--    return v.string();
-+    return v.c_str();
- }
- 
- int CameraParameters::getInt(const char *key) const
-@@ -465,7 +465,7 @@ void CameraParameters::dump() const
-         String8 k, v;
-         k = mMap.keyAt(i);
-         v = mMap.valueAt(i);
--        ALOGD("%s: %s\n", k.string(), v.string());
-+        ALOGD("%s: %s\n", k.c_str(), v.c_str());
-     }
- }
- 
-@@ -480,10 +480,10 @@ status_t CameraParameters::dump(int fd, const Vector<String16>& /*args*/) const
-         String8 k, v;
-         k = mMap.keyAt(i);
-         v = mMap.valueAt(i);
--        snprintf(buffer, 255, "\t%s: %s\n", k.string(), v.string());
-+        snprintf(buffer, 255, "\t%s: %s\n", k.c_str(), v.c_str());
-         result.append(buffer);
-     }
--    write(fd, result.string(), result.size());
-+    write(fd, result.c_str(), result.size());
-     return NO_ERROR;
- }
- 
-diff --git a/system.prop b/system.prop
-index 25947c6cf9d0d44e37a3fc23d5f755bd29d076a2..3fc36c24d0523b6071e0b2db85a09e182954eba3 100755
---- a/system.prop
-+++ b/system.prop
-@@ -56,7 +56,9 @@ bluetooth.profile.sap.server.enabled?=true
- 
- # BPF
- ro.kernel.ebpf.supported=false
--bpf.progs_loaded=1
-+
-+# Packed APEX on the legacy loop driver
-+ro.apexd.legacy_loop_io=true
- 
- # Camera
- camera.disable_zsl_mode=1
-@@ -138,7 +140,7 @@ vendor.usb.controller=6a00000.dwc3
- wifi.interface=wlan0
- 
- # WFD
--persist.debug.wfd.enable=1
-+persist.debug.wfd.enable=0
- persist.sys.wfd.virtual=0
- 
- # Zygote
-diff --git a/touch/Android.bp b/touch/Android.bp
-index 5bd39d8c3af6d5fca15cd6f75dee5a761740e1d4..6ddc99e5925aea5bbe9d6b2a8988e36c9b67271a 100644
---- a/touch/Android.bp
-+++ b/touch/Android.bp
-@@ -13,10 +13,9 @@
- // limitations under the License.
- 
- cc_binary {
--    name: "vendor.lineage.touch@1.0-service.gts3l",
-+    name: "vendor.lineage.touch-service.gts3l",
-     init_rc: ["vendor.lineage.touch@1.0-service.gts3l.rc"],
-     vintf_fragments: ["vendor.lineage.touch@1.0-service.gts3l.xml"],
--    defaults: ["hidl_defaults"],
-     relative_install_path: "hw",
-     vendor: true,
-     srcs: [
-@@ -25,8 +24,8 @@ cc_binary {
-     ],
-     shared_libs: [
-         "libbase",
--        "libhidlbase",
-+        "libbinder_ndk",
-         "libutils",
--        "vendor.lineage.touch@1.0",
-+        "vendor.lineage.touch-V1-ndk",
-     ],
- }
-diff --git a/touch/KeyDisabler.cpp b/touch/KeyDisabler.cpp
-index 63e60f6f909247cc96131a931926c85e8d877afe..218472fd5b0c521241f0f045194a91ba5966c011 100644
---- a/touch/KeyDisabler.cpp
-+++ b/touch/KeyDisabler.cpp
-@@ -17,6 +17,7 @@
- #include <android-base/file.h>
- #include <android-base/logging.h>
- #include <android-base/strings.h>
-+#include <unistd.h>
- 
- #include "KeyDisabler.h"
- 
-@@ -24,43 +25,42 @@ using ::android::base::ReadFileToString;
- using ::android::base::Trim;
- using ::android::base::WriteStringToFile;
- 
-+namespace aidl {
- namespace vendor {
- namespace lineage {
- namespace touch {
--namespace V1_0 {
--namespace implementation {
- 
- constexpr const char kControlPath[] = "/sys/class/sec/sec_touchkey/input/enabled";
- 
- KeyDisabler::KeyDisabler() : has_key_disabler_(!access(kControlPath, R_OK | W_OK)) {}
- 
--// Methods from ::vendor::lineage::touch::V1_0::IKeyDisabler follow.
--Return<bool> KeyDisabler::isEnabled() {
-+ndk::ScopedAStatus KeyDisabler::getEnabled(bool* enabled) {
-     std::string buf;
--
--    if (!has_key_disabler_) return false;
-+    *enabled = false;
-+    if (!has_key_disabler_) return ndk::ScopedAStatus::fromExceptionCode(EX_UNSUPPORTED_OPERATION);
- 
-     if (!ReadFileToString(kControlPath, &buf, true)) {
-         LOG(ERROR) << "Failed to read from " << kControlPath;
--        return false;
-+        return ndk::ScopedAStatus::fromServiceSpecificError(errno);
-     }
- 
--    return Trim(buf) == "1";
-+    // This node enables the physical keys. The HAL enables their disabling.
-+    *enabled = Trim(buf) == "0";
-+    return ndk::ScopedAStatus::ok();
- }
- 
--Return<bool> KeyDisabler::setEnabled(bool enabled) {
--    if (!has_key_disabler_) return false;
-+ndk::ScopedAStatus KeyDisabler::setEnabled(bool enabled) {
-+    if (!has_key_disabler_) return ndk::ScopedAStatus::fromExceptionCode(EX_UNSUPPORTED_OPERATION);
- 
-     if (!WriteStringToFile(std::to_string(!enabled), kControlPath)) {
-         LOG(ERROR) << "Failed to write to " << kControlPath;
--        return false;
-+        return ndk::ScopedAStatus::fromServiceSpecificError(errno);
-     }
- 
--    return true;
-+    return ndk::ScopedAStatus::ok();
- }
- 
--}  // namespace implementation
--}  // namespace V1_0
- }  // namespace touch
- }  // namespace lineage
- }  // namespace vendor
-+}  // namespace aidl
-diff --git a/touch/KeyDisabler.h b/touch/KeyDisabler.h
-index 28478eb9bb1e5a8a7ae81b663389d870c685e017..ccd436c2c412d76f02189a622a068bd03d04dc87 100644
---- a/touch/KeyDisabler.h
-+++ b/touch/KeyDisabler.h
-@@ -16,29 +16,23 @@
- 
- #pragma once
- 
--#include <vendor/lineage/touch/1.0/IKeyDisabler.h>
-+#include <aidl/vendor/lineage/touch/BnKeyDisabler.h>
- 
-+namespace aidl {
- namespace vendor {
- namespace lineage {
- namespace touch {
--namespace V1_0 {
--namespace implementation {
--
--using ::android::hardware::Return;
--
--class KeyDisabler : public IKeyDisabler {
-+class KeyDisabler : public BnKeyDisabler {
-   public:
-     KeyDisabler();
--    // Methods from ::vendor::lineage::touch::V1_0::IKeyDisabler follow.
--    Return<bool> isEnabled() override;
--    Return<bool> setEnabled(bool enabled) override;
-+    ndk::ScopedAStatus getEnabled(bool* enabled) override;
-+    ndk::ScopedAStatus setEnabled(bool enabled) override;
- 
-   private:
-     const bool has_key_disabler_;
- };
- 
--}  // namespace implementation
--}  // namespace V1_0
- }  // namespace touch
- }  // namespace lineage
- }  // namespace vendor
-+}  // namespace aidl
-diff --git a/touch/service.cpp b/touch/service.cpp
-index 29109e34c01b6a3364de07b9ee9fc4d1314582cb..5b2bf819ac48eea2c0241b07ede5037649e3018a 100644
---- a/touch/service.cpp
-+++ b/touch/service.cpp
-@@ -14,49 +14,21 @@
-  * limitations under the License.
-  */
- 
--#define LOG_TAG "vendor.lineage.touch@1.0-service.gts3l"
-+#define LOG_TAG "vendor.lineage.touch-service.gts3l"
- 
- #include <android-base/logging.h>
--#include <hidl/HidlTransportSupport.h>
--
-+#include <android/binder_manager.h>
-+#include <android/binder_process.h>
- #include "KeyDisabler.h"
- 
--using android::OK;
--using android::sp;
--using android::status_t;
--using android::hardware::configureRpcThreadpool;
--using android::hardware::joinRpcThreadpool;
--
--using ::vendor::lineage::touch::V1_0::IKeyDisabler;
--using ::vendor::lineage::touch::V1_0::implementation::KeyDisabler;
-+using aidl::vendor::lineage::touch::KeyDisabler;
- 
- int main() {
--    sp<KeyDisabler> keyDisabler;
--    status_t status;
--
--    LOG(INFO) << "Touch HAL service is starting.";
--
--    keyDisabler = new KeyDisabler();
--    if (keyDisabler == nullptr) {
--        LOG(ERROR) << "Can not create an instance of Touch HAL KeyDisabler Iface, exiting.";
--        goto shutdown;
--    }
--
--    configureRpcThreadpool(1, true /*callerWillJoin*/);
--
--    status = keyDisabler->registerAsService();
--    if (status != OK) {
--        LOG(ERROR) << "Could not register service for Touch HAL KeyDisabler Iface ("
--                   << status << ")";
--        goto shutdown;
--    }
--
--    LOG(INFO) << "Touch HAL service is ready.";
--    joinRpcThreadpool();
--    // Should not pass this line
--
--shutdown:
--    // In normal operation, we don't expect the thread pool to shutdown
--    LOG(ERROR) << "Touch HAL service is shutting down.";
-+    ABinderProcess_setThreadPoolMaxThreadCount(0);
-+    auto keyDisabler = ndk::SharedRefBase::make<KeyDisabler>();
-+    const std::string instance = std::string(KeyDisabler::descriptor) + "/default";
-+    const auto status = AServiceManager_addService(keyDisabler->asBinder().get(), instance.c_str());
-+    CHECK_EQ(status, STATUS_OK) << "Failed to register " << instance;
-+    ABinderProcess_joinThreadPool();
-     return 1;
- }
-diff --git a/touch/vendor.lineage.touch@1.0-service.gts3l.rc b/touch/vendor.lineage.touch@1.0-service.gts3l.rc
-index a795a2599e0e9034796f57d34392a42d96146e9c..e364daf5514c9dbfd4ba640aa7941129f61b951a 100644
---- a/touch/vendor.lineage.touch@1.0-service.gts3l.rc
-+++ b/touch/vendor.lineage.touch@1.0-service.gts3l.rc
-@@ -3,7 +3,7 @@ on init
-     chown system system /sys/class/sec/sec_touchkey/input/enabled
-     chmod 0660 /sys/class/sec/sec_touchkey/input/enabled
- 
--service vendor.touch-hal-1-0 /vendor/bin/hw/vendor.lineage.touch@1.0-service.gts3l
-+service vendor.touch-hal /vendor/bin/hw/vendor.lineage.touch-service.gts3l
-     class hal
-     user system
-     group system
-diff --git a/touch/vendor.lineage.touch@1.0-service.gts3l.xml b/touch/vendor.lineage.touch@1.0-service.gts3l.xml
-index c8bebbc1e28e75878fb845b31cfe9598baa43662..8237fb56257252087c75bf212d6d012346f345d2 100644
---- a/touch/vendor.lineage.touch@1.0-service.gts3l.xml
-+++ b/touch/vendor.lineage.touch@1.0-service.gts3l.xml
-@@ -1,8 +1,7 @@
- <manifest version="1.0" type="device">
--    <hal format="hidl">
-+    <hal format="aidl">
-         <name>vendor.lineage.touch</name>
--        <transport>hwbinder</transport>
--        <version>1.0</version>
-+        <version>1</version>
-         <interface>
-             <name>IKeyDisabler</name>
-             <instance>default</instance>
 diff --git a/bootimg.mk b/bootimg.mk
 new file mode 100644
 index 0000000000000000000000000000000000000000..a7281c1c3bc24c37ff7fb5a6f659a8886ee5764c
@@ -1301,6 +422,42 @@ index 0000000000000000000000000000000000000000..01aec7f36d02369b0884fa1c2185b2bd
 +    { "Name": "MaxIoPriority", "Actions": [] }
 +  ]
 +}
+diff --git a/extract-files.sh b/extract-files.sh
+index 92600a51af5f3e91488f9f0b9a0bd865a4297b68..8bb4ef7340ea024f76617206381334c37ee151d8 100755
+--- a/extract-files.sh
++++ b/extract-files.sh
+@@ -69,6 +69,12 @@ function blob_fixup() {
+     vendor/lib/hw/camera.msm8996.so)
+         "${PATCHELF}" --replace-needed "libcamera_client.so" "libcamera_metadata_helper.so" "${2}"
+         ;;
++    vendor/lib/libbauthserver.so|vendor/lib64/libbauthserver.so)
++        case "$("${PATCHELF}" --print-needed "${2}")" in
++            *libbauthtzcommon_shim.so*) ;;
++            *) "${PATCHELF}" --add-needed "libbauthtzcommon_shim.so" "${2}" ;;
++        esac
++        ;;
+     vendor/lib/libwvhidl.so)
+         "${PATCHELF}" --replace-needed "libprotobuf-cpp-lite.so" "libprotobuf-cpp-lite-v29.so" "${2}"
+         ;;
+@@ -78,9 +84,18 @@ function blob_fixup() {
+     vendor/lib/libmmcamera2_stats_modules.so)
+         "${PATCHELF}" --replace-needed "libandroid.so" "libsensorndkbridge.so" "${2}"
+         "${PATCHELF}" --replace-needed "libgui.so" "libgui_vendor.so" "${2}"
++        python3 "${MY_DIR}/patch_camera_stats_af_uaf.py" "${2}"
++        python3 "${MY_DIR}/patch_camera_stats_aec_uaf.py" "${2}"
++        python3 "${MY_DIR}/patch_camera_stats_af_setparm_uaf.py" "${2}"
+         ;;
+     vendor/lib/hw/audio.primary.msm8996.so)
+         "${PATCHELF}" --replace-needed "libcutils.so" "libprocessgroup.so" "${2}"
++        case "$("${PATCHELF}" --print-needed "${2}")" in
++            *libaudioprimary_shim.so*) ;;
++            *) "${PATCHELF}" --add-needed "libaudioprimary_shim.so" "${2}" ;;
++        esac
++        # patchelf can relocate PT_PHDR incorrectly for this ELF's nonzero base.
++        python3 "${MY_DIR}/fixup_elf_phdr.py" "${2}"
+         ;;
+     vendor/lib/hw/android.hardware.gnss@1.0-impl-qti.so)
+         "${PATCHELF}" --replace-needed "libcutils.so" "libprocessgroup.so" "${2}"
 diff --git a/fixup_elf_phdr.py b/fixup_elf_phdr.py
 new file mode 100644
 index 0000000000000000000000000000000000000000..2d35504b8626120f787b2b7a31dc2ed6adda8cd2
@@ -1555,6 +712,209 @@ index 0000000000000000000000000000000000000000..3a37b172f69492e956a403df9a44155a
 +        </interface>
 +    </hal>
 +</compatibility-matrix>
+diff --git a/gts3l.mk b/gts3l.mk
+index 9ab1835767b1b4c47ce77eca04ca655f6d58a095..ac8101140ced821a60fc5a1f06b636319f16e945 100755
+--- a/gts3l.mk
++++ b/gts3l.mk
+@@ -18,6 +18,31 @@
+ $(call inherit-product, $(SRC_TARGET_DIR)/product/product_launched_with_n.mk)
+ $(call inherit-product, $(SRC_TARGET_DIR)/product/non_ab_device.mk)
+ 
++# Android 16 no longer supports flattened APEX packages. Avoid compression
++# on this old loop/dm-verity implementation while keeping packaged APEXes.
++PRODUCT_COMPRESSED_APEX := false
++
++# The vendor manifest keeps FCM 4 even when the platform's unfrozen AIDL
++# selection installs a newer default set of framework matrices.
++PRODUCT_PACKAGES += framework_compatibility_matrix.4.xml
++
++# Android 17 removed first-stage parsing of the legacy device-tree fstab.
++# Materialize the equivalent System entry in the boot ramdisk.
++PRODUCT_COPY_FILES += \
++    $(LOCAL_PATH)/rootdir/etc/fstab.ramdisk.qcom:$(TARGET_COPY_OUT_RAMDISK)/fstab.qcom
++
++# Kernel 3.18 has cgroup v1 controllers, including memory and cpuacct.
++PRODUCT_COPY_FILES += \
++    $(LOCAL_PATH)/configs/cgroups.json:$(TARGET_COPY_OUT_VENDOR)/etc/cgroups.json \
++    $(LOCAL_PATH)/configs/task_profiles.json:$(TARGET_COPY_OUT_VENDOR)/etc/task_profiles.json
++
++# Keep early APEX failures reachable through recovery USB during bring-up.
++# Sort after apexd.rc and stay on the System side of init's Treble boundary.
++ifneq ($(filter eng userdebug,$(TARGET_BUILD_VARIANT)),)
++PRODUCT_COPY_FILES += \
++    $(LOCAL_PATH)/configs/apexd-recovery.rc:$(TARGET_COPY_OUT_SYSTEM)/etc/init/zz-gts3l-apexd-recovery.rc
++endif
++
+ # Get non-open-source specific aspects
+ $(call inherit-product-if-exists, vendor/samsung/gts3l-common/gts3l-common-vendor.mk)
+ 
+@@ -42,6 +67,12 @@ PRODUCT_CHARACTERISTICS := tablet
+ # Exclude AudioFX
+ TARGET_EXCLUDES_AUDIOFX := true
+ 
++# Retain required firmware mount directories in the read-only Vendor image.
++PRODUCT_COPY_FILES += \
++    $(LOCAL_PATH)/configs/firmware-mountpoint:$(TARGET_COPY_OUT_VENDOR)/dsp/.mountpoint \
++    $(LOCAL_PATH)/configs/firmware-mountpoint:$(TARGET_COPY_OUT_VENDOR)/firmware_mnt/.mountpoint \
++    $(LOCAL_PATH)/configs/firmware-mountpoint:$(TARGET_COPY_OUT_VENDOR)/firmware-modem/.mountpoint
++
+ # Permissions
+ PRODUCT_COPY_FILES += \
+     frameworks/native/data/etc/android.hardware.audio.low_latency.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.hardware.audio.low_latency.xml \
+@@ -76,13 +107,12 @@ PRODUCT_COPY_FILES += \
+     frameworks/native/data/etc/android.software.vulkan.deqp.level-2020-03-01.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.software.vulkan.deqp.level.xml \
+     frameworks/native/data/etc/handheld_core_hardware.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/handheld_core_hardware.xml
+ 
+-# Additional native libraries
+ PRODUCT_COPY_FILES += \
+     $(LOCAL_PATH)/configs/public.libraries.txt:$(TARGET_COPY_OUT_VENDOR)/etc/public.libraries.txt
+ 
+ # ANT+
+ PRODUCT_PACKAGES += \
+-    AntHalService
++    AntHalService-Soong
+ 
+ # Audio
+ PRODUCT_PACKAGES += \
+@@ -104,7 +134,6 @@ PRODUCT_PACKAGES += \
+     libvolumelistener \
+     tinymix \
+     libaudioprimary_shim \
+-    libstdc++_vendor \
+     AudioRotationMonitor \
+     set-audio-rotation \
+     SamsungDAP
+@@ -160,7 +189,7 @@ PRODUCT_PACKAGES += \
+     android.hardware.memtrack@1.0-service \
+     vendor.display.config@2.0 \
+     gralloc.msm8996 \
+-    hwcomposer.msm8996 \
++    hwcomposer.qcom \
+     memtrack.msm8996 \
+     libdisplayconfig \
+     libqdMetaData \
+@@ -184,9 +213,8 @@ PRODUCT_PACKAGES += \
+     android.hardware.drm@1.0.vendor \
+     android.hardware.drm@1.1.vendor
+ 
+-# FastCharge
+-PRODUCT_PACKAGES += \
+-    vendor.lineage.fastcharge@1.0-service.samsung
++# The former Lineage fast-charge toggle HAL was removed upstream. Charging
++# continues to use the device's unchanged kernel and charger configuration.
+ 
+ # Fingerprint
+ PRODUCT_PACKAGES += \
+@@ -246,6 +274,7 @@ PRODUCT_COPY_FILES += \
+     $(LOCAL_PATH)/keylayout/Vendor_04e8_Product_a000.kl:$(TARGET_COPY_OUT_VENDOR)/usr/keylayout/Vendor_04e8_Product_a000.kl \
+     $(LOCAL_PATH)/keylayout/Vendor_04e8_Product_a005.kl:$(TARGET_COPY_OUT_VENDOR)/usr/keylayout/Vendor_04e8_Product_a005.kl \
+     $(LOCAL_PATH)/keylayout/Vendor_04e8_Product_a006.kl:$(TARGET_COPY_OUT_VENDOR)/usr/keylayout/Vendor_04e8_Product_a006.kl \
++    $(LOCAL_PATH)/keylayout/Vendor_04e8_Product_a035.kl:$(TARGET_COPY_OUT_SYSTEM)/usr/keylayout/Vendor_04e8_Product_a035.kl \
+     $(LOCAL_PATH)/keylayout/Vendor_04e8_Product_a009.kl:$(TARGET_COPY_OUT_VENDOR)/usr/keylayout/Vendor_04e8_Product_a009.kl \
+     $(LOCAL_PATH)/idc/Vendor_04e8_Product_a035.idc:$(TARGET_COPY_OUT_VENDOR)/usr/idc/Vendor_04e8_Product_a035.idc \
+     $(LOCAL_PATH)/idc/sec_e-pen.idc:$(TARGET_COPY_OUT_VENDOR)/usr/idc/sec_e-pen.idc
+@@ -261,7 +290,7 @@ PRODUCT_PACKAGES += \
+ 
+ # LiveDisplay
+ PRODUCT_PACKAGES += \
+-    vendor.lineage.livedisplay@2.0-service.samsung-qcom
++    vendor.lineage.livedisplay-service.samsung-qcom
+ 
+ # Media
+ PRODUCT_COPY_FILES += \
+@@ -289,6 +318,7 @@ PRODUCT_PACKAGES += \
+     libOmxAacEnc \
+     libOmxAmrEnc \
+     libOmxCore \
++    libmm-omxcore \
+     libOmxEvrcEnc \
+     libOmxG711Enc \
+     libOmxQcelp13Enc \
+@@ -306,11 +336,6 @@ PRODUCT_PACKAGES += \
+ PRODUCT_COPY_FILES += \
+     $(LOCAL_PATH)/configs/powerhint.xml:$(TARGET_COPY_OUT_VENDOR)/etc/powerhint.xml
+ 
+-# Profiles for cgroups, task_profiles
+-PRODUCT_COPY_FILES += \
+-    system/core/libprocessgroup/profiles/cgroups_28.json:$(TARGET_COPY_OUT_VENDOR)/etc/cgroups.json \
+-    system/core/libprocessgroup/profiles/task_profiles_28.json:$(TARGET_COPY_OUT_VENDOR)/etc/task_profiles.json
+-
+ # Qualcomm
+ PRODUCT_PACKAGES += \
+     libqti_vndfwk_detect \
+@@ -321,6 +346,7 @@ PRODUCT_COPY_FILES += \
+     $(LOCAL_PATH)/configs/qti_whitelist.xml:$(TARGET_COPY_OUT_SYSTEM_EXT)/etc/sysconfig/qti_whitelist.xml
+ 
+ PRODUCT_DEFAULT_PROPERTY_OVERRIDES += \
++    ro.surface_flinger.primary_display_orientation=ORIENTATION_270 \
+     ro.vendor.qti.va_aosp.support=1
+ 
+ # QMI
+@@ -339,7 +365,7 @@ PRODUCT_PACKAGES += \
+     init.qcom.sh \
+     init.qcom.usb.rc \
+     init.qcom.usb.sh \
+-    init.usb.configfs.rc \
++    init.usb.configfs.gts3l.rc \
+     init.samsung.rc \
+     init.target.rc \
+     ueventd.qcom.rc \
+@@ -396,7 +422,7 @@ PRODUCT_COPY_FILES += \
+ 
+ # Touch
+ PRODUCT_PACKAGES += \
+-    vendor.lineage.touch@1.0-service.gts3l
++    vendor.lineage.touch-service.gts3l
+ 
+ # USB
+ PRODUCT_PACKAGES += \
+@@ -404,22 +430,34 @@ PRODUCT_PACKAGES += \
+ 
+ # Vibrator
+ PRODUCT_PACKAGES += \
+-    android.hardware.vibrator@1.0-impl \
+-    android.hardware.vibrator@1.0-service
++    android.hardware.vibrator-service.legacy \
++    vibrator.default
+ 
+-# VNDK
+-PRODUCT_COPY_FILES += \
+-    prebuilts/vndk/v32/arm64/arch-arm-armv8-a/shared/vndk-sp/libhidlbase.so:$(TARGET_COPY_OUT_VENDOR)/lib/libhidlbase-v32.so \
+-    prebuilts/vndk/v32/arm64/arch-arm64-armv8-a/shared/vndk-sp/libhidlbase.so:$(TARGET_COPY_OUT_VENDOR)/lib64/libhidlbase-v32.so \
+-    prebuilts/vndk/v32/arm64/arch-arm64-armv8-a/shared/vndk-sp/libhidlbase.so:$(TARGET_COPY_OUT_SYSTEM)/lib64/libhidlbase-v32.so \
+-    prebuilts/vndk/v33/arm64/arch-arm64-armv8-a/shared/vndk-sp/libutils.so:$(TARGET_COPY_OUT_VENDOR)/lib64/libutils-v33.so \
+-    prebuilts/vndk/v29/arm64/arch-arm64-armv8-a/shared/vndk-sp/libcutils.so:$(TARGET_COPY_OUT_SYSTEM_EXT)/lib64/libcutils-v29.so \
+-    prebuilts/vndk/v29/arm64/arch-arm-armv8-a/shared/vndk-core/libprotobuf-cpp-lite.so:$(TARGET_COPY_OUT_VENDOR)/lib/libprotobuf-cpp-lite-v29.so \
+-    prebuilts/vndk/v29/arm64/arch-arm64-armv8-a/shared/vndk-core/libprotobuf-cpp-full.so:$(TARGET_COPY_OUT_VENDOR)/lib64/libprotobuf-cpp-full-v29.so
++# Legacy ABI libraries are supplied as explicit Lineage compatibility modules.
++PRODUCT_PACKAGES += \
++    libhidlbase-v32 \
++    libutils-v33 \
++    libcutils-v29 \
++    libprotobuf-cpp-lite-v29 \
++    libprotobuf-cpp-full-v29
++
++# Blobs reference these through ELF dependencies/dlopen, outside Soong's
++# declared dependencies. Install vendor variants for the isolated vendor
++# namespace; a System/SystemExt copy alone is not visible there.
++PRODUCT_PACKAGES += \
++    libaudioroute.vendor \
++    libhidlbase-v32.vendor \
++    libcutils-v29.vendor \
++    libexpat.vendor \
++    libion.vendor \
++    libpower.vendor \
++    libprocessgroup.vendor \
++    libsqlite.vendor \
++    libutilscallstack.vendor
+ 
+ # WiFi
+ PRODUCT_PACKAGES += \
+-    android.hardware.wifi@1.0-service.legacy \
++    android.hardware.wifi-service \
+     libwpa_client \
+     hostapd \
+     wpa_supplicant \
 diff --git a/keylayout/Vendor_04e8_Product_a035.kl b/keylayout/Vendor_04e8_Product_a035.kl
 new file mode 100644
 index 0000000000000000000000000000000000000000..c937ddff3227f947c1f4af205ce0ddb2d3499226
@@ -2938,6 +2298,98 @@ index 0000000000000000000000000000000000000000..ce01b02e13e818e197df6126ec8762ab
 +
 +    return 0;
 +}
+diff --git a/manifest.xml b/manifest.xml
+index f092ef8608610adac5cc1d0c3481088f06d598c5..cc98b43623f827687f9aba5056f5fbeb404e818d 100644
+--- a/manifest.xml
++++ b/manifest.xml
+@@ -1,3 +1,4 @@
++<?xml version='1.0' encoding='UTF-8'?>
+ <manifest version="1.0" type="device" target-level="4">
+     <hal format="hidl">
+         <name>android.hardware.audio</name>
+@@ -133,15 +134,6 @@
+             <instance>default</instance>
+         </interface>
+     </hal>
+-    <!--hal format="hidl">
+-        <name>android.hardware.media.c2</name>
+-        <transport>hwbinder</transport>
+-        <version>1.0</version>
+-        <interface>
+-            <name>IComponentStore</name>
+-            <instance>default</instance>
+-        </interface>
+-    </hal-->
+     <hal format="hidl">
+         <name>android.hardware.media.omx</name>
+         <transport>hwbinder</transport>
+@@ -182,15 +174,6 @@
+             <instance>default</instance>
+         </interface>
+     </hal>
+-    <hal format="hidl">
+-        <name>android.hardware.vibrator</name>
+-        <transport>hwbinder</transport>
+-        <version>1.0</version>
+-        <interface>
+-            <name>IVibrator</name>
+-            <instance>default</instance>
+-        </interface>
+-    </hal>
+     <hal format="hidl">
+         <name>com.qualcomm.qti.ant</name>
+         <transport>hwbinder</transport>
+@@ -244,20 +227,19 @@
+             <instance>default</instance>
+         </interface>
+     </hal>
+-    <hal format="hidl">
++    <hal format="aidl">
+         <name>vendor.lineage.livedisplay</name>
+-        <transport>hwbinder</transport>
+-        <version>2.0</version>
++        <version>1</version>
+         <interface>
+             <name>IAdaptiveBacklight</name>
+             <instance>default</instance>
+         </interface>
+         <interface>
+-            <name>IDisplayModes</name>
++            <name>IDisplayColorCalibration</name>
+             <instance>default</instance>
+         </interface>
+         <interface>
+-            <name>IReadingEnhancement</name>
++            <name>IDisplayModes</name>
+             <instance>default</instance>
+         </interface>
+         <interface>
+diff --git a/overlay/frameworks/base/core/res/res/values/config.xml b/overlay/frameworks/base/core/res/res/values/config.xml
+index e49cd9ba18336787c346f7d084416a89bfd0fdbc..2d2f8184b43a0000f96307d7ed4b4fb3f21c1406 100644
+--- a/overlay/frameworks/base/core/res/res/values/config.xml
++++ b/overlay/frameworks/base/core/res/res/values/config.xml
+@@ -38,7 +38,8 @@
+          * The remote submix module "audio.r_submix.default" must be installed on the device.
+          * The device must be provisioned with HDCP keys (for protected content).
+     -->
+-    <bool name="config_enableWifiDisplay">true</bool>
++    <!-- Legacy WFD vendor components have unresolved baseline dependencies. -->
++    <bool name="config_enableWifiDisplay">false</bool>
+ 
+     <!-- Set to true if the wifi display supports compositing content stored
+          in gralloc protected buffers.  For this to be true, there must exist
+@@ -65,6 +66,11 @@
+          in hardware. -->
+     <bool name="config_setColorTransformAccelerated">true</bool>
+ 
++    <!-- Android 17 defaults to 1024 cached processes for devices with the
++         modern cached-app freezer. Kernel 3.18 cannot provide that freezer,
++         so bound idle process retention while preserving useful multitasking. -->
++    <integer name="config_customizedMaxCachedProcesses">64</integer>
++
+     <!-- Array of light sensor lux values to define our levels for auto backlight brightness support.
+          The N entries of this array define N + 1 control points as follows:
+          (1-based arrays)
 diff --git a/patch_camera_stats_aec_uaf.py b/patch_camera_stats_aec_uaf.py
 new file mode 100644
 index 0000000000000000000000000000000000000000..fd15ea220fd0ba9bc2df32fde8ee2031e3f75ee8
@@ -3166,6 +2618,103 @@ index 0000000000000000000000000000000000000000..4b08c5f862571ea9d727ab9229f9cd20
 +
 +if __name__ == "__main__":
 +    raise SystemExit(main())
+diff --git a/rootdir/Android.mk b/rootdir/Android.mk
+index 0fd8a9206529428203153bf9ced71126efc66771..a691c72ed12741e30c667765e7d9f10807d75552 100644
+--- a/rootdir/Android.mk
++++ b/rootdir/Android.mk
+@@ -61,7 +61,8 @@ LOCAL_MODULE_PATH  := $(TARGET_OUT_VENDOR_ETC)
+ include $(BUILD_PREBUILT)
+ 
+ include $(CLEAR_VARS)
+-LOCAL_MODULE       := init.usb.configfs.rc
++LOCAL_MODULE       := init.usb.configfs.gts3l.rc
++LOCAL_MODULE_STEM  := init.usb.configfs.rc
+ LOCAL_MODULE_TAGS  := optional
+ LOCAL_MODULE_CLASS := ETC
+ LOCAL_SRC_FILES    := etc/init.usb.configfs.rc
+diff --git a/rootdir/bin/init.qcom.usb.sh b/rootdir/bin/init.qcom.usb.sh
+index eef0095875abf63bcdd8ed2d1a90998a32e6afdc..42dff81c6b061610bb6d7e6282585ffef6990997 100755
+--- a/rootdir/bin/init.qcom.usb.sh
++++ b/rootdir/bin/init.qcom.usb.sh
+@@ -77,63 +77,63 @@ fi
+ if [ "$(getprop persist.vendor.usb.config)" == "" -a \
+ 	"$(getprop init.svc.vendor.usb-gadget-hal-1-0)" != "running" ]; then
+       if [ "$esoc_link" != "" ]; then
+-	  setprop persist.vendor.usb.config diag,diag_mdm,qdss,qdss_mdm,serial_cdev,dpl,rmnet,adb
++	  setprop persist.vendor.usb.config diag,diag_mdm,qdss,qdss_mdm,serial_cdev,dpl,rmnet
+       else
+ 	  case "$(getprop ro.baseband)" in
+ 	      "apq")
+-	          setprop persist.vendor.usb.config diag,adb
++	          setprop persist.vendor.usb.config diag
+ 	      ;;
+ 	      *)
+ 	      case "$soc_hwplatform" in
+ 	          "Dragon" | "SBC")
+-	              setprop persist.vendor.usb.config diag,adb
++	              setprop persist.vendor.usb.config diag
+ 	          ;;
+                   *)
+ 		  soc_machine=${soc_machine:0:3}
+ 		  case "$soc_machine" in
+ 		    "SDA")
+-	              setprop persist.vendor.usb.config diag,adb
++	              setprop persist.vendor.usb.config diag
+ 		    ;;
+ 		    *)
+ 	            case "$target" in
+ 	              "msm8996")
+-	                  setprop persist.vendor.usb.config diag,serial_cdev,serial_tty,rmnet_ipa,mass_storage,adb
++	                  setprop persist.vendor.usb.config diag,serial_cdev,serial_tty,rmnet_ipa,mass_storage
+ 		      ;;
+ 	              "msm8909")
+-		          setprop persist.vendor.usb.config diag,serial_smd,rmnet_qti_bam,adb
++		          setprop persist.vendor.usb.config diag,serial_smd,rmnet_qti_bam
+ 		      ;;
+ 	              "msm8937")
+ 			    if [ -d /config/usb_gadget ]; then
+-				       setprop persist.vendor.usb.config diag,serial_cdev,rmnet,dpl,adb
++				       setprop persist.vendor.usb.config diag,serial_cdev,rmnet,dpl
+ 			    else
+ 			               case "$soc_id" in
+ 				               "313" | "320")
+-				                  setprop persist.vendor.usb.config diag,serial_smd,rmnet_ipa,adb
++				                  setprop persist.vendor.usb.config diag,serial_smd,rmnet_ipa
+ 				               ;;
+ 				               *)
+-				                  setprop persist.vendor.usb.config diag,serial_smd,rmnet_qti_bam,adb
++				                  setprop persist.vendor.usb.config diag,serial_smd,rmnet_qti_bam
+ 				               ;;
+ 			               esac
+ 			    fi
+ 		      ;;
+ 	              "msm8953")
+ 			      if [ -d /config/usb_gadget ]; then
+-				      setprop persist.vendor.usb.config diag,serial_cdev,rmnet,dpl,adb
++				      setprop persist.vendor.usb.config diag,serial_cdev,rmnet,dpl
+ 			      else
+-				      setprop persist.vendor.usb.config diag,serial_smd,rmnet_ipa,adb
++				      setprop persist.vendor.usb.config diag,serial_smd,rmnet_ipa
+ 			      fi
+ 		      ;;
+ 	              "msm8998" | "sdm660" | "apq8098_latv")
+-		          setprop persist.vendor.usb.config diag,serial_cdev,rmnet,adb
++		          setprop persist.vendor.usb.config diag,serial_cdev,rmnet
+ 		      ;;
+ 	              "sdm845" | "sdm710")
+-		          setprop persist.vendor.usb.config diag,serial_cdev,rmnet,dpl,adb
++		          setprop persist.vendor.usb.config diag,serial_cdev,rmnet,dpl
+ 		      ;;
+ 	              "msmnile" | "sm6150")
+-			  setprop persist.vendor.usb.config diag,serial_cdev,rmnet,dpl,qdss,adb
++			  setprop persist.vendor.usb.config diag,serial_cdev,rmnet,dpl,qdss
+ 		      ;;
+ 	              *)
+-		          setprop persist.vendor.usb.config diag,adb
++		          setprop persist.vendor.usb.config diag
+ 		      ;;
+                     esac
+ 		    ;;
 diff --git a/rootdir/etc/fstab.ramdisk.qcom b/rootdir/etc/fstab.ramdisk.qcom
 new file mode 100644
 index 0000000000000000000000000000000000000000..7d508c35892340d1b54fd07a8736c3b3e77e52b4
@@ -3176,6 +2725,137 @@ index 0000000000000000000000000000000000000000..7d508c35892340d1b54fd07a8736c3b3
 +# node during first-stage init. Keep its System entry in the boot ramdisk so
 +# this non-system-as-root device can mount System and switch root.
 +/dev/block/platform/soc/7464900.sdhci/by-name/system /system ext4 ro,errors=panic,noload wait,first_stage_mount
+diff --git a/rootdir/etc/init.qcom.usb.rc b/rootdir/etc/init.qcom.usb.rc
+index 5a317465655ee9f085cabd6913a97190039088c0..71575b821ea2778a31edf29f78fa56c646834558 100644
+--- a/rootdir/etc/init.qcom.usb.rc
++++ b/rootdir/etc/init.qcom.usb.rc
+@@ -97,6 +97,11 @@ on boot
+     write /sys/class/android_usb/android0/f_ffs/aliases adb
+     enable qcom-usb-sh
+ 
++# If the user enabled ADB, restart it once APEX activation finishes so new
++# shell processes inherit the complete runtime linker namespace.
++on property:apexd.status=ready && property:sys.usb.config=adb
++    restart adbd
++
+ service qcom-usb-sh /vendor/bin/init.qcom.usb.sh
+     class core
+     user root
+diff --git a/rootdir/etc/init.samsung.rc b/rootdir/etc/init.samsung.rc
+index be8a3d200735bde2e45281e52765773d6a81480a..19cb18a4e29009839cfd4acfb58d8ce6d00864ca 100644
+--- a/rootdir/etc/init.samsung.rc
++++ b/rootdir/etc/init.samsung.rc
+@@ -5,6 +5,23 @@
+ #
+ 
+ on init
++    # Mounting cgroup v1 hides the ownership set on the tmpfs mount point.
++    # system_server creates isolated WebView/app-zygote process groups here.
++    chown system system /dev/cpuacct
++    chmod 0755 /dev/cpuacct
++    chown system system /dev/cpuacct/cgroup.procs
++    chown system system /dev/cpuacct/tasks
++    chmod 0664 /dev/cpuacct/cgroup.procs
++    chmod 0664 /dev/cpuacct/tasks
++
++    # Legacy traffic accounting: system_server has net_bw_stats/net_bw_acct.
++    # App socket tagging is mediated by netd, rather than writable proc files.
++    chown root net_bw_acct /proc/net/xt_qtaguid/ctrl
++    chmod 0660 /proc/net/xt_qtaguid/ctrl
++    chown root net_bw_stats /proc/net/xt_qtaguid/stats
++    chmod 0640 /proc/net/xt_qtaguid/stats
++    chown root net_bw_stats /proc/net/xt_qtaguid/iface_stat_all
++    chmod 0640 /proc/net/xt_qtaguid/iface_stat_all
+     symlink /dev/block/bootdevice/by-name/persistent  /dev/block/persistent
+     symlink /dev/block/bootdevice/by-name/steady  /dev/block/steady
+ 
+diff --git a/rootdir/etc/init.target.rc b/rootdir/etc/init.target.rc
+index 4b0c46085893ad11d825b61d560d0943a42924b7..f1da894f76893f7ff4e01533b72271a46e4c5eac 100644
+--- a/rootdir/etc/init.target.rc
++++ b/rootdir/etc/init.target.rc
+@@ -37,7 +37,16 @@ on early-init
+ on fs
+     wait /dev/block/platform/soc/${ro.boot.bootdevice}
+     symlink /dev/block/platform/soc/${ro.boot.bootdevice} /dev/block/bootdevice
+-    mount_all /vendor/etc/fstab.qcom
++    # Data is latemount: mount it only in late-fs, after early HAL startup.
++    mount_all /vendor/etc/fstab.qcom --early
++
++    # Cache is mounted above. Keep Android 16 flag storage across normal boots
++    # without repartitioning or waiting for the latemount Data filesystem.
++    # Wiping Cache also resets this metadata; aconfigd recreates build defaults.
++    mkdir /cache/gts3l-metadata 0755 root root
++    mount none /cache/gts3l-metadata /metadata bind
++    restorecon_recursive /metadata
++
+     setprop ro.crypto.fde_algorithm AES-256-XTS
+     swapon_all /vendor/etc/fstab.qcom
+ 
+@@ -516,4 +525,3 @@ on property:vendor.sys.listeners.registered=*
+ service vendor.wifiloader /vendor/bin/wifiloader
+     class main
+     oneshot
+-
+diff --git a/rootdir/etc/ueventd.qcom.rc b/rootdir/etc/ueventd.qcom.rc
+index 3591b8171d13915c313fc4d818d2c47754c520e3..7484cc006241ff455e15a17d4c047887819f500d 100644
+--- a/rootdir/etc/ueventd.qcom.rc
++++ b/rootdir/etc/ueventd.qcom.rc
+@@ -166,7 +166,7 @@ firmware_directories /vendor/firmware_mnt/image/ /vendor/firmware-modem/image/
+ /dev/msm_vidc_dec_sec     0660   system     audio
+ /dev/msm_vidc_enc         0660   system     audio
+ /dev/msm_rotator          0660   system     system
+-/dev/hw_random            0600   root       root
++/dev/hw_random            0400   prng_seeder prng_seeder
+ /dev/sdsprpc-smd          0660   system     system
+ 
+ #permissions for audio
+diff --git a/sepolicy/file_contexts b/sepolicy/file_contexts
+index bd78eefa605931b7d53e683636a4aaaffc2bc428..4723654ff0e9da60410b925d3cc4c570e176187b 100644
+--- a/sepolicy/file_contexts
++++ b/sepolicy/file_contexts
+@@ -40,6 +40,7 @@
+ /dev/dun                       u:object_r:dun_device:s0
+ /dev/esfp[0-9]+                u:object_r:fp_sensor_device:s0
+ /dev/gsm_.*                    u:object_r:radio_device:s0
++/dev/ion                       u:object_r:ion_device:s0
+ /dev/link_pm                   u:object_r:radio_device:s0
+ /dev/mdm                       u:object_r:radio_device:s0
+ /dev/network_latency           u:object_r:radio_device:s0
+@@ -177,9 +178,8 @@
+ /(vendor|system/vendor)/bin/hw/android\.hardware\.health@2\.0-service\.samsung                     u:object_r:hal_health_default_exec:s0
+ /(vendor|system/vendor)/bin/hw/android\.hardware\.keymaster@3\.0-service\.gts3l                    u:object_r:hal_keymaster_default_exec:s0
+ /(vendor|system/vendor)/bin/hw/android\.hardware\.light-service\.gts3l                             u:object_r:hal_light_default_exec:s0
+-/(vendor|system/vendor)/bin/hw/vendor\.lineage\.fastcharge@1\.0-service\.samsung                   u:object_r:hal_lineage_fastcharge_default_exec:s0
+-/(vendor|system/vendor)/bin/hw/vendor\.lineage\.livedisplay@2\.0-service\.samsung-qcom             u:object_r:hal_lineage_livedisplay_sysfs_exec:s0
+-/(vendor|system/vendor)/bin/hw/vendor\.lineage\.touch@1\.0-service\.gts3l                          u:object_r:hal_lineage_touch_default_exec:s0
++/(vendor|system/vendor)/bin/hw/vendor\.lineage\.livedisplay-service\.samsung-qcom             u:object_r:hal_lineage_livedisplay_sysfs_exec:s0
++/(vendor|system/vendor)/bin/hw/vendor\.lineage\.touch-service\.gts3l                          u:object_r:hal_lineage_touch_default_exec:s0
+ /(vendor|system/vendor)/bin/hw/vendor\.samsung\.hardware\.miscpower@1\.0-service                   u:object_r:hal_power_default_exec:s0
+ 
+ # Rootfs
+diff --git a/sepolicy/gmscore_app.te b/sepolicy/gmscore_app.te
+index 5002e64142acdf373c43806ecf4b4593f8eccd65..5cdbc15b597337564c2ef06e5b86faedc80ce5e2 100644
+--- a/sepolicy/gmscore_app.te
++++ b/sepolicy/gmscore_app.te
+@@ -1,6 +1,3 @@
+ binder_call(gmscore_app, hal_memtrack_default);
+ 
+-allow gmscore_app {
+-    apexd_prop
+-    apk_verity_prop
+-}:file r_file_perms;
++allow gmscore_app apexd_prop:file r_file_perms;
+diff --git a/sepolicy/hal_lineage_fastcharge_default.te b/sepolicy/hal_lineage_fastcharge_default.te
+deleted file mode 100644
+index 4420271e06942432dfbc6fe9a8089a0bca3e0ffa..0000000000000000000000000000000000000000
+--- a/sepolicy/hal_lineage_fastcharge_default.te
++++ /dev/null
+@@ -1,4 +0,0 @@
+-allow hal_lineage_fastcharge_default sysfs_sec_switch:dir search;
+-allow hal_lineage_fastcharge_default sysfs_sec_switch:file rw_file_perms;
+-
+-set_prop(hal_lineage_fastcharge, sec_fastcharge_prop)
+\ No newline at end of file
 diff --git a/sepolicy/ion.te b/sepolicy/ion.te
 new file mode 100644
 index 0000000000000000000000000000000000000000..d10b8e9942a73afabdca778c9d419e694827a686
@@ -3205,6 +2885,326 @@ index 0000000000000000000000000000000000000000..d10b8e9942a73afabdca778c9d419e69
 +allow surfaceflinger ion_device:chr_file r_file_perms;
 +allow system_server ion_device:chr_file r_file_perms;
 +allow tee ion_device:chr_file r_file_perms;
+diff --git a/sepolicy/set-audio-rotation.te b/sepolicy/set-audio-rotation.te
+index 14410e5433d1ac8cca793294fd2d48191b6434a0..88b3e1a26be2eb493954c5d91b2e2de203bff15e 100644
+--- a/sepolicy/set-audio-rotation.te
++++ b/sepolicy/set-audio-rotation.te
+@@ -1,5 +1,5 @@
+ type set-audio-rotation, domain, coredomain;
+-type set-audio-rotation_exec, exec_type, file_type;
++type set-audio-rotation_exec, exec_type, file_type, system_file_type;
+ 
+ init_daemon_domain(set-audio-rotation)
+ 
+diff --git a/shims/libcamera_client/CameraMetadata.cpp b/shims/libcamera_client/CameraMetadata.cpp
+index 04bfbae4582082b9567d0f4f5f37cf89d36d6dd0..aa294ea6156ad200c9e402fcedac30d7397dc423 100644
+--- a/shims/libcamera_client/CameraMetadata.cpp
++++ b/shims/libcamera_client/CameraMetadata.cpp
+@@ -270,7 +270,7 @@ status_t CameraMetadata::update(uint32_t tag,
+         return res;
+     }
+     // string.size() doesn't count the null termination character.
+-    return updateImpl(tag, (const void*)string.string(), string.size() + 1);
++    return updateImpl(tag, (const void*)string.c_str(), string.size() + 1);
+ }
+ 
+ status_t CameraMetadata::update(const camera_metadata_ro_entry &entry) {
+diff --git a/shims/libcamera_client/CameraParameters.cpp b/shims/libcamera_client/CameraParameters.cpp
+index ac057246766646f3c2e829cbfba26b687b0c6534..f25271a93dfab945076c181c306b1c79912d7167 100644
+--- a/shims/libcamera_client/CameraParameters.cpp
++++ b/shims/libcamera_client/CameraParameters.cpp
+@@ -207,7 +207,7 @@ String8 CameraParameters::flatten() const
+ 
+ void CameraParameters::unflatten(const String8 &params)
+ {
+-    const char *a = params.string();
++    const char *a = params.c_str();
+     const char *b;
+ 
+     mMap.clear();
+@@ -273,7 +273,7 @@ const char *CameraParameters::get(const char *key) const
+     String8 v = mMap.valueFor(String8(key));
+     if (v.length() == 0)
+         return 0;
+-    return v.string();
++    return v.c_str();
+ }
+ 
+ int CameraParameters::getInt(const char *key) const
+@@ -465,7 +465,7 @@ void CameraParameters::dump() const
+         String8 k, v;
+         k = mMap.keyAt(i);
+         v = mMap.valueAt(i);
+-        ALOGD("%s: %s\n", k.string(), v.string());
++        ALOGD("%s: %s\n", k.c_str(), v.c_str());
+     }
+ }
+ 
+@@ -480,10 +480,10 @@ status_t CameraParameters::dump(int fd, const Vector<String16>& /*args*/) const
+         String8 k, v;
+         k = mMap.keyAt(i);
+         v = mMap.valueAt(i);
+-        snprintf(buffer, 255, "\t%s: %s\n", k.string(), v.string());
++        snprintf(buffer, 255, "\t%s: %s\n", k.c_str(), v.c_str());
+         result.append(buffer);
+     }
+-    write(fd, result.string(), result.size());
++    write(fd, result.c_str(), result.size());
+     return NO_ERROR;
+ }
+ 
+diff --git a/system.prop b/system.prop
+index 25947c6cf9d0d44e37a3fc23d5f755bd29d076a2..3fc36c24d0523b6071e0b2db85a09e182954eba3 100755
+--- a/system.prop
++++ b/system.prop
+@@ -56,7 +56,9 @@ bluetooth.profile.sap.server.enabled?=true
+ 
+ # BPF
+ ro.kernel.ebpf.supported=false
+-bpf.progs_loaded=1
++
++# Packed APEX on the legacy loop driver
++ro.apexd.legacy_loop_io=true
+ 
+ # Camera
+ camera.disable_zsl_mode=1
+@@ -138,7 +140,7 @@ vendor.usb.controller=6a00000.dwc3
+ wifi.interface=wlan0
+ 
+ # WFD
+-persist.debug.wfd.enable=1
++persist.debug.wfd.enable=0
+ persist.sys.wfd.virtual=0
+ 
+ # Zygote
+diff --git a/touch/Android.bp b/touch/Android.bp
+index 5bd39d8c3af6d5fca15cd6f75dee5a761740e1d4..6ddc99e5925aea5bbe9d6b2a8988e36c9b67271a 100644
+--- a/touch/Android.bp
++++ b/touch/Android.bp
+@@ -13,10 +13,9 @@
+ // limitations under the License.
+ 
+ cc_binary {
+-    name: "vendor.lineage.touch@1.0-service.gts3l",
++    name: "vendor.lineage.touch-service.gts3l",
+     init_rc: ["vendor.lineage.touch@1.0-service.gts3l.rc"],
+     vintf_fragments: ["vendor.lineage.touch@1.0-service.gts3l.xml"],
+-    defaults: ["hidl_defaults"],
+     relative_install_path: "hw",
+     vendor: true,
+     srcs: [
+@@ -25,8 +24,8 @@ cc_binary {
+     ],
+     shared_libs: [
+         "libbase",
+-        "libhidlbase",
++        "libbinder_ndk",
+         "libutils",
+-        "vendor.lineage.touch@1.0",
++        "vendor.lineage.touch-V1-ndk",
+     ],
+ }
+diff --git a/touch/KeyDisabler.cpp b/touch/KeyDisabler.cpp
+index 63e60f6f909247cc96131a931926c85e8d877afe..218472fd5b0c521241f0f045194a91ba5966c011 100644
+--- a/touch/KeyDisabler.cpp
++++ b/touch/KeyDisabler.cpp
+@@ -17,6 +17,7 @@
+ #include <android-base/file.h>
+ #include <android-base/logging.h>
+ #include <android-base/strings.h>
++#include <unistd.h>
+ 
+ #include "KeyDisabler.h"
+ 
+@@ -24,43 +25,42 @@ using ::android::base::ReadFileToString;
+ using ::android::base::Trim;
+ using ::android::base::WriteStringToFile;
+ 
++namespace aidl {
+ namespace vendor {
+ namespace lineage {
+ namespace touch {
+-namespace V1_0 {
+-namespace implementation {
+ 
+ constexpr const char kControlPath[] = "/sys/class/sec/sec_touchkey/input/enabled";
+ 
+ KeyDisabler::KeyDisabler() : has_key_disabler_(!access(kControlPath, R_OK | W_OK)) {}
+ 
+-// Methods from ::vendor::lineage::touch::V1_0::IKeyDisabler follow.
+-Return<bool> KeyDisabler::isEnabled() {
++ndk::ScopedAStatus KeyDisabler::getEnabled(bool* enabled) {
+     std::string buf;
+-
+-    if (!has_key_disabler_) return false;
++    *enabled = false;
++    if (!has_key_disabler_) return ndk::ScopedAStatus::fromExceptionCode(EX_UNSUPPORTED_OPERATION);
+ 
+     if (!ReadFileToString(kControlPath, &buf, true)) {
+         LOG(ERROR) << "Failed to read from " << kControlPath;
+-        return false;
++        return ndk::ScopedAStatus::fromServiceSpecificError(errno);
+     }
+ 
+-    return Trim(buf) == "1";
++    // This node enables the physical keys. The HAL enables their disabling.
++    *enabled = Trim(buf) == "0";
++    return ndk::ScopedAStatus::ok();
+ }
+ 
+-Return<bool> KeyDisabler::setEnabled(bool enabled) {
+-    if (!has_key_disabler_) return false;
++ndk::ScopedAStatus KeyDisabler::setEnabled(bool enabled) {
++    if (!has_key_disabler_) return ndk::ScopedAStatus::fromExceptionCode(EX_UNSUPPORTED_OPERATION);
+ 
+     if (!WriteStringToFile(std::to_string(!enabled), kControlPath)) {
+         LOG(ERROR) << "Failed to write to " << kControlPath;
+-        return false;
++        return ndk::ScopedAStatus::fromServiceSpecificError(errno);
+     }
+ 
+-    return true;
++    return ndk::ScopedAStatus::ok();
+ }
+ 
+-}  // namespace implementation
+-}  // namespace V1_0
+ }  // namespace touch
+ }  // namespace lineage
+ }  // namespace vendor
++}  // namespace aidl
+diff --git a/touch/KeyDisabler.h b/touch/KeyDisabler.h
+index 28478eb9bb1e5a8a7ae81b663389d870c685e017..ccd436c2c412d76f02189a622a068bd03d04dc87 100644
+--- a/touch/KeyDisabler.h
++++ b/touch/KeyDisabler.h
+@@ -16,29 +16,23 @@
+ 
+ #pragma once
+ 
+-#include <vendor/lineage/touch/1.0/IKeyDisabler.h>
++#include <aidl/vendor/lineage/touch/BnKeyDisabler.h>
+ 
++namespace aidl {
+ namespace vendor {
+ namespace lineage {
+ namespace touch {
+-namespace V1_0 {
+-namespace implementation {
+-
+-using ::android::hardware::Return;
+-
+-class KeyDisabler : public IKeyDisabler {
++class KeyDisabler : public BnKeyDisabler {
+   public:
+     KeyDisabler();
+-    // Methods from ::vendor::lineage::touch::V1_0::IKeyDisabler follow.
+-    Return<bool> isEnabled() override;
+-    Return<bool> setEnabled(bool enabled) override;
++    ndk::ScopedAStatus getEnabled(bool* enabled) override;
++    ndk::ScopedAStatus setEnabled(bool enabled) override;
+ 
+   private:
+     const bool has_key_disabler_;
+ };
+ 
+-}  // namespace implementation
+-}  // namespace V1_0
+ }  // namespace touch
+ }  // namespace lineage
+ }  // namespace vendor
++}  // namespace aidl
+diff --git a/touch/service.cpp b/touch/service.cpp
+index 29109e34c01b6a3364de07b9ee9fc4d1314582cb..5b2bf819ac48eea2c0241b07ede5037649e3018a 100644
+--- a/touch/service.cpp
++++ b/touch/service.cpp
+@@ -14,49 +14,21 @@
+  * limitations under the License.
+  */
+ 
+-#define LOG_TAG "vendor.lineage.touch@1.0-service.gts3l"
++#define LOG_TAG "vendor.lineage.touch-service.gts3l"
+ 
+ #include <android-base/logging.h>
+-#include <hidl/HidlTransportSupport.h>
+-
++#include <android/binder_manager.h>
++#include <android/binder_process.h>
+ #include "KeyDisabler.h"
+ 
+-using android::OK;
+-using android::sp;
+-using android::status_t;
+-using android::hardware::configureRpcThreadpool;
+-using android::hardware::joinRpcThreadpool;
+-
+-using ::vendor::lineage::touch::V1_0::IKeyDisabler;
+-using ::vendor::lineage::touch::V1_0::implementation::KeyDisabler;
++using aidl::vendor::lineage::touch::KeyDisabler;
+ 
+ int main() {
+-    sp<KeyDisabler> keyDisabler;
+-    status_t status;
+-
+-    LOG(INFO) << "Touch HAL service is starting.";
+-
+-    keyDisabler = new KeyDisabler();
+-    if (keyDisabler == nullptr) {
+-        LOG(ERROR) << "Can not create an instance of Touch HAL KeyDisabler Iface, exiting.";
+-        goto shutdown;
+-    }
+-
+-    configureRpcThreadpool(1, true /*callerWillJoin*/);
+-
+-    status = keyDisabler->registerAsService();
+-    if (status != OK) {
+-        LOG(ERROR) << "Could not register service for Touch HAL KeyDisabler Iface ("
+-                   << status << ")";
+-        goto shutdown;
+-    }
+-
+-    LOG(INFO) << "Touch HAL service is ready.";
+-    joinRpcThreadpool();
+-    // Should not pass this line
+-
+-shutdown:
+-    // In normal operation, we don't expect the thread pool to shutdown
+-    LOG(ERROR) << "Touch HAL service is shutting down.";
++    ABinderProcess_setThreadPoolMaxThreadCount(0);
++    auto keyDisabler = ndk::SharedRefBase::make<KeyDisabler>();
++    const std::string instance = std::string(KeyDisabler::descriptor) + "/default";
++    const auto status = AServiceManager_addService(keyDisabler->asBinder().get(), instance.c_str());
++    CHECK_EQ(status, STATUS_OK) << "Failed to register " << instance;
++    ABinderProcess_joinThreadPool();
+     return 1;
+ }
+diff --git a/touch/vendor.lineage.touch@1.0-service.gts3l.rc b/touch/vendor.lineage.touch@1.0-service.gts3l.rc
+index a795a2599e0e9034796f57d34392a42d96146e9c..e364daf5514c9dbfd4ba640aa7941129f61b951a 100644
+--- a/touch/vendor.lineage.touch@1.0-service.gts3l.rc
++++ b/touch/vendor.lineage.touch@1.0-service.gts3l.rc
+@@ -3,7 +3,7 @@ on init
+     chown system system /sys/class/sec/sec_touchkey/input/enabled
+     chmod 0660 /sys/class/sec/sec_touchkey/input/enabled
+ 
+-service vendor.touch-hal-1-0 /vendor/bin/hw/vendor.lineage.touch@1.0-service.gts3l
++service vendor.touch-hal /vendor/bin/hw/vendor.lineage.touch-service.gts3l
+     class hal
+     user system
+     group system
+diff --git a/touch/vendor.lineage.touch@1.0-service.gts3l.xml b/touch/vendor.lineage.touch@1.0-service.gts3l.xml
+index c8bebbc1e28e75878fb845b31cfe9598baa43662..8237fb56257252087c75bf212d6d012346f345d2 100644
+--- a/touch/vendor.lineage.touch@1.0-service.gts3l.xml
++++ b/touch/vendor.lineage.touch@1.0-service.gts3l.xml
+@@ -1,8 +1,7 @@
+ <manifest version="1.0" type="device">
+-    <hal format="hidl">
++    <hal format="aidl">
+         <name>vendor.lineage.touch</name>
+-        <transport>hwbinder</transport>
+-        <version>1.0</version>
++        <version>1</version>
+         <interface>
+             <name>IKeyDisabler</name>
+             <instance>default</instance>
 diff --git a/write_samsung_boot_id.py b/write_samsung_boot_id.py
 new file mode 100644
 index 0000000000000000000000000000000000000000..6e53a4a43076f69a866ec3567610b3fb9cefaec6

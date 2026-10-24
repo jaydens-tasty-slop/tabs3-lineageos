@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
 # Source from either build entry point; paths are stable across containers.
+# Select the product with TAB_S3_DEVICE: gts3lwifi (SM-T820, default) or gts3llte (SM-T825).
+TAB_S3_DEVICE=${TAB_S3_DEVICE:-gts3lwifi}
+case "$TAB_S3_DEVICE" in
+    gts3lwifi|gts3llte) ;;
+    *) printf 'Unsupported TAB_S3_DEVICE: %s\n' "$TAB_S3_DEVICE" >&2; return 1 ;;
+esac
+export TAB_S3_DEVICE
+# Devices whose release ZIP is named UNTESTED because no tablet has run it yet.
+export TAB_S3_UNTESTED_DEVICES=${TAB_S3_UNTESTED_DEVICES:-gts3llte}
 cd /workspace/android
 export GIT_CONFIG_GLOBAL=/workspace/state/gitconfig
 export BUILD_USERNAME=rom-builder
@@ -15,7 +24,7 @@ export GOMAXPROCS=${GOMAXPROCS:-4}
 export GOGC=${GOGC:-10}
 export GOMEMLIMIT=${GOMEMLIMIT:-12GiB}
 export SOONG_SKIP_IDE_DEP_FILES=${SOONG_SKIP_IDE_DEP_FILES:-true}
-export SOONG_PARTIAL_ANALYSIS=${SOONG_PARTIAL_ANALYSIS:-lineage_gts3lwifi_generated_device}
+export SOONG_PARTIAL_ANALYSIS=${SOONG_PARTIAL_ANALYSIS:-lineage_${TAB_S3_DEVICE}_generated_device}
 export JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=8
 export NINJA_HIGHMEM_NUM_JOBS=1
 export OUT_DIR=out
@@ -24,7 +33,7 @@ export OUT_DIR=out
 TAB_S3_KERNEL_MAKE_FLAGS=${TAB_S3_KERNEL_MAKE_FLAGS:-'-j8 HOSTCC="/usr/bin/gcc -B/usr/bin/" HOSTCXX="/usr/bin/g++ -B/usr/bin/" HOSTAR=/usr/bin/ar HOSTLD=/usr/bin/ld HOSTCFLAGS="-O2 -std=gnu89" HOSTLDFLAGS="" KBUILD_BUILD_USER=rom-builder KBUILD_BUILD_HOST=podman LOCALVERSION=+'}
 export LINEAGE_VERSION_APPEND_TIME_OF_DAY=${LINEAGE_VERSION_APPEND_TIME_OF_DAY:-true}
 source build/envsetup.sh
-lunch lineage_gts3lwifi-cp2a-userdebug
+lunch "lineage_${TAB_S3_DEVICE}-cp2a-userdebug"
 tab_s3_platform_version=$(get_build_var PLATFORM_VERSION)
 if [[ $tab_s3_platform_version != 17 ]]; then
     printf 'Refusing to build from %s: expected Android 17, got PLATFORM_VERSION=%s\n' \

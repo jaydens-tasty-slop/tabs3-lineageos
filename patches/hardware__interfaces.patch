@@ -168,7 +168,7 @@ index 2bea425f26cccae5b7f6286e4a06ffd4a2783420..a36dc505fd4816dff7c690b55ece857d
  
  #endif
 diff --git a/camera/common/default/CameraModule.cpp b/camera/common/default/CameraModule.cpp
-index 9e5c21fccb9e75b38867c24cfe6a9d71390b9290..0fb798df71b5e692a671bcfdeb292070eee55769 100644
+index 9e5c21fccb9e75b38867c24cfe6a9d71390b9290..546908c1f228828a078528d18d249eedb01cb838 100644
 --- a/camera/common/default/CameraModule.cpp
 +++ b/camera/common/default/CameraModule.cpp
 @@ -20,6 +20,9 @@
@@ -190,7 +190,7 @@ index 9e5c21fccb9e75b38867c24cfe6a9d71390b9290..0fb798df71b5e692a671bcfdeb292070
 +bool isTabS3Wifi() {
 +    char device[PROPERTY_VALUE_MAX] = {};
 +    property_get("ro.product.vendor.device", device, "");
-+    return std::strcmp(device, "gts3lwifi") == 0;
++    return std::strcmp(device, "gts3lwifi") == 0 || std::strcmp(device, "gts3llte") == 0;
 +}
 +
 +// The stock QCamera HAL has working UHD30 sensor, ISP and encoder paths, but
@@ -391,7 +391,7 @@ index f7ac9f83e4b388112e2ad25f182eed5c52549ee2..115d3e8ea6103d6606cd9955e476c216
 +    # provider dies, reset that state as well or every provider restart can report zero cameras.
 +    onrestart restart qcamerasvr
 diff --git a/camera/provider/2.4/default/service.cpp b/camera/provider/2.4/default/service.cpp
-index 0a4f7874a674d4c2a2e599f29622dda6a6ad10c3..0f243448d4f8f954695d8e9c04902553c61242fc 100644
+index 0a4f7874a674d4c2a2e599f29622dda6a6ad10c3..c1fe5fde3e11ee5bf341fa03d244314da56c006a 100644
 --- a/camera/provider/2.4/default/service.cpp
 +++ b/camera/provider/2.4/default/service.cpp
 @@ -26,6 +26,11 @@
@@ -415,7 +415,7 @@ index 0a4f7874a674d4c2a2e599f29622dda6a6ad10c3..0f243448d4f8f954695d8e9c04902553
 +void retainTabS3LegacyCameraCrypto() {
 +    char device[PROPERTY_VALUE_MAX] = {};
 +    property_get("ro.product.vendor.device", device, "");
-+    if (std::strcmp(device, "gts3lwifi") != 0) {
++    if (std::strcmp(device, "gts3lwifi") != 0 && std::strcmp(device, "gts3llte") != 0) {
 +        return;
 +    }
 +

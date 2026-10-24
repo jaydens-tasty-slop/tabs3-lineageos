@@ -1,7 +1,9 @@
 ## Build
 
-This repository builds Android 17 for the Wi-Fi SM-T820 (`gts3lwifi`). The
-SM-T825/LTE model is not supported. On a Linux host with Git, Make, rootless
+This repository builds Android 17 for the Wi-Fi SM-T820 (`gts3lwifi`) and, as
+an **untested** extra, the LTE SM-T825 (`gts3llte`). Every build produces one
+ZIP for each; the SM-T825 ZIP has `UNTESTED` in its filename because it has
+never been booted and its modem/RIL may not work. On a Linux host with Git, Make, rootless
 Podman and several hundred GiB of free space:
 
 ```sh
@@ -11,12 +13,12 @@ make
 ```
 
 `make` fetches the pinned LineageOS source revisions, applies the complete port
-snapshot, and produces a TWRP-flashable ZIP under
-`android/out/target/product/gts3lwifi/`. Subsequent builds reuse the checkout,
+snapshot, and produces a TWRP-flashable ZIP per tablet under
+`android/out/target/product/gts3lwifi/` and `.../gts3llte/`. Subsequent builds reuse the checkout,
 output and compiler cache. Ordinary builds use development signing keys; private
 release keys are not part of this repository.
 
-The source snapshot currently contains 1,251 pinned base projects and 34 patch
+The source snapshot currently contains 1,252 pinned base projects and 35 patch
 entries. Exact patch checksums are recorded in `patches/index.json`; `make
 source-check` verifies that every patch reconstructs the intended Git tree.
 Builds are not expected to be byte-for-byte identical because timestamps,

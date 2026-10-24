@@ -40,7 +40,7 @@ index c70ef5f0b992fa3dd107bf67715aa01a0165affc..555c7671eeedcbfc1fc7acbda39dbfdc
  	rule.Command().
  		Text(rawCommand).
 diff --git a/build/tasks/kernel.mk b/build/tasks/kernel.mk
-index 15ce95b74109c88f58055b1a6a6ce754577f5b05..61b2151ce79907764537ffaf34999f89ac3676c9 100644
+index 15ce95b74109c88f58055b1a6a6ce754577f5b05..75471aba03e57a45085afb996bd3e48a9aec819e 100644
 --- a/build/tasks/kernel.mk
 +++ b/build/tasks/kernel.mk
 @@ -382,6 +382,7 @@ ifneq ($(filter $(FULL_KERNEL_BUILD),true)$(TARGET_KERNEL_PLATFORM_TARGET),)
@@ -85,7 +85,7 @@ index 15ce95b74109c88f58055b1a6a6ce754577f5b05..61b2151ce79907764537ffaf34999f89
  $(KERNEL_OUT):
  	mkdir -p $(KERNEL_OUT)
  
-+ifeq ($(TARGET_PRODUCT),lineage_gts3lwifi)
++ifneq ($(filter lineage_gts3lwifi lineage_gts3llte,$(TARGET_PRODUCT)),)
 +# Kbuild changes the output directory mtime. It is only needed to create the
 +# directory, not to invalidate .config on every subsequent Android build.
 +# Track source files explicitly so C, DTS, and Kconfig edits still run Kbuild.
@@ -96,12 +96,12 @@ index 15ce95b74109c88f58055b1a6a6ce754577f5b05..61b2151ce79907764537ffaf34999f89
  $(KERNEL_CONFIG): $(KERNEL_OUT) $(ALL_KERNEL_DEFCONFIG_SRCS)
 +endif
  	@echo "Building Kernel Config"
-+ifeq ($(TARGET_PRODUCT),lineage_gts3lwifi)
++ifneq ($(filter lineage_gts3lwifi lineage_gts3llte,$(TARGET_PRODUCT)),)
 +	$(hide) rm -f $(KERNEL_CONFIG).previous
 +	$(hide) if [ -f "$(KERNEL_CONFIG)" ]; then cp -p "$(KERNEL_CONFIG)" "$(KERNEL_CONFIG).previous"; fi
 +endif
  	$(call make-kernel-config,$(KERNEL_OUT),$(ALL_KERNEL_DEFCONFIG_SRCS))
-+ifeq ($(TARGET_PRODUCT),lineage_gts3lwifi)
++ifneq ($(filter lineage_gts3lwifi lineage_gts3llte,$(TARGET_PRODUCT)),)
 +	$(hide) if [ -f "$(KERNEL_CONFIG).previous" ]; then \
 +		if cmp -s "$(KERNEL_CONFIG)" "$(KERNEL_CONFIG).previous"; then touch -r "$(KERNEL_CONFIG).previous" "$(KERNEL_CONFIG)"; fi; \
 +		rm -f "$(KERNEL_CONFIG).previous"; \
@@ -135,7 +135,7 @@ index 15ce95b74109c88f58055b1a6a6ce754577f5b05..61b2151ce79907764537ffaf34999f89
  			) \
  		fi
  
-+ifeq ($(TARGET_PRODUCT),lineage_gts3lwifi)
++ifneq ($(filter lineage_gts3lwifi lineage_gts3llte,$(TARGET_PRODUCT)),)
 +	# Module installation above updates the partition file list after Kbuild
 +	# writes Image.gz-dtb. Mark completion of the entire rule so that this
 +	# prerequisite does not make the kernel immediately stale again.

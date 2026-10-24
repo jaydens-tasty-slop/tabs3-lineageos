@@ -1,7 +1,18 @@
 # Test scope and known issues
 
-This release targets **SM-T820 Wi-Fi only**. Results cover one tablet;
-SM-T825/LTE is unsupported. Google Apps are optional and separately installed.
+This release is qualified on **SM-T820 Wi-Fi only**. Results cover one tablet.
+An **SM-T825/LTE (`gts3llte`) build is also produced but is entirely untested**:
+its ZIP carries `UNTESTED` in the filename, it has not been booted by the
+maintainer, and the Qualcomm MSM8996 modem/QMI RIL stack may not work. SM-T825
+reports (logcat, `dmesg`) are welcome.
+
+SM-T825 notes: the Samsung `vendor.samsung.hardware.radio.configsvc@1.0`
+HIDL interface exists only in the vendor blobs. Android 17's init verifier
+needs a definition, so `hardware/samsung` carries a `hidl_interface` rebuilt
+from the blob's exported symbols (`getTdfValue`, `updateTotalCallTime`) that
+is used only for the build check; the blob implements it at runtime. The
+vendor RIL is Android 9-era and the framework expects newer radio HALs, so
+registration with the telephony stack is the most likely failure. Google Apps are optional and separately installed.
 
 ## Android 17 candidate status
 

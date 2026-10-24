@@ -293,21 +293,21 @@ def audit_key_paths(root, paths, findings, scope):
     return inspected
 
 
-def audit_source(source_root):
+def audit_source(source_root, device="gts3lwifi"):
     require(not source_root.is_symlink(), "Android source root may not be a symlink")
     source_root = source_root.resolve(strict=True)
     findings, scanned = [], 0
     roots = [source_root / "device/samsung/gts3l-common",
-             source_root / "device/samsung/gts3lwifi",
+             source_root / "device/samsung" / device,
              source_root / "vendor/samsung/gts3l-common",
-             source_root / "vendor/samsung/gts3lwifi"]
+             source_root / "vendor/samsung" / device]
     existing = [path for path in roots if path.exists()]
     require(len(existing) >= 2 and all(path.is_dir() and not path.is_symlink() for path in existing),
             "Expected Tab S3 source configuration roots are missing or unsafe")
     required_common = source_root / "device/samsung/gts3l-common"
-    required_wifi = source_root / "device/samsung/gts3lwifi"
-    require(required_common.is_dir() and required_wifi.is_dir(),
-            "Both gts3l-common and gts3lwifi source trees are required")
+    required_device = source_root / "device/samsung" / device
+    require(required_common.is_dir() and required_device.is_dir(),
+            f"Both gts3l-common and {device} source trees are required")
     bringup_rc = required_common / "configs/bringup-usb.rc"
     require(not bringup_rc.exists() and not bringup_rc.is_symlink(),
             "Device-specific bringup-usb.rc remains in source")
@@ -745,6 +745,8 @@ def main():
                         help="Pinned Android host tools directory containing debugfs_static and simg2img")
     parser.add_argument("--report", type=Path, required=True,
                         help="New report path under workspace state/")
+    parser.add_argument("--device", choices=("gts3lwifi", "gts3llte"), default="gts3lwifi",
+                        help="Device source tree to audit alongside gts3l-common")
     args = parser.parse_args()
     report_path = args.report.absolute()
     state_root = ROOT / "state"
@@ -760,7 +762,7 @@ def main():
         before = input_fingerprints(args.target_files, args.system_image,
                                     args.boot_image, args.ota_zip)
         report["input_fingerprints_before"] = before
-        source = audit_source(args.source_root)
+        source = audit_source(args.source_root, args.device)
         report["source"] = {k: v for k, v in source.items() if k != "findings"}
         if source["findings"]:
             report["findings"] = source["findings"]

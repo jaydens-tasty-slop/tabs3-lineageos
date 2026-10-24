@@ -321,6 +321,7 @@
   <project name="LineageOS/scripts" path="lineage/scripts" revision="525beb3fa2292d5c22b6d93a9d015a0b71f09161" upstream="main" dest-branch="main" groups="tools"/>
   <project name="LineageOS/www" path="lineage/website" revision="c006dc8dc0db391d9a0ae17387498edc6e5c4aad" upstream="main" dest-branch="main" groups="infra"/>
   <project name="awesometic/android_device_samsung_gts3l-common" path="device/samsung/gts3l-common" revision="92f1916339caec063b885beddd3742e63ddfe55f" groups="local::gts3lwifi"/>
+  <project name="awesometic/android_device_samsung_gts3llte" path="device/samsung/gts3llte" revision="543f95cb56b58717c94393ea537f7b5eb1d64ba2" groups="local::gts3llte"/>
   <project name="awesometic/android_device_samsung_gts3lwifi" path="device/samsung/gts3lwifi" revision="7e56fa7ef736dc3e30d667881c7f0c2de351961e" groups="local::gts3lwifi"/>
   <project name="awesometic/android_kernel_samsung_msm8996" path="kernel/samsung/msm8996" revision="42e410d4389e09a12ddb4c1d0e5e88abcbf03396" groups="local::gts3lwifi"/>
   <project name="awesometic/proprietary_vendor_samsung" path="vendor/samsung" revision="526da53500135cd9727cef923903fb6f4ce87dbb" groups="local::gts3lwifi"/>

@@ -4,15 +4,20 @@ set -eo pipefail
 
 finalize_rom_release() {
     umask 077
+    device=${TAB_S3_DEVICE:-gts3lwifi}
+    untested=
+    for candidate in $TAB_S3_UNTESTED_DEVICES; do
+        if [[ $candidate == "$device" ]]; then untested=-UNTESTED; fi
+    done
     package_dir=$(get_build_var PRODUCT_OUT)
-    target_files="$package_dir/obj/PACKAGING/target_files_intermediates/lineage_gts3lwifi-target_files/SYSTEM"
+    target_files="$package_dir/obj/PACKAGING/target_files_intermediates/lineage_${device}-target_files/SYSTEM"
     system_image="$package_dir/obj/PACKAGING/system_intermediates/system.img"
     boot_image="$package_dir/boot.img"
-    ota_zip="$package_dir/lineage_gts3lwifi-ota.zip"
+    ota_zip="$package_dir/lineage_${device}-ota.zip"
     product_prop="$target_files/product/etc/build.prop"
     system_prop="$target_files/build.prop"
 
-    package_version=$(python3 - "$product_prop" "$system_prop" <<'PY'
+    package_version=$(python3 - "$product_prop" "$system_prop" "$device" <<'PY'
 import datetime
 import pathlib
 import re
@@ -20,6 +25,7 @@ import sys
 
 product_prop = pathlib.Path(sys.argv[1])
 system_prop = pathlib.Path(sys.argv[2])
+device = sys.argv[3]
 
 def one_property(path, name):
     if not path.is_file() or path.is_symlink():
@@ -34,7 +40,7 @@ def one_property(path, name):
 
 version = one_property(product_prop, "ro.lineage.version")
 build_timestamp = one_property(system_prop, "ro.build.date.utc")
-match = re.fullmatch(r"24\.0-(\d{8})(?:_(\d{6}))?-UNOFFICIAL-gts3lwifi", version)
+match = re.fullmatch(r"24\.0-(\d{8})(?:_(\d{6}))?-UNOFFICIAL-" + re.escape(device), version)
 if not match:
     raise SystemExit(f"noncanonical or unexpected Lineage version: {version!r}")
 try:
@@ -60,8 +66,9 @@ PY
     test -d "$target_files"
 
     # A previous package with the same build ID must not survive a failed gate.
-    rm -f "$package_dir/lineage-$package_version.zip" \
-        "$package_dir/lineage-$package_version.zip.sha256sum" \
+    package_name="lineage-$package_version$untested"
+    rm -f "$package_dir/$package_name.zip" \
+        "$package_dir/$package_name.zip.sha256sum" \
         "$package_dir/system.img"
 
     report_dir=$(mktemp -d /workspace/state/release-adb-audit.XXXXXX)
@@ -73,6 +80,7 @@ PY
         --boot-image "$boot_image" \
         --ota-zip "$ota_zip" \
         --tools-dir /workspace/android/out/host/linux-x86/bin \
+        --device "$device" \
         --report "$report"
     python3 - "$report" "$package_version" <<'PY'
 import json
@@ -88,11 +96,11 @@ if binding.get("target_files_system_boot_ota_and_patch_index_unchanged") is not 
 PY
 
     cp -f "$system_image" "$package_dir/system.img"
-    ln -f "$ota_zip" "$package_dir/lineage-$package_version.zip"
-    sha256sum "$package_dir/lineage-$package_version.zip" \
-        | sed "s|$package_dir/||" > "$package_dir/lineage-$package_version.zip.sha256sum"
+    ln -f "$ota_zip" "$package_dir/$package_name.zip"
+    sha256sum "$package_dir/$package_name.zip" \
+        | sed "s|$package_dir/||" > "$package_dir/$package_name.zip.sha256sum"
     printf 'Release audit passed: %s\n' "${report#/workspace/}"
-    printf 'Packaged ROM: %s\n' "lineage-$package_version.zip"
+    printf 'Packaged ROM: %s\n' "$package_name.zip"
 }
 
 finalize_rom_release

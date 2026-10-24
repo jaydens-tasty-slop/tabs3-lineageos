@@ -12,7 +12,7 @@ index 65c45cb835d01281314fd418cc4f52947e337d92..4b870861c1e8e6ed2152699b9ce4e72c
      $(eval _map_fs_type :=) \
      $(eval _no_map_file :=) \
 diff --git a/target/product/updatable_apex.mk b/target/product/updatable_apex.mk
-index 8b3bc9a7e50b25dc52fb1bf02fc471c35c0f69bb..244f698b48cab01f7b6d7321d81574443af24d61 100644
+index 8b3bc9a7e50b25dc52fb1bf02fc471c35c0f69bb..4fa8dd4f32adfac3193909189a74e6f361fe4aa9 100644
 --- a/target/product/updatable_apex.mk
 +++ b/target/product/updatable_apex.mk
 @@ -16,5 +16,11 @@
@@ -23,7 +23,7 @@ index 8b3bc9a7e50b25dc52fb1bf02fc471c35c0f69bb..244f698b48cab01f7b6d7321d8157444
 +# kernel's declared masks. The upstream prebuilt shim has shared blocks and
 +# provides only CTS test fixtures, not runtime functionality. Leave the real
 +# updatable APEX modules and their signature/verity checks enabled.
-+ifneq ($(TARGET_PRODUCT),lineage_gts3lwifi)
++ifeq ($(filter lineage_gts3lwifi lineage_gts3llte,$(TARGET_PRODUCT)),)
  PRODUCT_PACKAGES += com.android.apex.cts.shim.v1_prebuilt
 +endif
  PRODUCT_SYSTEM_PROPERTIES += ro.apex.updatable=true

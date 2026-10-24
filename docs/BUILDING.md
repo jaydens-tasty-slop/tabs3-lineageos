@@ -30,7 +30,7 @@ make
 ```
 
 `setup_checkout.sh` clones the requested device repositories, initializes Android
-`repo` at the pinned Lineage manifest, synchronizes the 1,251 revisions in
+`repo` at the pinned Lineage manifest, synchronizes the 1,252 revisions in
 `manifests/base-source-lock.xml`, and applies every patch in `patches/index.json`.
 Plain `make` reuses an existing checkout; explicit `make setup` refuses to
 replace one. `make image`, `make setup` and `make build` are also available
@@ -83,7 +83,7 @@ workspace; the build commands do not disable host SELinux.
 No submodules are needed. Android's `repo` owns the large source checkout; the
 small outer repository owns the manifest, port patches and build instructions.
 The four published device/kernel/vendor forks preserve the earlier Android 16
-history. The 34-project patch snapshot and 1,251 pinned base revisions are the
+history. The 35-project patch snapshot and 1,252 pinned base revisions are the
 canonical Android 17 source; see [the source map](SOURCES.md).
 
 The build uses the standard Lineage version ID from `ro.lineage.version`: UTC
@@ -335,7 +335,16 @@ guarantees a packaging-only operation if Ninja sees changed inputs. Avoid
 `clean`, `clobber`, deleting `android/out` or changing container paths unless
 the rebuild is intentional.
 
-Product artifacts are under `android/out/target/product/gts3lwifi/`. The TWRP
+`make` (and `make package`) builds both tablets in one run, Wi-Fi first, each in
+its own shell via `scripts/build_all_devices.sh`. A failure on one tablet does
+not skip the other, but the run exits non-zero. Build a subset by setting
+`TAB_S3_DEVICES` in the host environment when the build container is first
+created, for example `TAB_S3_DEVICES=gts3llte make build`; an existing
+container keeps its original environment. The product is selected with
+`TAB_S3_DEVICE` in `scripts/build_env.sh` (`gts3lwifi` or `gts3llte`).
+
+Product artifacts are under `android/out/target/product/gts3lwifi/` and
+`.../gts3llte/`. The TWRP
 installer is the generated `lineage-*.zip`; copy the selected release and its
 checksum into a distribution directory. Do not confuse a kernel `boot.img` with
 the complete ROM installer.
@@ -343,7 +352,11 @@ the complete ROM installer.
 LineageOS names the public ZIP `lineage-24.0-YYYYMMDD-UNOFFICIAL-gts3lwifi.zip`
 using the UTC build date. Its optional time-of-day setting adds
 `_HHMMSS` to the version. Keep experiment labels in release
-notes and qualification records, not in the public ZIP basename.
+notes and qualification records, not in the public ZIP basename. The one
+exception is `UNTESTED`: tablets listed in `TAB_S3_UNTESTED_DEVICES`
+(default `gts3llte`) get `-UNTESTED` appended, giving
+`lineage-24.0-YYYYMMDD_HHMMSS-UNOFFICIAL-gts3llte-UNTESTED.zip`. Remove a device
+from that list only after a tablet owner has booted and tested it.
 
 ## Source checks and maintenance
 

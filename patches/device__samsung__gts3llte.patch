@@ -1,0 +1,53 @@
+diff --git a/AndroidProducts.mk b/AndroidProducts.mk
+index 95ff43a1df93799c53f4c32c74ed45d529779767..8a8d3fb4fc8bf09da7fe3b8a4a37ffc99efe992c 100644
+--- a/AndroidProducts.mk
++++ b/AndroidProducts.mk
+@@ -17,4 +17,4 @@ PRODUCT_MAKEFILES := \
+     $(LOCAL_DIR)/lineage_gts3llte.mk
+ 
+ COMMON_LUNCH_CHOICES := \
+-    lineage_gts3llte-userdebug
+\ No newline at end of file
++    lineage_gts3llte-bp4a-userdebug
+diff --git a/device.mk b/device.mk
+index c5c60f9870930e9983c003ddd6c01a2f37023eef..421d3669ea236c3f6d29a218579e9350e747fe92 100644
+--- a/device.mk
++++ b/device.mk
+@@ -51,5 +51,9 @@ PRODUCT_PACKAGES += \
+     libprotobuf-cpp-full \
+     secril_config_svc
+ 
++# Opt in to the narrowly scoped idle primary route restore, as on the SM-T820 Wi-Fi product.
++PRODUCT_SYSTEM_PROPERTIES += \
++    audio.legacy_restore_idle_primary=true
++
+ # Inherit from gts3l-common
+ $(call inherit-product, device/samsung/gts3l-common/gts3l.mk)
+diff --git a/lineage_gts3llte.mk b/lineage_gts3llte.mk
+index 8e293f5f2721c585affcd8ef7ce301c31fc16845..a80b3c67519b5db939d36fdc20bfe44be8339153 100644
+--- a/lineage_gts3llte.mk
++++ b/lineage_gts3llte.mk
+@@ -24,6 +24,11 @@ $(call inherit-product, device/samsung/gts3llte/device.mk)
+ # Inherit some common Lineage stuff.
+ $(call inherit-product, vendor/lineage/config/common_full_tablet.mk)
+ 
++# The 3.18 kernel has neither userfaultfd nor MREMAP_DONTUNMAP. Set this in
++# the final product, after the inherited ART defaults, so they cannot replace
++# the device choice with Android 17's default of true.
++PRODUCT_ENABLE_UFFD_GC := false
++
+ # Device identifier. This must come after all inclusions
+ PRODUCT_DEVICE := gts3llte
+ PRODUCT_NAME := lineage_gts3llte
+@@ -37,8 +42,6 @@ PRODUCT_GMS_CLIENTID_BASE := android-samsung
+ 
+ # Use the latest approved GMS identifiers
+ PRODUCT_BUILD_PROP_OVERRIDES += \
+-    TARGET_PRODUCT=gts3llte \
+-    PRIVATE_BUILD_DESC="gts3lltekx-user 9 PPR1.180610.011 T825N0KOU3CTD1 release-keys"
+-
+-# Set BUILD_FINGERPRINT variable to be picked up by both system and vendor build.prop
+-BUILD_FINGERPRINT := "samsung/gts3lltekx/gts3lltekx:9/PPR1.180610.011/T825N0KOU3CTD1:user/release-keys"
++    DeviceProduct=gts3llte \
++    BuildDesc="gts3lltekx-user 9 PPR1.180610.011 T825N0KOU3CTD1 release-keys" \
++    BuildFingerprint=samsung/gts3lltekx/gts3lltekx:9/PPR1.180610.011/T825N0KOU3CTD1:user/release-keys
