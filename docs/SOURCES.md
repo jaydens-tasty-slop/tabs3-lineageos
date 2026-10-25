@@ -39,8 +39,8 @@ Android 16 results. The LTE device is
 [`tabs3-android_device_samsung_gts3llte`](https://github.com/jaydens-tasty-slop/tabs3-android_device_samsung_gts3llte),
 a fork of `awesometic`'s `lineage-21.0` branch, at
 `9cc1b59bf6844b62f48e22797bb68e836c7aa92f`; the kernel Android 17 tip with the
-LTE defconfig is `46470330ef8368332de28da15d766f72309c4461`. Both are untested
-on hardware.
+LTE defconfig is `46470330ef8368332de28da15d766f72309c4461`. Neither has been
+run by the maintainer; a user reports the LTE build boots.
 
 These branches cover device, kernel and vendor changes. The remaining
 Android framework, platform and build changes are in the complete patch set.

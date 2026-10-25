@@ -1,9 +1,9 @@
 # Test scope and known issues
 
 This release is qualified on **SM-T820 Wi-Fi only**. Results cover one tablet.
-An **SM-T825/LTE (`gts3llte`) build is also produced but is entirely untested**:
-its ZIP carries `UNTESTED` in the filename, it has not been booted by the
-maintainer, and the Qualcomm MSM8996 modem/QMI RIL stack may not work. SM-T825
+An **SM-T825/LTE (`gts3llte`) build is also produced but is essentially untested**:
+a user reports it boots, but the maintainer has not run it, and the Qualcomm
+MSM8996 modem/QMI RIL stack is unverified and probably does not work. SM-T825
 reports (logcat, `dmesg`) are welcome.
 
 SM-T825 notes: the Samsung `vendor.samsung.hardware.radio.configsvc@1.0`

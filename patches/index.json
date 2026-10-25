@@ -79,7 +79,7 @@
         "publish": "https://github.com/jaydens-tasty-slop/tabs3-android_device_samsung_gts3l-common.git"
       },
       "patch": "device__samsung__gts3l-common.patch",
-      "sha256": "c8a81d5b68b99f270aab31b55856fabcbdc77ff5e5b230beeda57dbd0d77c8cc",
+      "sha256": "b785c4eb747365e3c67199a2a5487a599d6cb8a10b786bcf733901020e8bcce6",
       "untracked_files": []
     },
     {
@@ -337,7 +337,7 @@
         "github": "https://github.com/LineageOS/android_hardware_samsung"
       },
       "patch": "hardware__samsung.patch",
-      "sha256": "94703915ced40825061ebadbf6d9c6eb3aedadb9078971d46f8598135f4533e1",
+      "sha256": "d72aaa33290026e419ae8581e3698aade3bf1e1c4bd1f3a31f526685eb206678",
       "untracked_files": [
         "interfaces/radio/configsvc/1.0/Android.bp",
         "interfaces/radio/configsvc/1.0/IConfigSvc.hal"

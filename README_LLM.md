@@ -1,9 +1,9 @@
 ## Build
 
 This repository builds Android 17 for the Wi-Fi SM-T820 (`gts3lwifi`) and, as
-an **untested** extra, the LTE SM-T825 (`gts3llte`). Every build produces one
-ZIP for each; the SM-T825 ZIP has `UNTESTED` in its filename because it has
-never been booted and its modem/RIL may not work. On a Linux host with Git, Make, rootless
+a **lightly tested** extra, the LTE SM-T825 (`gts3llte`). Every build produces one
+ZIP for each. A user has reported that the SM-T825 ZIP boots; its modem/RIL is
+unverified and probably does not work. On a Linux host with Git, Make, rootless
 Podman and several hundred GiB of free space:
 
 ```sh

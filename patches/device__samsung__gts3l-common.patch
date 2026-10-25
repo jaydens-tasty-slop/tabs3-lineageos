@@ -2845,6 +2845,18 @@ index 5002e64142acdf373c43806ecf4b4593f8eccd65..5cdbc15b597337564c2ef06e5b86faed
 -    apk_verity_prop
 -}:file r_file_perms;
 +allow gmscore_app apexd_prop:file r_file_perms;
+diff --git a/sepolicy/hal_light_default.te b/sepolicy/hal_light_default.te
+index 3a01a8a2c9e9aa614127439ce8308bbbcbea87cc..278b1db7299a64d986bc5316a7a0d96921c6c65a 100644
+--- a/sepolicy/hal_light_default.te
++++ b/sepolicy/hal_light_default.te
+@@ -4,3 +4,7 @@ allow hal_light_default sysfs_lcd_writable:file { getattr open read write };
+ allow hal_light_default sysfs:file { getattr open write };
+ 
+ allow hal_light_default sysfs_touchkey:lnk_file read;
++
++# Backlight is driven through the MDSS LED class device (/sys/class/leds/lcd-backlight)
++allow hal_light_default sysfs_graphics:dir search;
++allow hal_light_default sysfs_graphics:file rw_file_perms;
 diff --git a/sepolicy/hal_lineage_fastcharge_default.te b/sepolicy/hal_lineage_fastcharge_default.te
 deleted file mode 100644
 index 4420271e06942432dfbc6fe9a8089a0bca3e0ffa..0000000000000000000000000000000000000000

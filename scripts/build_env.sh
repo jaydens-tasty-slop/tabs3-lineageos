@@ -8,7 +8,8 @@ case "$TAB_S3_DEVICE" in
 esac
 export TAB_S3_DEVICE
 # Devices whose release ZIP is named UNTESTED because no tablet has run it yet.
-export TAB_S3_UNTESTED_DEVICES=${TAB_S3_UNTESTED_DEVICES:-gts3llte}
+# Empty by default: a user reported the SM-T825 ZIP boots (modem still unverified).
+export TAB_S3_UNTESTED_DEVICES=${TAB_S3_UNTESTED_DEVICES-}
 cd /workspace/android
 export GIT_CONFIG_GLOBAL=/workspace/state/gitconfig
 export BUILD_USERNAME=rom-builder

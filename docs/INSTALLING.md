@@ -4,8 +4,8 @@
 
 Use **Samsung Galaxy Tab S3 Wi-Fi SM-T820 (`gts3lwifi`)** and the original
 maintainer's **TWRP 3.7.0_9-0 without encryption**. encrypted Data
-is unsupported. SM-T825/LTE (`gts3llte`) has a separate, untested build whose
-ZIP name ends in `-UNTESTED.zip`; it may have no working modem. The ROM ZIP writes Boot and System; Recovery and Samsung
+is unsupported. SM-T825/LTE (`gts3llte`) has a separate build (`...-gts3llte.zip`)
+that a user reports boots; its modem is unverified and probably does not work. The ROM ZIP writes Boot and System; Recovery and Samsung
 firmware are retained.
 
 The final Android 17 package and checksum are not yet published. Do not install

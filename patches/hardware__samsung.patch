@@ -116,6 +116,24 @@ index 8ef41b16de9321578e99f61dedcef0616c0e32b9..79334796162eca54f43d881202382922
      // Callback for talking to the framework. This callback must only be called from non-binder
      // threads to prevent nested binder calls and consequently a binder thread exhaustion.
      // Practically, it means that this callback should always be called from the worker thread.
+diff --git a/aidl/light/samsung_lights.h b/aidl/light/samsung_lights.h
+index 5eab9951f286cabfa5037f012218adadf49b8e5f..79dde128759ce3eadaa8ee546480eaa91baa30d4 100644
+--- a/aidl/light/samsung_lights.h
++++ b/aidl/light/samsung_lights.h
+@@ -24,8 +24,11 @@
+  * symlink to the locations given here, or override this header in your
+  * device tree.
+  */
+-#define PANEL_BRIGHTNESS_NODE "/sys/class/backlight/panel/brightness"
+-#define PANEL_MAX_BRIGHTNESS_NODE "/sys/class/backlight/panel/max_brightness"
++// gts3l: the Samsung panel driver registers /sys/class/backlight/panel without
++// ops or properties (max_brightness 0, writes go nowhere). The MDSS framebuffer
++// LED class device is the one that drives the panel.
++#define PANEL_BRIGHTNESS_NODE "/sys/class/leds/lcd-backlight/brightness"
++#define PANEL_MAX_BRIGHTNESS_NODE "/sys/class/leds/lcd-backlight/max_brightness"
+ #define BUTTON_BRIGHTNESS_NODE "/sys/class/sec/sec_touchkey/brightness"
+ #define LED_BLINK_NODE "/sys/class/sec/led/led_blink"
+ #define LED_BLN_NODE "/sys/class/misc/backlightnotification/notification_led"
 diff --git a/aidl/livedisplay/AdaptiveBacklight.cpp b/aidl/livedisplay/AdaptiveBacklight.cpp
 index 32d7fbc447d3380a8edeaa2dd20986c470ad820f..eaecfcfa43beaeece06f881bbcbe7ee95bce6d57 100644
 --- a/aidl/livedisplay/AdaptiveBacklight.cpp

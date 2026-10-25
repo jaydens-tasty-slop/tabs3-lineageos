@@ -354,9 +354,9 @@ using the UTC build date. Its optional time-of-day setting adds
 `_HHMMSS` to the version. Keep experiment labels in release
 notes and qualification records, not in the public ZIP basename. The one
 exception is `UNTESTED`: tablets listed in `TAB_S3_UNTESTED_DEVICES`
-(default `gts3llte`) get `-UNTESTED` appended, giving
-`lineage-24.0-YYYYMMDD_HHMMSS-UNOFFICIAL-gts3llte-UNTESTED.zip`. Remove a device
-from that list only after a tablet owner has booted and tested it.
+(empty by default) get `-UNTESTED` appended, giving
+`lineage-24.0-YYYYMMDD_HHMMSS-UNOFFICIAL-<device>-UNTESTED.zip`. Add a device
+to that list if no tablet owner has booted it.
 
 ## Source checks and maintenance
 
