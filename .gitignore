@@ -15,6 +15,7 @@
 !/docs/INSTALLING.md
 !/docs/SIGNING.md
 !/docs/TESTING.md
+!/docs/RELEASING.md
 !/container/
 /container/*
 !/container/Containerfile
