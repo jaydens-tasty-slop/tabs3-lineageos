@@ -2742,7 +2742,7 @@ index 5a317465655ee9f085cabd6913a97190039088c0..71575b821ea2778a31edf29f78fa56c6
      class core
      user root
 diff --git a/rootdir/etc/init.samsung.rc b/rootdir/etc/init.samsung.rc
-index be8a3d200735bde2e45281e52765773d6a81480a..19cb18a4e29009839cfd4acfb58d8ce6d00864ca 100644
+index be8a3d200735bde2e45281e52765773d6a81480a..e4a2cb7951940c0162794eab3b9870aeea8e751c 100644
 --- a/rootdir/etc/init.samsung.rc
 +++ b/rootdir/etc/init.samsung.rc
 @@ -5,6 +5,23 @@
@@ -2769,6 +2769,17 @@ index be8a3d200735bde2e45281e52765773d6a81480a..19cb18a4e29009839cfd4acfb58d8ce6
      symlink /dev/block/bootdevice/by-name/persistent  /dev/block/persistent
      symlink /dev/block/bootdevice/by-name/steady  /dev/block/steady
  
+@@ -61,7 +78,9 @@ on init
+ 
+     mkdir /mnt/asec 0755 root system
+     mkdir /mnt/obb 0755 root system
+-    mkdir /mnt/media_rw 0750 root media_rw
++    # Android 11+ gives the external_storage group access to non-visible volumes (USB drives),
++    # so this must match system/core/rootdir/init.rc or file managers see them as empty.
++    mkdir /mnt/media_rw 0750 root external_storage
+     mkdir /mnt/user 0755 root root
+     mkdir /mnt/user/0 0755 root root
+     mkdir /mnt/expand 0771 system system
 diff --git a/rootdir/etc/init.target.rc b/rootdir/etc/init.target.rc
 index 4b0c46085893ad11d825b61d560d0943a42924b7..f1da894f76893f7ff4e01533b72271a46e4c5eac 100644
 --- a/rootdir/etc/init.target.rc

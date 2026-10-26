@@ -79,7 +79,7 @@
         "publish": "https://github.com/jaydens-tasty-slop/tabs3-android_device_samsung_gts3l-common.git"
       },
       "patch": "device__samsung__gts3l-common.patch",
-      "sha256": "b785c4eb747365e3c67199a2a5487a599d6cb8a10b786bcf733901020e8bcce6",
+      "sha256": "a5df2530991ac02d527d9c5fc42379ad4e11958ce7a847f7d8ba96a81817946e",
       "untracked_files": []
     },
     {
@@ -89,7 +89,8 @@
       "head": "9cc1b59bf6844b62f48e22797bb68e836c7aa92f",
       "branch": "tabs3/lineage-24.0",
       "remotes": {
-        "github": "https://github.com/awesometic/android_device_samsung_gts3llte"
+        "github": "https://github.com/awesometic/android_device_samsung_gts3llte",
+        "publish": "https://github.com/jaydens-tasty-slop/tabs3-android_device_samsung_gts3llte.git"
       },
       "patch": "device__samsung__gts3llte.patch",
       "sha256": "79ba3dcdc6d2c7316b6367d9a53fb937a8c0653b0924f37901b61b8d933f00dc",
@@ -147,7 +148,7 @@
         "github": "https://github.com/LineageOS/android_frameworks_base"
       },
       "patch": "frameworks__base.patch",
-      "sha256": "d8cb13931a450fa88d3b0ffb8128180c4debba77565459d756ac9cfcc5ad16cf",
+      "sha256": "58a2c09e9b6736bbcc19a27a49556dfbe1020aec3e370a20faf0cb253f005300",
       "untracked_files": []
     },
     {

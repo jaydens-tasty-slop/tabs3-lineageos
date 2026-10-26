@@ -89,6 +89,185 @@ index d97d1bca4616c352599344075c0ed089aea7c436..d845ff89fb8554abc558a6adf7d5d9f8
          }
  
          // Workaround b/149851140 in AParcel_writeParcelFileDescriptor
+diff --git a/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBarControllerImpl.java b/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBarControllerImpl.java
+index 3cb8771cfd45b06c082189f693b32341cb936ba2..102e1c3a7a4ecafde4c2a3650a387eb9f92967d1 100644
+--- a/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBarControllerImpl.java
++++ b/packages/SystemUI/src/com/android/systemui/navigationbar/NavigationBarControllerImpl.java
+@@ -24,10 +24,14 @@ import android.content.Context;
+ import android.content.pm.ActivityInfo;
+ import android.content.res.Configuration;
+ import android.hardware.devicestate.DeviceStateManager;
++import android.database.ContentObserver;
+ import android.hardware.display.DisplayManager;
+ import android.os.Bundle;
++import android.os.Handler;
++import android.os.Looper;
+ import android.os.RemoteException;
+ import android.os.Trace;
++import android.os.UserHandle;
+ import android.util.Log;
+ import android.util.SparseArray;
+ import android.util.SparseBooleanArray;
+@@ -71,6 +75,8 @@ import dalvik.annotation.optimization.NeverCompile;
+ 
+ import kotlinx.coroutines.CoroutineDispatcher;
+ 
++import lineageos.providers.LineageSettings;
++
+ import java.io.PrintWriter;
+ import java.util.Optional;
+ import java.util.concurrent.Executor;
+@@ -117,6 +123,25 @@ public class NavigationBarControllerImpl implements
+             ActivityInfo.CONFIG_FONT_SCALE
+                     | ActivityInfo.CONFIG_UI_MODE);
+ 
++    /**
++     * Gives the window manager time to apply LineageSettings.System.FORCE_SHOW_NAVBAR before
++     * {@link IWindowManager#hasNavigationBar(int)} is asked again.
++     */
++    private static final long FORCE_SHOW_NAVBAR_REFRESH_DELAY_MS = 300;
++
++    private final Handler mMainHandler = new Handler(Looper.getMainLooper());
++
++    private final ContentObserver mForceShowNavbarObserver = new ContentObserver(mMainHandler) {
++        @Override
++        public void onChange(boolean selfChange) {
++            mMainHandler.removeCallbacks(mRefreshForForceShowNavbar);
++            mMainHandler.postDelayed(mRefreshForForceShowNavbar,
++                    FORCE_SHOW_NAVBAR_REFRESH_DELAY_MS);
++        }
++    };
++
++    private final Runnable mRefreshForForceShowNavbar = this::refreshForForceShowNavbar;
++
+     @Inject
+     public NavigationBarControllerImpl(Context context,
+             LauncherProxyService launcherProxyService,
+@@ -163,9 +188,27 @@ public class NavigationBarControllerImpl implements
+                 mainCoroutineDispatcher);
+         mIsLargeScreen = isLargeScreen(mContext);
+         mIsPhone = determineIfPhone(mContext, deviceStateManager);
++        mContext.getContentResolver().registerContentObserver(
++                LineageSettings.System.getUriFor(LineageSettings.System.FORCE_SHOW_NAVBAR),
++                false, mForceShowNavbarObserver, UserHandle.USER_ALL);
+         dumpManager.registerDumpable(this);
+     }
+ 
++    /**
++     * The user turned the on-screen navigation bar on or off in Settings, so the window
++     * manager's answer to {@link IWindowManager#hasNavigationBar(int)} may have changed.
++     */
++    private void refreshForForceShowNavbar() {
++        final int displayId = mContext.getDisplayId();
++        mHasNavBarOrTaskbar.delete(displayId);
++        if (canCreateNavBarOrTaskBar(displayId)) {
++            updateNavbarForTaskbar();
++        } else {
++            removeNavigationBar(displayId);
++            mTaskbarDelegate.destroy();
++        }
++    }
++
+     private boolean determineIfPhone(Context context, DeviceStateManager deviceStateManager) {
+         if (android.hardware.devicestate.feature.flags.Flags.deviceStatePropertyMigration()) {
+             return !Utils.isDeviceFoldable(context.getResources(), deviceStateManager);
+diff --git a/services/core/java/com/android/server/policy/PhoneWindowManager.java b/services/core/java/com/android/server/policy/PhoneWindowManager.java
+index c7fb1180689a1bd25089898ecd66864cbb005dd7..3e28fef2d64e9427d55dc9210f93d12bba3fb3d8 100644
+--- a/services/core/java/com/android/server/policy/PhoneWindowManager.java
++++ b/services/core/java/com/android/server/policy/PhoneWindowManager.java
+@@ -1066,6 +1066,9 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+             resolver.registerContentObserver(LineageSettings.System.getUriFor(
+                     LineageSettings.System.VOLUME_ANSWER_CALL), false, this,
+                     UserHandle.USER_ALL);
++            resolver.registerContentObserver(LineageSettings.System.getUriFor(
++                    LineageSettings.System.FORCE_SHOW_NAVBAR), false, this,
++                    UserHandle.USER_ALL);
+             updateSettings();
+         }
+ 
+@@ -3565,6 +3568,21 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+         if (updateRotation) {
+             updateRotation(true);
+         }
++        updateForceShowNavigationBar();
++    }
++
++    /**
++     * Applies LineageSettings.System.FORCE_SHOW_NAVBAR to the default display. Called without
++     * mLock held, since DisplayPolicy takes the window manager lock.
++     */
++    private void updateForceShowNavigationBar() {
++        final DisplayPolicy displayPolicy = mDefaultDisplayPolicy;
++        if (displayPolicy == null) {
++            return;
++        }
++        displayPolicy.setForceShowNavigationBar(LineageSettings.System.getIntForUser(
++                mContext.getContentResolver(), LineageSettings.System.FORCE_SHOW_NAVBAR, 0,
++                UserHandle.USER_CURRENT) != 0);
+     }
+ 
+     private void updateKidsModeSettings(boolean kidsModeEnabled) {
+@@ -6682,6 +6700,10 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+         // So it is better not to bind keyguard here.
+         mKeyguardDelegate.onSystemReady();
+ 
++        // The settings observer starts before the default display exists, so apply the saved
++        // navigation bar choice here, before SystemUI asks whether the device has one.
++        updateForceShowNavigationBar();
++
+         mVrManagerInternal = LocalServices.getService(VrManagerInternal.class);
+         if (mVrManagerInternal != null) {
+             mVrManagerInternal.addPersistentVrModeStateListener(mPersistentVrModeListener);
+diff --git a/services/core/java/com/android/server/wm/DisplayPolicy.java b/services/core/java/com/android/server/wm/DisplayPolicy.java
+index 34106a6389654881f793dc6ef54652a7365ed03d..1bcf558acaa5ffd4bb2203e10a06c6232684a092 100644
+--- a/services/core/java/com/android/server/wm/DisplayPolicy.java
++++ b/services/core/java/com/android/server/wm/DisplayPolicy.java
+@@ -274,6 +274,12 @@ public class DisplayPolicy {
+ 
+     private volatile boolean mHasStatusBar;
+     private volatile boolean mHasNavigationBar;
++
++    /**
++     * The user asked for the on-screen navigation bar (LineageSettings.System.FORCE_SHOW_NAVBAR),
++     * even though this device does not show one by default. Default display only.
++     */
++    private volatile boolean mForceShowNavigationBar;
+     // Can the navigation bar ever move to the side?
+     private volatile boolean mNavigationBarCanMove;
+     private volatile boolean mNavigationBarAlwaysShowOnSideGesture;
+@@ -803,7 +809,22 @@ public class DisplayPolicy {
+     }
+ 
+     public boolean hasNavigationBar() {
+-        return mHasNavigationBar;
++        return mHasNavigationBar || mForceShowNavigationBar;
++    }
++
++    /**
++     * Lets the user turn the on-screen navigation bar on for devices whose configuration has
++     * none, such as tablets with hardware keys. SystemUI creates or removes the bar when it
++     * next asks {@link #hasNavigationBar()}.
++     */
++    public void setForceShowNavigationBar(boolean force) {
++        if (!mDisplayContent.isDefaultDisplay || mForceShowNavigationBar == force) {
++            return;
++        }
++        synchronized (mLock) {
++            mForceShowNavigationBar = force;
++            updateSystemBarAttributes();
++        }
+     }
+ 
+     void updateHasNavigationBarIfNeeded() {
+@@ -823,7 +844,7 @@ public class DisplayPolicy {
+     }
+ 
+     boolean hasSideGestures() {
+-        return mHasNavigationBar && (mLeftGestureInset > 0 || mRightGestureInset > 0);
++        return hasNavigationBar() && (mLeftGestureInset > 0 || mRightGestureInset > 0);
+     }
+ 
+     public boolean navigationBarCanMove() {
 diff --git a/services/core/jni/com_android_server_am_CachedAppOptimizer.cpp b/services/core/jni/com_android_server_am_CachedAppOptimizer.cpp
 index 8b9d34768384fc0451e61fc5c8cc97c415fbeff0..30999c4c0e4b942158402dbbb30670690ae31f60 100644
 --- a/services/core/jni/com_android_server_am_CachedAppOptimizer.cpp
