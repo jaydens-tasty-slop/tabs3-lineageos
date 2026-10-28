@@ -1,8 +1,8 @@
 diff --git a/audio/core/all-versions/default/Android.bp b/audio/core/all-versions/default/Android.bp
-index c2fd3c2ef276d3134f83e248ed1c0fa760344e4f..a4c0cb6e7de7b6a7d3d80bceb462af5bd549005d 100644
+index c2fd3c2ef276d3134f83e248ed1c0fa760344e4f..722ce3b291c57773a56a0efa8e86dabf20e63856 100644
 --- a/audio/core/all-versions/default/Android.bp
 +++ b/audio/core/all-versions/default/Android.bp
-@@ -72,6 +72,12 @@ cc_defaults {
+@@ -72,6 +72,15 @@ cc_defaults {
      cflags: select(soong_config_variable("android_hardware_audio", "skip_speaker_layout_channel_mask_field"), {
          true: ["-include common/all-versions/SkipSpeakerLayoutChannelMaskField.h"],
          default: [],
@@ -11,6 +11,9 @@ index c2fd3c2ef276d3134f83e248ed1c0fa760344e4f..a4c0cb6e7de7b6a7d3d80bceb462af5b
 +        default: [],
 +    }) + select(soong_config_variable("android_hardware_audio", "legacy_input_stream_v9"), {
 +        true: ["-DLEGACY_AUDIO_INPUT_STREAM_V9"],
++        default: [],
++    }) + select(soong_config_variable("android_hardware_audio", "legacy_output_stream_v9"), {
++        true: ["-DLEGACY_AUDIO_OUTPUT_STREAM_V9"],
 +        default: [],
      }),
  }
@@ -167,6 +170,143 @@ index 2bea425f26cccae5b7f6286e4a06ffd4a2783420..a36dc505fd4816dff7c690b55ece857d
  }
  
  #endif
+diff --git a/audio/core/all-versions/default/StreamOut.cpp b/audio/core/all-versions/default/StreamOut.cpp
+index 09df4ed43d06f739125f850171d9a56487514c5f..c83a88071371a736dc6493bbdf0bd88b29af6807 100644
+--- a/audio/core/all-versions/default/StreamOut.cpp
++++ b/audio/core/all-versions/default/StreamOut.cpp
+@@ -24,6 +24,7 @@
+ 
+ #include <string.h>
+ 
++#include <cstddef>
+ #include <memory>
+ 
+ #include <HidlUtils.h>
+@@ -47,6 +48,25 @@ using namespace ::android::hardware::audio::CORE_TYPES_CPP_VERSION::implementati
+ 
+ namespace {
+ 
++#if MAJOR_VERSION >= 6
++// Android 9 ended audio_stream_out at update_source_metadata. Later headers
++// appended set_event_callback and the newer playback callbacks. Old vendor
++// stream objects keep private mutable data in those slots (the stream mutex on
++// SM-T820), so even null checks are unsafe.
++template <typename Callback>
++Callback* appendedCallback(Callback* const& slot) {
++#ifdef LEGACY_AUDIO_OUTPUT_STREAM_V9
++    static_assert(offsetof(audio_stream_out_t, set_event_callback) ==
++                  offsetof(audio_stream_out_t, update_source_metadata) +
++                          sizeof(audio_stream_out_t::update_source_metadata));
++    (void)slot;
++    return nullptr;
++#else
++    return slot;
++#endif
++}
++#endif
++
+ class WriteThread : public Thread {
+    public:
+     // WriteThread's lifespan never exceeds StreamOut's lifespan.
+@@ -652,7 +672,7 @@ Return<Result> StreamOut::updateSourceMetadata(const SourceMetadata& sourceMetad
+         }
+         return doUpdateSourceMetadata(sourceMetadata);
+     } else {
+-        if (mStream->update_source_metadata_v7 == nullptr) {
++        if (appendedCallback(mStream->update_source_metadata_v7) == nullptr) {
+             return Result::NOT_SUPPORTED;
+         }
+         return doUpdateSourceMetadataV7(sourceMetadata);
+@@ -668,7 +688,7 @@ Return<Result> StreamOut::selectPresentation(int32_t /*presentationId*/, int32_t
+ #if MAJOR_VERSION >= 6
+ Return<void> StreamOut::getDualMonoMode(getDualMonoMode_cb _hidl_cb) {
+     audio_dual_mono_mode_t mode = AUDIO_DUAL_MONO_MODE_OFF;
+-    Result retval = mStream->get_dual_mono_mode != nullptr
++    Result retval = appendedCallback(mStream->get_dual_mono_mode) != nullptr
+                             ? Stream::analyzeStatus("get_dual_mono_mode",
+                                                     mStream->get_dual_mono_mode(mStream, &mode))
+                             : Result::NOT_SUPPORTED;
+@@ -677,7 +697,7 @@ Return<void> StreamOut::getDualMonoMode(getDualMonoMode_cb _hidl_cb) {
+ }
+ 
+ Return<Result> StreamOut::setDualMonoMode(DualMonoMode mode) {
+-    return mStream->set_dual_mono_mode != nullptr
++    return appendedCallback(mStream->set_dual_mono_mode) != nullptr
+                    ? Stream::analyzeStatus(
+                              "set_dual_mono_mode",
+                              mStream->set_dual_mono_mode(mStream,
+@@ -687,7 +707,7 @@ Return<Result> StreamOut::setDualMonoMode(DualMonoMode mode) {
+ 
+ Return<void> StreamOut::getAudioDescriptionMixLevel(getAudioDescriptionMixLevel_cb _hidl_cb) {
+     float leveldB = -std::numeric_limits<float>::infinity();
+-    Result retval = mStream->get_audio_description_mix_level != nullptr
++    Result retval = appendedCallback(mStream->get_audio_description_mix_level) != nullptr
+                             ? Stream::analyzeStatus(
+                                       "get_audio_description_mix_level",
+                                       mStream->get_audio_description_mix_level(mStream, &leveldB))
+@@ -697,7 +717,7 @@ Return<void> StreamOut::getAudioDescriptionMixLevel(getAudioDescriptionMixLevel_
+ }
+ 
+ Return<Result> StreamOut::setAudioDescriptionMixLevel(float leveldB) {
+-    return mStream->set_audio_description_mix_level != nullptr
++    return appendedCallback(mStream->set_audio_description_mix_level) != nullptr
+                    ? Stream::analyzeStatus(
+                              "set_audio_description_mix_level",
+                              mStream->set_audio_description_mix_level(mStream, leveldB))
+@@ -707,7 +727,7 @@ Return<Result> StreamOut::setAudioDescriptionMixLevel(float leveldB) {
+ Return<void> StreamOut::getPlaybackRateParameters(getPlaybackRateParameters_cb _hidl_cb) {
+     audio_playback_rate_t rate = AUDIO_PLAYBACK_RATE_INITIALIZER;
+     Result retval =
+-            mStream->get_playback_rate_parameters != nullptr
++            appendedCallback(mStream->get_playback_rate_parameters) != nullptr
+                     ? Stream::analyzeStatus("get_playback_rate_parameters",
+                                             mStream->get_playback_rate_parameters(mStream, &rate))
+                     : Result::NOT_SUPPORTED;
+@@ -722,14 +742,14 @@ Return<Result> StreamOut::setPlaybackRateParameters(const PlaybackRate& playback
+             playbackRate.speed, playbackRate.pitch,
+             static_cast<audio_timestretch_stretch_mode_t>(playbackRate.timestretchMode),
+             static_cast<audio_timestretch_fallback_mode_t>(playbackRate.fallbackMode)};
+-    return mStream->set_playback_rate_parameters != nullptr
++    return appendedCallback(mStream->set_playback_rate_parameters) != nullptr
+                    ? Stream::analyzeStatus("set_playback_rate_parameters",
+                                            mStream->set_playback_rate_parameters(mStream, &rate))
+                    : Result::NOT_SUPPORTED;
+ }
+ 
+ Return<Result> StreamOut::setEventCallback(const sp<IStreamOutEventCallback>& callback) {
+-    if (mStream->set_event_callback == nullptr) return Result::NOT_SUPPORTED;
++    if (appendedCallback(mStream->set_event_callback) == nullptr) return Result::NOT_SUPPORTED;
+     int result = mStream->set_event_callback(mStream, StreamOut::asyncEventCallback, this);
+     if (result == 0) {
+         mEventCallback = callback;
+@@ -764,7 +784,7 @@ int StreamOut::asyncEventCallback(stream_event_callback_type_t event, void* para
+ 
+ #if MAJOR_VERSION == 7 && MINOR_VERSION == 1
+ Return<Result> StreamOut::setLatencyMode(LatencyMode mode) {
+-    return mStream->set_latency_mode != nullptr
++    return appendedCallback(mStream->set_latency_mode) != nullptr
+                    ? Stream::analyzeStatus(
+                              "set_latency_mode",
+                              mStream->set_latency_mode(mStream,
+@@ -778,7 +798,7 @@ Return<void> StreamOut::getRecommendedLatencyModes(getRecommendedLatencyModes_cb
+     size_t num_modes = AUDIO_LATENCY_MODE_CNT;
+     audio_latency_mode_t modes[AUDIO_LATENCY_MODE_CNT];
+ 
+-    if (mStream->get_recommended_latency_modes != nullptr &&
++    if (appendedCallback(mStream->get_recommended_latency_modes) != nullptr &&
+         mStream->get_recommended_latency_modes(mStream, &modes[0], &num_modes) == 0) {
+         if (num_modes == 0 || num_modes > AUDIO_LATENCY_MODE_CNT) {
+             ALOGW("%s invalid number of modes returned: %zu", __func__, num_modes);
+@@ -818,7 +838,8 @@ void StreamOut::latencyModeCallback(audio_latency_mode_t* modes, size_t num_mode
+ 
+ Return<Result> StreamOut::setLatencyModeCallback(
+         const sp<IStreamOutLatencyModeCallback>& callback) {
+-    if (mStream->set_latency_mode_callback == nullptr) return Result::NOT_SUPPORTED;
++    if (appendedCallback(mStream->set_latency_mode_callback) == nullptr)
++        return Result::NOT_SUPPORTED;
+     int result = mStream->set_latency_mode_callback(mStream, StreamOut::latencyModeCallback, this);
+     if (result == 0) {
+         mLatencyModeCallback = callback;
 diff --git a/camera/common/default/CameraModule.cpp b/camera/common/default/CameraModule.cpp
 index 9e5c21fccb9e75b38867c24cfe6a9d71390b9290..546908c1f228828a078528d18d249eedb01cb838 100644
 --- a/camera/common/default/CameraModule.cpp

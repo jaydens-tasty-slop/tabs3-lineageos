@@ -306,6 +306,47 @@ index 545b9c30c71a5c8bc7e11cecefa652d5b69b029a..935ea2aa0730289a6de653aa28a53a41
  	.show = queue_ra_show,
  	.store = queue_ra_store,
  };
+diff --git a/drivers/base/firmware_class.c b/drivers/base/firmware_class.c
+index 2f23c4bf07c822a8ebcf9473bbb67a72aa9af6d0..8b41bb09dcdef34d45ccfbf0b78847f4638d937e 100644
+--- a/drivers/base/firmware_class.c
++++ b/drivers/base/firmware_class.c
+@@ -304,7 +304,18 @@ static const char * const fw_path[] = {
+ 	"/lib/firmware/" UTS_RELEASE,
+ 	"/lib/firmware",
+ 	"/lib64/firmware",
+-	"/lib/firmware/image"
++	"/lib/firmware/image",
++	/*
++	 * Android keeps firmware outside /lib. Mirror ueventd's search order
++	 * so direct loads, including the suspend-time firmware cache, pick the
++	 * same image ueventd would have provided.
++	 */
++	"/etc/firmware",
++	"/odm/firmware",
++	"/vendor/firmware",
++	"/firmware/image",
++	"/vendor/firmware_mnt/image",
++	"/vendor/firmware-modem/image"
+ };
+ 
+ /*
+@@ -1620,7 +1631,15 @@ static int cache_firmware(const char *fw_name)
+ 
+ 	pr_debug("%s: %s\n", __func__, fw_name);
+ 
+-	ret = request_firmware(&fw, fw_name, NULL);
++	/*
++	 * This runs from the PM_SUSPEND_PREPARE notifier. A user helper
++	 * fallback emits firmware uevents that wake epoll(EPOLLWAKEUP)
++	 * listeners and abort every suspend attempt made more than ten
++	 * seconds after the previous resume, which Android's suspend backoff
++	 * can turn into a permanent failure loop. Caching is best-effort, so
++	 * load directly or skip the image.
++	 */
++	ret = request_firmware_direct(&fw, fw_name, NULL);
+ 	if (!ret)
+ 		kfree(fw);
+ 
 diff --git a/drivers/staging/qcacld-2.0/CORE/HDD/src/wlan_hdd_cfg80211.c b/drivers/staging/qcacld-2.0/CORE/HDD/src/wlan_hdd_cfg80211.c
 index 6d1090c4d901cb163fc2cc8a094ae0be86198a89..e2ffbd59ba171686db3ff5bb5505eb367c733772 100644
 --- a/drivers/staging/qcacld-2.0/CORE/HDD/src/wlan_hdd_cfg80211.c

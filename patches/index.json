@@ -72,14 +72,14 @@
       "path": "device/samsung/gts3l-common",
       "upstream_name": "awesometic/android_device_samsung_gts3l-common",
       "base": "92f1916339caec063b885beddd3742e63ddfe55f",
-      "head": "1df47e00d285432e4bf8dfc56b39f9dfad2084fb",
+      "head": "f80aaf8220bc2c9ce7a1d6c111f845c881ffca0f",
       "branch": "tabs3/lineage-24.0",
       "remotes": {
         "github": "https://github.com/awesometic/android_device_samsung_gts3l-common",
         "publish": "https://github.com/jaydens-tasty-slop/tabs3-android_device_samsung_gts3l-common.git"
       },
       "patch": "device__samsung__gts3l-common.patch",
-      "sha256": "a5df2530991ac02d527d9c5fc42379ad4e11958ce7a847f7d8ba96a81817946e",
+      "sha256": "913af8863368a9ed99da0fd404a128a3a05c29f8ab89a59496c8ac99a6000d0b",
       "untracked_files": []
     },
     {
@@ -193,7 +193,7 @@
         "github": "https://github.com/LineageOS/android_hardware_interfaces"
       },
       "patch": "hardware__interfaces.patch",
-      "sha256": "152c9d6b06985cfdbf62d1c21bc20ba18be41bb1286648a000308326baac71d9",
+      "sha256": "a1be50ab9fbbfb67e94e4e8c68ea4a093641b1e5ae940df0290f13fdb3af3979",
       "untracked_files": [
         "automotive/audiocontrol/1.0/Android.bp",
         "automotive/audiocontrol/1.0/IAudioControl.hal",
@@ -348,14 +348,14 @@
       "path": "kernel/samsung/msm8996",
       "upstream_name": "awesometic/android_kernel_samsung_msm8996",
       "base": "42e410d4389e09a12ddb4c1d0e5e88abcbf03396",
-      "head": "46470330ef8368332de28da15d766f72309c4461",
+      "head": "6b1734a7cdb2adf3258d4d96c93f167d855614e6",
       "branch": "tabs3/lineage-24.0",
       "remotes": {
         "github": "https://github.com/awesometic/android_kernel_samsung_msm8996",
         "publish": "https://github.com/jaydens-tasty-slop/tabs3-android_kernel_samsung_msm8996.git"
       },
       "patch": "kernel__samsung__msm8996.patch",
-      "sha256": "ad1c38bcb5905d4113128c33ba6b4496067278ca38b96f8210608707689d3543",
+      "sha256": "9445d9fc04b2146276b808de2bda3aca49c0d2c4baa2ebc946d5d8a6e0be604a",
       "untracked_files": []
     },
     {
@@ -562,14 +562,14 @@
       "path": "vendor/samsung",
       "upstream_name": "awesometic/proprietary_vendor_samsung",
       "base": "526da53500135cd9727cef923903fb6f4ce87dbb",
-      "head": "336c9bceb72daadd4da6f99fcde5414578a2c135",
+      "head": "e82680193b489d5ed0ceb59f9df6ba4d16177376",
       "branch": "tabs3/lineage-24.0",
       "remotes": {
         "github": "https://github.com/awesometic/proprietary_vendor_samsung",
         "publish": "https://github.com/jaydens-tasty-slop/tabs3-proprietary_vendor_samsung.git"
       },
       "patch": "vendor__samsung.patch",
-      "sha256": "97bca091df9251aba55d3258b79e5f41f57dc65d871eb55f448d1feae058817f",
+      "sha256": "df45a563f799298f5102a6a0ddd0c5f34106b28c0af877833e74165164e79487",
       "untracked_files": []
     }
   ],

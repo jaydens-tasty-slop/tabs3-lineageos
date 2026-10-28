@@ -35,6 +35,16 @@ recorded a valid H.264 3840x2160, nominal-29.92-fps clip with stereo AAC. The
 owner reported clean playback, and an independent FFmpeg decode completed
 without error.
 
+Earlier Android 17 releases could stop suspending entirely after a run of
+failed suspend attempts and then drained about 2.4% per hour with the screen
+off. The kernel's suspend-time firmware caching kept aborting suspend, and the
+suspend service's retry delay grew past the window in which a retry could
+succeed. Both are fixed from the 2026-10-28 release. An overnight SM-T820
+observation with the same suspend changes and no Google Apps measured
+9h34m unplugged, battery 56% → 55% (72 mAh), 317 successful suspends and
+1,294 RPM vmin entries. The same release fixes two Samsung primary audio HAL
+crashes that restarted the audio service several times during each boot.
+
 The release gate requires `ro.secure=1`, `ro.adb.secure=1`,
 `ro.debuggable=0`, no embedded host ADB authorization key, matching built and
 OTA Boot/System payloads, and a successful clean installation.

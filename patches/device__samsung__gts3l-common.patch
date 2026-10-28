@@ -95,7 +95,7 @@ index 61c207424feb57887f0adcfe2b72660e5f7f19ea..1cc3101f84cd0e23dbb32612aaf84667
  $(WCNSS_INI_SYMLINK): $(LOCAL_INSTALLED_MODULE)
  	@echo "WCNSS config ini link: $@"
 diff --git a/BoardConfigCommon.mk b/BoardConfigCommon.mk
-index aa16aad26e9ed3f2a4d88d0cf18aae8af907cd6a..0029c8e0418950157b49ea1322fdc8908e17d5e6 100755
+index aa16aad26e9ed3f2a4d88d0cf18aae8af907cd6a..7c3dd181b2436f42105117a330120712a0a4c214 100755
 --- a/BoardConfigCommon.mk
 +++ b/BoardConfigCommon.mk
 @@ -24,9 +24,6 @@ COMMON_PATH := device/samsung/gts3l-common
@@ -119,7 +119,7 @@ index aa16aad26e9ed3f2a4d88d0cf18aae8af907cd6a..0029c8e0418950157b49ea1322fdc890
  # Kernel
  BOARD_KERNEL_BASE := 0x80000000
  BOARD_KERNEL_CMDLINE := androidboot.hardware=qcom msm_rtb.filter=0x237 ehci-hcd.park=3 androidboot.bootdevice=7464900.sdhci lpm_levels.sleep_disabled=1 rcupdate.rcu_expedited=1 cma=32M@0-0xffffffff loop.max_part=7
-@@ -62,29 +63,46 @@ BOARD_KERNEL_IMAGE_NAME := Image.gz-dtb
+@@ -62,29 +63,48 @@ BOARD_KERNEL_IMAGE_NAME := Image.gz-dtb
  BOARD_KERNEL_PAGESIZE := 4096
  BOARD_MKBOOTIMG_ARGS := --ramdisk_offset 0x02200000 --tags_offset 0x02000000
  BOARD_CUSTOM_BOOTIMG := true
@@ -167,10 +167,12 @@ index aa16aad26e9ed3f2a4d88d0cf18aae8af907cd6a..0029c8e0418950157b49ea1322fdc890
 +$(call soong_config_set_bool,android_hardware_audio,legacy_offload_info_v1,true)
 +# The Android 9 primary blob predates input-stream microphone steering fields.
 +$(call soong_config_set_bool,android_hardware_audio,legacy_input_stream_v9,true)
++# It also predates set_event_callback and later output-stream callbacks.
++$(call soong_config_set_bool,android_hardware_audio,legacy_output_stream_v9,true)
  
  # Bluetooth
  BOARD_HAS_QCA_BT_ROME := true
-@@ -112,6 +130,10 @@ TARGET_USES_HWC2 := true
+@@ -112,6 +132,10 @@ TARGET_USES_HWC2 := true
  TARGET_USES_ION := true
  TARGET_USES_OVERLAY := true
  
@@ -181,7 +183,7 @@ index aa16aad26e9ed3f2a4d88d0cf18aae8af907cd6a..0029c8e0418950157b49ea1322fdc890
  VSYNC_EVENT_PHASE_OFFSET_NS := 2000000
  SF_VSYNC_EVENT_PHASE_OFFSET_NS := 6000000
  
-@@ -130,14 +152,22 @@ TARGET_FS_CONFIG_GEN := $(COMMON_PATH)/config.fs
+@@ -130,14 +154,22 @@ TARGET_FS_CONFIG_GEN := $(COMMON_PATH)/config.fs
  PRODUCT_ENFORCE_VINTF_MANIFEST_OVERRIDE := true
  DEVICE_MANIFEST_FILE := $(COMMON_PATH)/manifest.xml
  DEVICE_MATRIX_FILE := $(COMMON_PATH)/compatibility_matrix.xml
@@ -204,7 +206,7 @@ index aa16aad26e9ed3f2a4d88d0cf18aae8af907cd6a..0029c8e0418950157b49ea1322fdc890
  BOARD_USERDATAIMAGE_PARTITION_SIZE := 26226965504
  BOARD_USERDATAIMAGE_FILE_SYSTEM_TYPE := f2fs
  BOARD_FLASH_BLOCK_SIZE := 131072 # (BOARD_KERNEL_PAGESIZE * 64)
-@@ -148,7 +178,9 @@ BOARD_ROOT_EXTRA_SYMLINKS := \
+@@ -148,7 +180,9 @@ BOARD_ROOT_EXTRA_SYMLINKS := \
      /mnt/vendor/persist:/persist
  
  # Root
@@ -215,7 +217,7 @@ index aa16aad26e9ed3f2a4d88d0cf18aae8af907cd6a..0029c8e0418950157b49ea1322fdc890
  
  # Init
  TARGET_PLATFORM_DEVICE_BASE := "/devices/soc/"
-@@ -168,7 +200,7 @@ BOARD_USES_QCOM_HARDWARE := true
+@@ -168,7 +202,7 @@ BOARD_USES_QCOM_HARDWARE := true
  
  # Recovery
  TARGET_RECOVERY_FSTAB := $(COMMON_PATH)/rootdir/etc/fstab.qcom
@@ -224,7 +226,7 @@ index aa16aad26e9ed3f2a4d88d0cf18aae8af907cd6a..0029c8e0418950157b49ea1322fdc890
  TARGET_USERIMAGES_USE_EXT4 := true
  TARGET_USERIMAGES_USE_F2FS := true
  
-@@ -182,15 +214,9 @@ SELINUX_IGNORE_NEVERALLOWS := true
+@@ -182,15 +216,9 @@ SELINUX_IGNORE_NEVERALLOWS := true
  
  # Shims
  TARGET_LD_SHIM_LIBS := \
@@ -240,7 +242,7 @@ index aa16aad26e9ed3f2a4d88d0cf18aae8af907cd6a..0029c8e0418950157b49ea1322fdc890
  # Verity
  # Only needed for signing
  BOARD_AVB_ENABLE := false
-@@ -208,4 +234,6 @@ WIFI_DRIVER_FW_PATH_AP := "ap"
+@@ -208,4 +236,6 @@ WIFI_DRIVER_FW_PATH_AP := "ap"
  WIFI_DRIVER_FW_PATH_STA := "sta"
  WIFI_DRIVER_FW_PATH_P2P := "p2p"
  WIFI_HIDL_UNIFIED_SUPPLICANT_SERVICE_RC_ENTRY := true
@@ -423,7 +425,7 @@ index 0000000000000000000000000000000000000000..01aec7f36d02369b0884fa1c2185b2bd
 +  ]
 +}
 diff --git a/extract-files.sh b/extract-files.sh
-index 92600a51af5f3e91488f9f0b9a0bd865a4297b68..8bb4ef7340ea024f76617206381334c37ee151d8 100755
+index 92600a51af5f3e91488f9f0b9a0bd865a4297b68..f6e1902ecce090d13b62eb25d786c18aaed804b1 100755
 --- a/extract-files.sh
 +++ b/extract-files.sh
 @@ -69,6 +69,12 @@ function blob_fixup() {
@@ -439,7 +441,7 @@ index 92600a51af5f3e91488f9f0b9a0bd865a4297b68..8bb4ef7340ea024f76617206381334c3
      vendor/lib/libwvhidl.so)
          "${PATCHELF}" --replace-needed "libprotobuf-cpp-lite.so" "libprotobuf-cpp-lite-v29.so" "${2}"
          ;;
-@@ -78,9 +84,18 @@ function blob_fixup() {
+@@ -78,9 +84,19 @@ function blob_fixup() {
      vendor/lib/libmmcamera2_stats_modules.so)
          "${PATCHELF}" --replace-needed "libandroid.so" "libsensorndkbridge.so" "${2}"
          "${PATCHELF}" --replace-needed "libgui.so" "libgui_vendor.so" "${2}"
@@ -455,6 +457,7 @@ index 92600a51af5f3e91488f9f0b9a0bd865a4297b68..8bb4ef7340ea024f76617206381334c3
 +        esac
 +        # patchelf can relocate PT_PHDR incorrectly for this ELF's nonzero base.
 +        python3 "${MY_DIR}/fixup_elf_phdr.py" "${2}"
++        python3 "${MY_DIR}/patch_audio_primary_close_uaf.py" "${2}"
          ;;
      vendor/lib/hw/android.hardware.gnss@1.0-impl-qti.so)
          "${PATCHELF}" --replace-needed "libcutils.so" "libprocessgroup.so" "${2}"
@@ -713,7 +716,7 @@ index 0000000000000000000000000000000000000000..3a37b172f69492e956a403df9a44155a
 +    </hal>
 +</compatibility-matrix>
 diff --git a/gts3l.mk b/gts3l.mk
-index 9ab1835767b1b4c47ce77eca04ca655f6d58a095..ac8101140ced821a60fc5a1f06b636319f16e945 100755
+index 9ab1835767b1b4c47ce77eca04ca655f6d58a095..1015d2cbfb0ebb4c86a32b30e62637cd17675e16 100755
 --- a/gts3l.mk
 +++ b/gts3l.mk
 @@ -18,6 +18,31 @@
@@ -842,15 +845,23 @@ index 9ab1835767b1b4c47ce77eca04ca655f6d58a095..ac8101140ced821a60fc5a1f06b63631
  # Qualcomm
  PRODUCT_PACKAGES += \
      libqti_vndfwk_detect \
-@@ -321,6 +346,7 @@ PRODUCT_COPY_FILES += \
+@@ -321,8 +346,15 @@ PRODUCT_COPY_FILES += \
      $(LOCAL_PATH)/configs/qti_whitelist.xml:$(TARGET_COPY_OUT_SYSTEM_EXT)/etc/sysconfig/qti_whitelist.xml
  
  PRODUCT_DEFAULT_PROPERTY_OVERRIDES += \
 +    ro.surface_flinger.primary_display_orientation=ORIENTATION_270 \
      ro.vendor.qti.va_aosp.support=1
  
++# Keep failed-suspend retries inside the kernel's 10 s firmware-cache window.
++# Beyond it, each attempt re-caches firmware and can fail again, so the
++# default 60 s backoff ceiling never recovers once reached.
++PRODUCT_DEFAULT_PROPERTY_OVERRIDES += \
++    suspend.max_sleep_time_millis=5000
++
  # QMI
-@@ -339,7 +365,7 @@ PRODUCT_PACKAGES += \
+ PRODUCT_PACKAGES += \
+     libjson
+@@ -339,7 +371,7 @@ PRODUCT_PACKAGES += \
      init.qcom.sh \
      init.qcom.usb.rc \
      init.qcom.usb.sh \
@@ -859,7 +870,7 @@ index 9ab1835767b1b4c47ce77eca04ca655f6d58a095..ac8101140ced821a60fc5a1f06b63631
      init.samsung.rc \
      init.target.rc \
      ueventd.qcom.rc \
-@@ -396,7 +422,7 @@ PRODUCT_COPY_FILES += \
+@@ -396,7 +428,7 @@ PRODUCT_COPY_FILES += \
  
  # Touch
  PRODUCT_PACKAGES += \
@@ -868,7 +879,7 @@ index 9ab1835767b1b4c47ce77eca04ca655f6d58a095..ac8101140ced821a60fc5a1f06b63631
  
  # USB
  PRODUCT_PACKAGES += \
-@@ -404,22 +430,34 @@ PRODUCT_PACKAGES += \
+@@ -404,22 +436,34 @@ PRODUCT_PACKAGES += \
  
  # Vibrator
  PRODUCT_PACKAGES += \
@@ -2390,6 +2401,110 @@ index e49cd9ba18336787c346f7d084416a89bfd0fdbc..2d2f8184b43a0000f96307d7ed4b4fb3
      <!-- Array of light sensor lux values to define our levels for auto backlight brightness support.
           The N entries of this array define N + 1 control points as follows:
           (1-based arrays)
+diff --git a/patch_audio_primary_close_uaf.py b/patch_audio_primary_close_uaf.py
+new file mode 100755
+index 0000000000000000000000000000000000000000..b3c00c705874823981664fe3702b130eb6959b58
+--- /dev/null
++++ b/patch_audio_primary_close_uaf.py
+@@ -0,0 +1,98 @@
++#!/usr/bin/env python3
++"""Patch Samsung's primary audio HAL to stop a stream-close use-after-free."""
++
++import os
++import struct
++import sys
++import tempfile
++from pathlib import Path
++
++
++# adev_close_output_stream() frees the 96-byte Samsung per-stream state at
++# out+0x2024 right after unregistering the stream, then runs standby and
++# offload teardown, and finally reloads that dangling pointer to free and clear
++# its +0x20 member.  When the heap reuses the block in between, free() receives
++# garbage and the HAL crashes in je_free during boot-time stream churn.  Drop
++# the early free and release the member and then the state itself at the end.
++# r10 keeps &out->state for the whole function; free(NULL) is a no-op.
++PATCHES = (
++    (
++        0x17FF8,
++        bytes.fromhex(
++            "24 00 02 e3 00 00 ba e7 00 00 50 e3 00 00 00 0a 57 c9 ff eb"
++        ),
++        bytes.fromhex(
++            "24 00 02 e3 00 00 ba e7 00 00 50 e3 00 00 00 0a 00 f0 20 e3"
++        ),
++    ),
++    (
++        0x18334,
++        bytes.fromhex(
++            "00 00 9a e5 20 00 90 e5 00 00 50 e3 03 00 00 0a "
++            "88 c8 ff eb 00 00 9a e5 00 10 a0 e3 20 10 80 e5"
++        ),
++        bytes.fromhex(
++            "00 00 9a e5 00 00 50 e3 04 00 00 0a 20 00 90 e5 "
++            "88 c8 ff eb 00 00 9a e5 86 c8 ff eb 00 f0 20 e3"
++        ),
++    ),
++)
++
++
++def file_offset(data: bytes, vaddr: int) -> int:
++    phoff, = struct.unpack_from("<I", data, 0x1C)
++    phentsize, phnum = struct.unpack_from("<HH", data, 0x2A)
++    for index in range(phnum):
++        p_type, p_offset, p_vaddr, _, p_filesz = struct.unpack_from(
++            "<5I", data, phoff + index * phentsize
++        )
++        if p_type == 1 and p_vaddr <= vaddr < p_vaddr + p_filesz:
++            return vaddr - p_vaddr + p_offset
++    raise SystemExit(f"{vaddr:#x} is not in a PT_LOAD segment")
++
++
++def main() -> int:
++    if len(sys.argv) != 2:
++        raise SystemExit(f"usage: {Path(sys.argv[0]).name} ELF")
++
++    path = Path(sys.argv[1])
++    data = bytearray(path.read_bytes())
++    if data[:4] != b"\x7fELF" or data[4] != 1:
++        raise SystemExit(f"{path}: not a 32-bit ELF file")
++
++    changed = False
++    for vaddr, original, replacement in PATCHES:
++        offset = file_offset(data, vaddr)
++        actual = bytes(data[offset : offset + len(original)])
++        if actual == replacement:
++            continue
++        if actual != original:
++            raise SystemExit(
++                f"{path}: unexpected close_output_stream block at {vaddr:#x}: "
++                f"{actual.hex(' ')}"
++            )
++        if data.count(original) != 1:
++            raise SystemExit(f"{path}: block at {vaddr:#x} is not unique")
++        data[offset : offset + len(original)] = replacement
++        changed = True
++
++    if not changed:
++        return 0
++
++    fd, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
++    try:
++        with os.fdopen(fd, "wb") as temporary:
++            temporary.write(data)
++            temporary.flush()
++            os.fsync(temporary.fileno())
++        os.chmod(temporary_name, path.stat().st_mode)
++        os.replace(temporary_name, path)
++    finally:
++        if os.path.exists(temporary_name):
++            os.unlink(temporary_name)
++
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
 diff --git a/patch_camera_stats_aec_uaf.py b/patch_camera_stats_aec_uaf.py
 new file mode 100644
 index 0000000000000000000000000000000000000000..fd15ea220fd0ba9bc2df32fde8ee2031e3f75ee8
